@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -38,7 +38,7 @@ let package = Package(
     // .package(url: "https://github.com/vapor/console-kit.git", from: "4.7.0"),
     .package(url: "https://github.com/koliyo/LanguageServer", branch: "main"),
     .package(url: "https://github.com/ChimeHQ/LanguageClient", from: "0.8.0"),
-    .package(url: "https://github.com/nneuberger1/swift-log-console-colors.git", from: "1.0.3"),
+    .package(url: "https://github.com/tothambrus11/swift-log-console-colors", branch: "fb255585da64432748c04fbc77703dc68a991158"),
     .package(url: "https://github.com/ChimeHQ/JSONRPC", from: "0.9.0"),
     // .package(url: "https://github.com/ChimeHQ/ProcessEnv", from: "1.0.0"),
     // .package(url: "https://github.com/seznam/swift-unisocket", from: "0.14.0"),
@@ -49,7 +49,7 @@ let package = Package(
     .package(path: "./JSONRPC-DataChannel-UniSocket"),
     // .package(path: "./JSONRPC-DataChannel-Actor"),
     // .package(path: "./JSONRPC-DataChannel-StdioPipe"),
-    .package(path: "./hylo")
+    .package(url: "https://github.com/hylo-lang/hylo", branch: "lsp-support")
   ],
   targets: [
 
@@ -66,6 +66,7 @@ let package = Package(
         // "JSONRPC-DataChannel-UniSocket",
         // "JSONRPC-DataChannel-Actor",
         .product(name: "hylo-stdlib", package: "hylo"),
+        .product(name: "FrontEnd", package: "hylo"),
         // .product(name: "UniSocket", package: "swift-unisocket"),
         // .product(name: "ProcessEnv", package: "ProcessEnv", condition: .when(platforms: [.macOS])),
       ],

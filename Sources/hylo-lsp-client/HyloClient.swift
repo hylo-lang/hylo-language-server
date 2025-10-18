@@ -9,7 +9,7 @@ import FrontEnd
 import hylo_lsp
 
 public func textDocument(_ url: URL) throws -> TextDocumentItem {
-  let docContent = try String(contentsOf: url)
+  let docContent = try String(contentsOf: url, encoding: .utf8)
   return TextDocumentItem(
     uri: url.absoluteString,
     // uri: url.path,

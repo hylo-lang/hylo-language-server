@@ -207,7 +207,7 @@ public actor DocumentProvider {
       // We need to replace stdlib files from in memory buffers if they have unsaved changes
       if let context = documents[file.url.absoluteString] {
         logger.debug("Replace content for stdlib source file: \(file.url)")
-        return SourceFile(contents: context.doc.text, fileID: file.url)
+        return SourceFile(synthesizedText: context.doc.text)
       }
       else {
         return file
@@ -255,9 +255,8 @@ public actor DocumentProvider {
     let t0 = Date()
     let p = try TypedProgram(
     annotating: ScopedProgram(ast), inParallel: !compileSequentially,
-    reportingDiagnosticsTo: &diagnostics,
-    throwOnError: false,
-    tracingInferenceIf: nil)
+    reportingDiagnosticsTo: &diagnostics
+    )
 
     let typeCheckTime = Date().timeIntervalSince(t0)
     logger.debug("Program is built: \(uri)")
@@ -396,15 +395,7 @@ public actor DocumentProvider {
       let uri = context.uri
       let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
 
-      let sourceFiles: [SourceFile]
-
-      if isStdlibDocument {
-        sourceFiles = []
-      }
-      else {
-        let url = URL.init(string: uri)!
-        sourceFiles = [SourceFile(contents: context.doc.text, fileID: url)]
-      }
+      let sourceFiles: [SourceFile] = isStdlibDocument ? [] : [SourceFile(synthesizedText: context.doc.text)]
 
       context.astTask = Task {
         return try buildAST(uri: uri, stdlibPath: stdlibPath, sourceFiles: sourceFiles)
