@@ -25,51 +25,51 @@
       "preLaunchTask": "swift: Build Release hylo-lsp"
     },
     {
-      "type": "lldb",
+      "type": "swift",
       "request": "launch",
       "sourceLanguages": [
         "swift"
       ],
       "name": "Debug hylo-lsp-server",
-      "program": "${workspaceFolder:hylo-lsp}/.build/debug/hylo-lsp-server",
+      "program": "${workspaceFolder:hylo-language-server}/.build/debug/hylo-lsp-server",
       "args": [],
-      "cwd": "${workspaceFolder:hylo-lsp}",
+      "cwd": "${workspaceFolder:hylo-language-server}",
       "preLaunchTask": "swift: Build Debug hylo-lsp-server"
     },
     {
-      "type": "lldb",
+      "type": "swift",
       "request": "launch",
       "sourceLanguages": [
         "swift"
       ],
       "name": "Release hylo-lsp-server",
-      "program": "${workspaceFolder:hylo-lsp}/.build/release/hylo-lsp-server",
+      "program": "${workspaceFolder:hylo-language-server}/.build/release/hylo-lsp-server",
       "args": [],
-      "cwd": "${workspaceFolder:hylo-lsp}",
+      "cwd": "${workspaceFolder:hylo-language-server}",
       "preLaunchTask": "swift: Build Release hylo-lsp-server"
     },
     {
-      "type": "lldb",
+      "type": "swift",
       "request": "launch",
       "sourceLanguages": [
         "swift"
       ],
       "name": "Debug hylo-lsp-client",
-      "program": "${workspaceFolder:hylo-lsp}/.build/debug/hylo-lsp-client",
+      "program": "${workspaceFolder:hylo-language-server}/.build/debug/hylo-lsp-client",
       "args": [],
-      "cwd": "${workspaceFolder:hylo-lsp}",
+      "cwd": "${workspaceFolder:hylo-language-server}",
       "preLaunchTask": "swift: Build Debug hylo-lsp-client"
     },
     {
-      "type": "lldb",
+      "type": "swift",
       "request": "launch",
       "sourceLanguages": [
         "swift"
       ],
       "name": "Release hylo-lsp-client",
-      "program": "${workspaceFolder:hylo-lsp}/.build/release/hylo-lsp-client",
+      "program": "${workspaceFolder:hylo-language-server}/.build/release/hylo-lsp-client",
       "args": [],
-      "cwd": "${workspaceFolder:hylo-lsp}",
+      "cwd": "${workspaceFolder:hylo-language-server}",
       "preLaunchTask": "swift: Build Release hylo-lsp-client"
     }
   ]
