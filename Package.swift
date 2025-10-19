@@ -20,8 +20,7 @@ let package = Package(
   name: "hylo-lsp",
 
   platforms: [
-    // .macOS(.v10_15)
-    .macOS(.v13)
+    .macOS(.v15)
   ],
 
   products: [
