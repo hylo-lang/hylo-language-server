@@ -61,7 +61,7 @@ public struct HyloRequestHandler : RequestHandler, Sendable {
       return .failure(JSONRPCResponseError(code: ErrorCodes.InternalError, message: "Invalid document uri: \(params.textDocument.uri)"))
     }
 
-    let resolver = DefinitionResolver(ast: doc.ast, program: doc.program, logger: logger)
+    let resolver = DefinitionResolver(ast: doc.ast, program: doc.program, uriMapping: doc.uriMapping, logger: logger)
 
     if let response = resolver.resolve(p) {
       return .success(response)
@@ -77,8 +77,8 @@ public struct HyloRequestHandler : RequestHandler, Sendable {
   }
 
 
-  public func documentSymbol(id: JSONId, params: DocumentSymbolParams, ast: AST) async -> Result<DocumentSymbolResponse, AnyJSONRPCResponseError> {
-    let symbols = ast.listDocumentSymbols(params.textDocument.uri, logger: logger)
+  public func documentSymbol(id: JSONId, params: DocumentSymbolParams, ast: ASTWithUriMapping) async -> Result<DocumentSymbolResponse, AnyJSONRPCResponseError> {
+    let symbols = ast.ast.listDocumentSymbols(params.textDocument.uri,uriMapping: ast.uriMapping, logger: logger)
     if symbols.isEmpty {
       return .success(nil)
     }
@@ -126,9 +126,9 @@ public struct HyloRequestHandler : RequestHandler, Sendable {
     let matching = diagnostics.elements.filter { $0.site.file.url.absoluteString == uri }
     let nonMatching = diagnostics.elements.filter { $0.site.file.url.absoluteString != uri }
 
-    let items = matching.map { LanguageServerProtocol.Diagnostic($0) }
+    let items = matching.map { LanguageServerProtocol.Diagnostic(withoutRemappingPath: $0) }
     let related = nonMatching.reduce(into: [String: LanguageServerProtocol.DocumentDiagnosticReport]()) {
-      let d = LanguageServerProtocol.Diagnostic($1)
+      let d = LanguageServerProtocol.Diagnostic(withoutRemappingPath: $1)
       $0[$1.site.file.url.absoluteString] = DocumentDiagnosticReport(kind: .full, items: [d])
     }
 
@@ -138,7 +138,7 @@ public struct HyloRequestHandler : RequestHandler, Sendable {
   func trySendDiagnostics(_ diagnostics: DiagnosticSet, in uri: DocumentUri) async {
     do {
       logger.debug("[\(uri)] send diagnostics")
-      let dList = diagnostics.elements.map { LanguageServerProtocol.Diagnostic($0) }
+      let dList = diagnostics.elements.map { LanguageServerProtocol.Diagnostic(withoutRemappingPath: $0) }
       let dp = PublishDiagnosticsParams(uri: uri, diagnostics: dList)
       try await connection.sendNotification(.textDocumentPublishDiagnostics(dp))
     }
@@ -194,7 +194,7 @@ public struct HyloRequestHandler : RequestHandler, Sendable {
     }
   }
 
-  func withDocumentAST<ResponseT>(_ textDocument: TextDocumentIdentifier, fn: (AST) async -> Result<ResponseT?, AnyJSONRPCResponseError>) async -> Result<ResponseT?, AnyJSONRPCResponseError> {
+  func withDocumentAST<ResponseT>(_ textDocument: TextDocumentIdentifier, fn: (ASTWithUriMapping) async -> Result<ResponseT?, AnyJSONRPCResponseError>) async -> Result<ResponseT?, AnyJSONRPCResponseError> {
     let result = await documentProvider.getAST(textDocument)
 
     switch result {
@@ -219,8 +219,8 @@ public struct HyloRequestHandler : RequestHandler, Sendable {
     }
   }
 
-  public func semanticTokensFull(id: JSONId, params: SemanticTokensParams, ast: AST) async -> Result<SemanticTokensResponse, AnyJSONRPCResponseError> {
-    let tokens = ast.getSematicTokens(params.textDocument.uri, logger: logger)
+  public func semanticTokensFull(id: JSONId, params: SemanticTokensParams, ast: ASTWithUriMapping) async -> Result<SemanticTokensResponse, AnyJSONRPCResponseError> {
+    let tokens = ast.ast.getSemanticTokens(params.textDocument.uri, uriMapping: ast.uriMapping, logger: logger)
     logger.debug("[\(params.textDocument.uri)] Return \(tokens.count) semantic tokens")
     return .success(SemanticTokens(tokens: tokens))
   }

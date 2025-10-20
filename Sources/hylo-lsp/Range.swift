@@ -1,21 +1,36 @@
-import LanguageServerProtocol
 import FrontEnd
+import LanguageServerProtocol
 
-public extension LanguageServerProtocol.Location {
-  init(_ range: SourceRange) {
+extension LanguageServerProtocol.Location {
+  public init(_ range: SourceRange, uriMapping: UriMapping, ast: AST) {
+    let originalPath: String
+    let astUri = range.file.url.absoluteString
+
+    if let realPath = uriMapping.realPathOf(astUri: astUri) {
+      originalPath = realPath
+    } else {
+      print("Didn't find mapping for uri: '\(astUri)'")
+      originalPath = range.file.url.path
+    }
+
+    self.init(uri: originalPath, range: LSPRange(range))
+  }
+
+  /// Doesn't remap synthesized URIs to original paths
+  public init(withoutRemappingPath range: SourceRange) {
     self.init(uri: range.file.url.path, range: LSPRange(range))
   }
 }
 
-public extension LanguageServerProtocol.LSPRange {
-  init(_ range: SourceRange) {
+extension LanguageServerProtocol.LSPRange {
+  public init(_ range: SourceRange) {
     self.init(start: Position(range.start), end: Position(range.end))
   }
 }
 
-public extension LanguageServerProtocol.Position {
-  init(_ pos: SourcePosition) {
+extension LanguageServerProtocol.Position {
+  public init(_ pos: SourcePosition) {
     let (line, column) = pos.lineAndColumn
-    self.init(line: line-1, character: column-1)
+    self.init(line: line - 1, character: column - 1)
   }
 }

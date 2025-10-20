@@ -40,7 +40,7 @@ public actor DocumentProvider {
 
 
   private func getServerCapabilities() -> ServerCapabilities {
-    var s = ServerCapabilities()
+    var serverCapabilities = ServerCapabilities()
     let documentSelector = DocumentFilter(pattern: "**/*.hylo")
 
     // NOTE: Only need to register extensions
@@ -48,16 +48,16 @@ public actor DocumentProvider {
     // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_semanticTokens
     let tokenLedgend = SemanticTokensLegend(tokenTypes: TokenType.allCases.map { $0.description }, tokenModifiers: ["private", "public"])
 
-    s.textDocumentSync = .optionA(TextDocumentSyncOptions(openClose: false, change: TextDocumentSyncKind.full, willSave: false, willSaveWaitUntil: false, save: nil))
-    s.textDocumentSync = .optionB(TextDocumentSyncKind.full)
-    s.definitionProvider = .optionA(true)
+    serverCapabilities.textDocumentSync = .optionA(TextDocumentSyncOptions(openClose: false, change: TextDocumentSyncKind.full, willSave: false, willSaveWaitUntil: false, save: nil))
+    serverCapabilities.textDocumentSync = .optionB(TextDocumentSyncKind.full)
+    serverCapabilities.definitionProvider = .optionA(true)
     // s.typeDefinitionProvider = .optionA(true)
-    s.documentSymbolProvider = .optionA(true)
+    serverCapabilities.documentSymbolProvider = .optionA(true)
     // s.semanticTokensProvider = .optionA(SemanticTokensOptions(legend: tokenLedgend, range: .optionA(true), full: .optionA(true)))
-    s.semanticTokensProvider = .optionB(SemanticTokensRegistrationOptions(documentSelector: [documentSelector], legend: tokenLedgend, range: .optionA(false), full: .optionA(true)))
-    s.diagnosticProvider = .optionA(DiagnosticOptions(interFileDependencies: false, workspaceDiagnostics: false))
+    serverCapabilities.semanticTokensProvider = .optionB(SemanticTokensRegistrationOptions(documentSelector: [documentSelector], legend: tokenLedgend, range: .optionA(false), full: .optionA(true)))
+    serverCapabilities.diagnosticProvider = .optionA(DiagnosticOptions(interFileDependencies: false, workspaceDiagnostics: false))
 
-    return s
+    return serverCapabilities
   }
 
 
@@ -201,7 +201,7 @@ public actor DocumentProvider {
     return url.path
   }
 
-  private func buildStdlibAST(_ stdlibPath: URL) throws -> AST {
+  private func buildStdlibAST(_ stdlibPath: URL, uriMap: inout UriMapping) throws -> AST {
     let sourceFiles = try sourceFiles(in: [stdlibPath]).map { file in
 
       // We need to replace stdlib files from in memory buffers if they have unsaved changes
@@ -215,11 +215,13 @@ public actor DocumentProvider {
     }
 
     // logger.info("Build stdlib with files: \(sourceFiles)")
-    return try AST(sourceFiles: sourceFiles)
+    let ast = try AST(sourceFiles: sourceFiles)
+    ast[ast.modules.first!].sources.zip
+
   }
 
   // We cache stdlib AST, and since AST is struct the cache values are implicitly immutable (thanks MVS!)
-  private func getStdlibAST(_ stdlibPath: URL) throws -> AST {
+  private func getStdlibAST(_ stdlibPath: URL, uriMap: inout UriMapping) throws -> AST {
     if let ast = stdlibCache[stdlibPath] {
       return ast
     }
@@ -230,22 +232,7 @@ public actor DocumentProvider {
     }
   }
 
-  private func buildAST(uri: DocumentUri, stdlibPath: URL, sourceFiles: [SourceFile]) throws -> AST {
-    var diagnostics = DiagnosticSet()
-    logger.debug("Build ast for document: \(uri), with stdlibPath: \(stdlibPath)")
-
-    var ast = try getStdlibAST(stdlibPath)
-
-    if !sourceFiles.isEmpty {
-        let productName = "lsp-build"
-        // let sourceFiles = try sourceFiles(in: inputs)
-      _ = try ast.loadModule(productName, parsing: sourceFiles, withBuiltinModuleAccess: false, reportingDiagnosticsTo: &diagnostics)
-    }
-
-    return ast
-  }
-
-  private func buildProgram(uri: DocumentUri, ast: AST) throws -> AnalyzedDocument {
+  private func buildProgram(uri: DocumentUri, extendedAST: ASTWithUriMapping) throws -> AnalyzedDocument {
     // let inputs = files.map { URL.init(fileURLWithPath: $0)}
     let compileSequentially = true
 
@@ -254,8 +241,8 @@ public actor DocumentProvider {
 
     let t0 = Date()
     let p = try TypedProgram(
-    annotating: ScopedProgram(ast), inParallel: !compileSequentially,
-    reportingDiagnosticsTo: &diagnostics
+      annotating: ScopedProgram(extendedAST.ast), inParallel: !compileSequentially,
+      reportingDiagnosticsTo: &diagnostics
     )
 
     let typeCheckTime = Date().timeIntervalSince(t0)
@@ -263,7 +250,7 @@ public actor DocumentProvider {
 
     let profiling = DocumentProfiling(stdlibParsing: TimeInterval(), ASTParsing: TimeInterval(), typeChecking: typeCheckTime)
 
-    return AnalyzedDocument(uri: uri, ast: ast, program: p, profiling: profiling)
+    return AnalyzedDocument(uri: uri, ast: extendedAST.ast, uriMapping: extendedAST.uriMapping, program: p, profiling: profiling)
   }
 
   // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#uri
@@ -333,10 +320,12 @@ public actor DocumentProvider {
 
   func implicitlyRegisterDocument(_ uri: DocumentUri)-> DocumentContext? {
     guard let url = URL.init(string: uri) else {
+      logger.warning("Invalid document URI in implicitlyRegisterDocument: '\(uri)'")
       return nil
     }
 
-    guard let text = try? String(contentsOf: url) else {
+    guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+      logger.warning("Could not read document contents in implicitlyRegisterDocument: '\(uri)'")
       return nil
     }
 
@@ -354,25 +343,23 @@ public actor DocumentProvider {
       return .failure(.invalidUri(uri))
     }
 
-    guard let context = documents[uri] else {
-      // NOTE: We can not assume document is opened, VSCode apparently does not guarantee ordering
-      // Specifically `textDocument/diagnostic` -> `textDocument/didOpen` has been observed
-
-      // return .failure(.documentNotOpened(uri))
-
-      logger.warning("Implicitly registering unopened document: \(uri)")
-      if let context = implicitlyRegisterDocument(uri) {
-        return .success(context)
-      }
-      else {
-        return .failure(.invalidUri(uri))
-      }
+    if let context = documents[uri] {
+      return .success(context)
     }
 
+    // NOTE: We can not assume document is opened, VSCode apparently does not guarantee ordering
+    // Specifically `textDocument/diagnostic` -> `textDocument/didOpen` has been observed
+
+    // return .failure(.documentNotOpened(uri))
+
+    logger.warning("Implicitly registering unopened document: \(uri)")
+    guard let context = implicitlyRegisterDocument(uri) else {
+      return .failure(.invalidUri(uri))
+    }
     return .success(context)
   }
 
-  public func getAST(_ textDocument: TextDocumentProtocol) async -> Result<AST, DocumentError> {
+  public func getAST(_ textDocument: TextDocumentProtocol) async -> Result<ASTWithUriMapping, DocumentError> {
     switch getDocumentContext(textDocument) {
       case let .failure(error):
         return .failure(.other(error))
@@ -390,22 +377,37 @@ public actor DocumentProvider {
     }
   }
 
-  private func createASTTask(_ context: DocumentContext) -> Task<AST, Error> {
+  private func createASTTask(_ context: DocumentContext) -> Task<ASTWithUriMapping, Error> {
     if context.astTask == nil {
       let uri = context.uri
       let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
 
-      let sourceFiles: [SourceFile] = isStdlibDocument ? [] : [SourceFile(synthesizedText: context.doc.text)]
 
       context.astTask = Task {
-        return try buildAST(uri: uri, stdlibPath: stdlibPath, sourceFiles: sourceFiles)
+        var diagnostics = DiagnosticSet()
+        logger.debug("Build ast for document: \(uri), with stdlibPath: \(stdlibPath)")
+
+        var uriMapping = UriMapping()
+        
+        var ast = try getStdlibAST(stdlibPath, uriMap: &uriMapping)
+        if isStdlibDocument {
+          return (ast, uriMapping)
+        }
+
+
+        let productName = "lsp-build"
+        let moduleId = try ast.loadModule(productName, parsing: [SourceFile(synthesizedText: context.doc.text)], withBuiltinModuleAccess: false, reportingDiagnosticsTo: &diagnostics)
+
+        uriMapping[uri] = ast[moduleId].sources.first!
+
+        return (ast, uriMapping)
       }
     }
 
     return context.astTask!
   }
 
-  private func getAST(_ context: DocumentContext) async -> Result<AST, DocumentError> {
+  private func getAST(_ context: DocumentContext) async -> Result<ASTWithUriMapping, DocumentError> {
     do {
       let astTask = createASTTask(context)
       let ast = try await astTask.value
@@ -425,7 +427,7 @@ public actor DocumentProvider {
       context.buildTask = Task {
         let astTask = createASTTask(context)
         let ast = try await astTask.value
-        return try buildProgram(uri: context.uri, ast: ast)
+        return try buildProgram(uri: context.uri, extendedAST: ast)
       }
     }
 

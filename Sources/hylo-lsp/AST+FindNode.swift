@@ -15,17 +15,10 @@ extension AST {
       let node = ast[n]
       let site = node.site
 
-      if let scheme = site.file.url.scheme {
-        if scheme == "synthesized" {
-          // logger.debug("Enter: \(site), id: \(n)")
-          return true
-        }
-      }
-
-
       // NOTE: We should cache root node per file
 
       if site.file != query.file {
+        print("Different files were found in NodeFinder: \(site.file.url.absoluteString) vs \(query.file.url.absoluteString)")
         return false
       }
 
@@ -39,22 +32,26 @@ extension AST {
       if site.endIndex >= query.index {
         match = n
         // logger.debug("Found match: \(n)")
-        return true
       }
 
       return true
     }
   }
 
-  public func findNode(_ position: SourcePosition) -> AnyNodeID? {
-    var finder = NodeFinder(position)
-    for m in modules {
-      walk(m, notifying: &finder)
-      if finder.match != nil {
-        break
-      }
+  public func findNode(_ position: SourcePosition, in uriMapping: [String: TranslationUnit.ID]) -> AnyNodeID? {
+    if let tuID = uriMapping[position.file.url.absoluteString] {
+      let tu = self[tuID]
+      let (line, column) = position.lineAndColumn
+
+      let mappedPosition = SourcePosition(line: line, column: column, in: tu.site.file)
+      print("Mapped position: \(mappedPosition)")
+      print("Mapped position1: \(mappedPosition.file.url.absoluteString)")
+      var finder = NodeFinder(mappedPosition)
+      walk(tuID, notifying: &finder)
+      return finder.match
     }
 
-    return finder.match
+    print("Requested position in file that was not registered. URI: \(position.file.url.absoluteString)")
+    return nil
   }
 }

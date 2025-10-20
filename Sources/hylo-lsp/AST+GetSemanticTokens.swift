@@ -703,10 +703,10 @@ struct SemanticTokensWalker {
 
 extension AST {
 
-  public func getSematicTokens(_ document: DocumentUri, logger: Logger) -> [SemanticToken] {
+  public func getSemanticTokens(_ document: DocumentUri, uriMapping: UriMapping, logger: Logger) -> [SemanticToken] {
     logger.debug("List semantic tokens in document: \(document)")
 
-    guard let translationUnit = findTranslationUnit(document) else {
+    guard let translationUnit = uriMapping.translationUnitOf(realPath: document) else {
       logger.error("Failed to locate translation unit: \(document)")
       return []
     }

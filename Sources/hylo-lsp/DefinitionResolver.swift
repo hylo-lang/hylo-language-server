@@ -5,12 +5,14 @@ import Logging
 
 struct DefinitionResolver {
   let ast: AST
+  let uriMapping: [DocumentUri: TranslationUnit.ID]
   let program: TypedProgram
   let logger: Logger
 
-  public init(ast: AST, program: TypedProgram, logger: Logger) {
+  public init(ast: AST, program: TypedProgram, uriMapping: [DocumentUri: TranslationUnit.ID], logger: Logger) {
     self.ast = ast
     self.program = program
+    self.uriMapping = uriMapping
     self.logger = logger
   }
 
@@ -35,7 +37,6 @@ struct DefinitionResolver {
       return nil
     }
   }
-
 
 
   func locationLink<T>(_ d: T, in ast: AST) -> LocationLink where T: NodeIDProtocol {
@@ -147,7 +148,7 @@ struct DefinitionResolver {
   public func resolve(_ p: SourcePosition) -> DefinitionResponse? {
     logger.debug("Look for symbol definition at position: \(p)")
 
-    guard let id = ast.findNode(p) else {
+    guard let id = ast.findNode(p, in: uriMapping) else {
       logger.warning("Did not find node @ \(p)")
       return nil
     }

@@ -1,20 +1,22 @@
 // swift-tools-version: 6.2
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
-import PackageDescription
 import Foundation
+import PackageDescription
 
 let commonCompileSettings: [SwiftSetting] = [
-	// .unsafeFlags(["-warnings-as-errors"])
-	// .enableExperimentalFeature("StrictConcurrency")
-	// .unsafeFlags(["-strict-concurrency=complete", "-warn-concurrency"])
+  // .unsafeFlags(["-warnings-as-errors"])
+  // .enableExperimentalFeature("StrictConcurrency")
+  // .unsafeFlags(["-strict-concurrency=complete", "-warn-concurrency"])
 ]
 
-let toolCompileSettings = commonCompileSettings + [
-  .unsafeFlags(["-parse-as-library"],
-    .when(platforms: [ .windows ]
-  ))
-]
+let toolCompileSettings =
+  commonCompileSettings + [
+    .unsafeFlags(
+      ["-parse-as-library"],
+      .when(platforms: [.windows]
+      ))
+  ]
 
 let package = Package(
   name: "hylo-lsp",
@@ -37,7 +39,9 @@ let package = Package(
     // .package(url: "https://github.com/vapor/console-kit.git", from: "4.7.0"),
     .package(url: "https://github.com/koliyo/LanguageServer", branch: "main"),
     .package(url: "https://github.com/ChimeHQ/LanguageClient", from: "0.8.0"),
-    .package(url: "https://github.com/tothambrus11/swift-log-console-colors", branch: "fb255585da64432748c04fbc77703dc68a991158"),
+    .package(
+      url: "https://github.com/tothambrus11/swift-log-console-colors",
+      branch: "fb255585da64432748c04fbc77703dc68a991158"),
     .package(url: "https://github.com/ChimeHQ/JSONRPC", from: "0.9.0"),
     // .package(url: "https://github.com/ChimeHQ/ProcessEnv", from: "1.0.0"),
     // .package(url: "https://github.com/seznam/swift-unisocket", from: "0.14.0"),
@@ -48,7 +52,7 @@ let package = Package(
     .package(path: "./JSONRPC-DataChannel-UniSocket"),
     // .package(path: "./JSONRPC-DataChannel-Actor"),
     // .package(path: "./JSONRPC-DataChannel-StdioPipe"),
-    .package(url: "https://github.com/hylo-lang/hylo", branch: "lsp-support")
+    .package(url: "https://github.com/hylo-lang/hylo", branch: "lsp-support"),
   ],
   targets: [
 
@@ -124,5 +128,15 @@ let package = Package(
     .testTarget(
       name: "hylo-lspTests",
       dependencies: ["hylo-lsp-server"]),
+
+    .testTarget(
+      name: "hylo-language-server-tests",
+      dependencies: [
+        "hylo-lsp", 
+        .product(name: "hylo-stdlib", package: "hylo"),
+        .product(name: "FrontEnd", package: "hylo"),
+        .product(name: "Logging", package: "swift-log")
+      ]
+    ),
   ]
 )

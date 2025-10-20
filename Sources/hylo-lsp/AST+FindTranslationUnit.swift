@@ -1,16 +1,19 @@
 import Foundation
 import FrontEnd
 import LanguageServerProtocol
+import Logging
 
 extension AST {
   private struct TranslationUnitFinder: ASTWalkObserver {
     // var outermostFunctions: [FunctionDecl.ID] = []
     let query: DocumentUri
+    let logger: Logger
     private(set) var match: TranslationUnit.ID?
 
 
-    public init(_ query: DocumentUri) {
+    public init(_ query: DocumentUri, logger: Logger) {
       self.query = query
+      self.logger = logger
     }
 
     mutating func willEnter(_ n: AnyNodeID, in ast: AST) -> Bool {
@@ -18,7 +21,6 @@ extension AST {
       let site = node.site
 
       if node is TranslationUnit {
-        // logger.debug("[\(site.file.url.absoluteString)] Look for document: \(query)")
         if site.file.url.absoluteString == query {
           match = TranslationUnit.ID(n)
         }
@@ -29,8 +31,8 @@ extension AST {
     }
   }
 
-  public func findTranslationUnit(_ url: DocumentUri) -> TranslationUnit.ID? {
-    var finder = TranslationUnitFinder(url)
+  public func findTranslationUnit(_ url: DocumentUri, logger: Logger) -> TranslationUnit.ID? {
+    var finder = TranslationUnitFinder(url, logger: logger)
 
     // for m in modules.concatenated(with: [coreLibrary!]) {
     for m in modules {

@@ -92,22 +92,60 @@ public struct AnalyzedDocument : Sendable {
   public let uri: DocumentUri
   public let program: TypedProgram
   public let ast: AST
+  public let uriMapping: [DocumentUri: TranslationUnit.ID]
   public let profiling: DocumentProfiling
 
-  public init(uri: DocumentUri, ast: AST, program: TypedProgram, profiling: DocumentProfiling) {
+  public init(uri: DocumentUri, ast: AST, uriMapping: [DocumentUri: TranslationUnit.ID], program: TypedProgram, profiling: DocumentProfiling) {
     self.uri = uri
     self.ast = ast
+    self.uriMapping = uriMapping
     self.program = program
     self.profiling = profiling
   }
 }
+
+public struct UriMapping: Sendable {
+  private var translationUnitsByRealPath: [DocumentUri: TranslationUnit.ID] = [:]
+  private var realPathByAstUri: [String: String] = [:]
+  
+  func realPathOf(astUri: String) -> DocumentUri? {
+    return realPathByAstUri[astUri]
+  }
+
+  func synthesizedUriOf(realUri: String, ast: AST) -> String? {
+    guard let tuID = translationUnitsByRealPath[realUri] else {
+      return nil
+    }
+    
+    return ast[tuID].site.file.url.absoluteString
+  }
+
+  func translationUnitOf(realPath: String) -> TranslationUnit.ID? {
+    return translationUnitsByRealPath[realPath]
+  }
+
+  func translationUnitOf(astUri: String) -> TranslationUnit.ID? {
+    guard let realPath = realPathByAstUri[astUri] else {
+      return nil
+    }
+    
+    return translationUnitsByRealPath[realPath]
+  }
+
+  mutating func insert(realPath: String, tuID: TranslationUnit.ID, astUri: String) {
+    translationUnitsByRealPath[realPath] = tuID
+    realPathByAstUri[astUri] = realPath
+  }
+}
+
+public typealias ASTWithUriMapping = (ast: AST, uriMapping: UriMapping)
 
 extension DocumentProvider {
   // This should really be a struct since we are building for Hylo
   class DocumentContext {
     public var doc: Document
     public var uri: DocumentUri { doc.uri }
-    var astTask: Task<AST, Error>?
+    var astTask: Task<ASTWithUriMapping, Error>?
     var buildTask: Task<AnalyzedDocument, Error>?
 
     public init(_ doc: Document) {

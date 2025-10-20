@@ -343,9 +343,9 @@ struct DocumentSymbolWalker {
 }
 
 extension AST {
-  public func listDocumentSymbols(_ document: DocumentUri, logger: Logger) -> [DocumentSymbol] {
+  public func listDocumentSymbols(_ document: DocumentUri, uriMapping: UriMapping, logger: Logger) -> [DocumentSymbol] {
     logger.debug("List symbols in document: \(document)")
-    guard let translationUnit = findTranslationUnit(document) else {
+    guard let translationUnit = uriMapping.translationUnitOf(realPath: document) else {
       logger.error("Failed to locate translation unit: \(document)")
       return []
     }
