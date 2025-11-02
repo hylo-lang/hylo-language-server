@@ -1,31 +1,31 @@
-import JSONRPC
 import Foundation
-import LanguageServerProtocol
-import LanguageServer
-import StandardLibrary
 @preconcurrency import FrontEnd
+import JSONRPC
+import LanguageServer
+import LanguageServerProtocol
 import Logging
+import StandardLibrary
 
 public protocol TextDocumentProtocol {
   var uri: DocumentUri { get }
 }
 
-extension TextDocumentIdentifier : TextDocumentProtocol {}
-extension TextDocumentItem : TextDocumentProtocol {}
-extension VersionedTextDocumentIdentifier : TextDocumentProtocol {}
+extension TextDocumentIdentifier: TextDocumentProtocol {}
+extension TextDocumentItem: TextDocumentProtocol {}
+extension VersionedTextDocumentIdentifier: TextDocumentProtocol {}
 
-public enum GetDocumentContextError : Error {
+public enum GetDocumentContextError: Error {
   case invalidUri(DocumentUri)
-  case documentNotOpened(DocumentUri)
+  case documentNotOpened(AbsoluteUrl)
 }
 
 public actor DocumentProvider {
-  private var documents: [DocumentUri:DocumentContext]
+  private var documents: [AbsoluteUrl: DocumentContext]
   public let logger: Logger
   let connection: JSONRPCClientConnection
   var rootUri: String?
   var workspaceFolders: [WorkspaceFolder]
-  var stdlibCache: [URL:AST]
+  var stdlibCache: [AbsoluteUrl: Program]
 
   public let defaultStdlibFilepath: URL
 
@@ -38,7 +38,6 @@ public actor DocumentProvider {
     defaultStdlibFilepath = DocumentProvider.loadDefaultStdlibFilepath(logger: logger)
   }
 
-
   private func getServerCapabilities() -> ServerCapabilities {
     var serverCapabilities = ServerCapabilities()
     let documentSelector = DocumentFilter(pattern: "**/*.hylo")
@@ -46,25 +45,31 @@ public actor DocumentProvider {
     // NOTE: Only need to register extensions
     // The protocol defines a set of token types and modifiers but clients are allowed to extend these and announce the values they support in the corresponding client capability.
     // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_semanticTokens
-    let tokenLedgend = SemanticTokensLegend(tokenTypes: TokenType.allCases.map { $0.description }, tokenModifiers: ["private", "public"])
+    let tokenLedgend = SemanticTokensLegend(
+      tokenTypes: TokenType.allCases.map { $0.description }, tokenModifiers: ["private", "public"])
 
-    serverCapabilities.textDocumentSync = .optionA(TextDocumentSyncOptions(openClose: false, change: TextDocumentSyncKind.full, willSave: false, willSaveWaitUntil: false, save: nil))
+    serverCapabilities.textDocumentSync = .optionA(
+      TextDocumentSyncOptions(
+        openClose: false, change: TextDocumentSyncKind.full, willSave: false,
+        willSaveWaitUntil: false, save: nil))
     serverCapabilities.textDocumentSync = .optionB(TextDocumentSyncKind.full)
     serverCapabilities.definitionProvider = .optionA(true)
     // s.typeDefinitionProvider = .optionA(true)
     serverCapabilities.documentSymbolProvider = .optionA(true)
     // s.semanticTokensProvider = .optionA(SemanticTokensOptions(legend: tokenLedgend, range: .optionA(true), full: .optionA(true)))
-    serverCapabilities.semanticTokensProvider = .optionB(SemanticTokensRegistrationOptions(documentSelector: [documentSelector], legend: tokenLedgend, range: .optionA(false), full: .optionA(true)))
-    serverCapabilities.diagnosticProvider = .optionA(DiagnosticOptions(interFileDependencies: false, workspaceDiagnostics: false))
+    serverCapabilities.semanticTokensProvider = .optionB(
+      SemanticTokensRegistrationOptions(
+        documentSelector: [documentSelector], legend: tokenLedgend, range: .optionA(false),
+        full: .optionA(true)))
+    serverCapabilities.diagnosticProvider = .optionA(
+      DiagnosticOptions(interFileDependencies: false, workspaceDiagnostics: false))
 
     return serverCapabilities
   }
 
-
-  public func initialize(_ params: InitializeParams) async -> Result<InitializationResponse, AnyJSONRPCResponseError> {
-
-    // let fm = FileManager.default
-
+  public func initialize(_ params: InitializeParams) async throws(AnyJSONRPCResponseError)
+    -> InitializationResponse
+  {
     if let workspaceFolders = params.workspaceFolders {
       self.workspaceFolders = workspaceFolders
     }
@@ -72,12 +77,13 @@ public actor DocumentProvider {
     // From spec: If both `rootPath` and `rootUri` are set `rootUri` wins.
     if let rootUri = params.rootUri {
       self.rootUri = rootUri
-    }
-    else if let rootPath = params.rootPath {
+    } else if let rootPath = params.rootPath {
       self.rootUri = rootPath
     }
 
-    logger.info("Initialize in working directory: \(FileManager.default.currentDirectoryPath), with rootUri: \(rootUri ?? "nil"), workspace folders: \(workspaceFolders)")
+    logger.info(
+      "Initialize in working directory: \(FileManager.default.currentDirectoryPath), with rootUri: \(rootUri ?? "nil"), workspace folders: \(workspaceFolders)"
+    )
 
     // if let rootUri = params.rootUri {
     //   // guard let path = URL(string: rootUri) else {
@@ -106,7 +112,7 @@ public actor DocumentProvider {
     //   logger.debug("init without rootUri")
     // }
     let serverInfo = ServerInfo(name: "hylo", version: "0.1.0")
-    return .success(InitializationResponse(capabilities: getServerCapabilities(), serverInfo: serverInfo))
+    return InitializationResponse(capabilities: getServerCapabilities(), serverInfo: serverInfo)
   }
 
   public func workspaceDidChangeWorkspaceFolders(_ params: DidChangeWorkspaceFoldersParams) async {
@@ -120,9 +126,8 @@ public actor DocumentProvider {
     if let path = ProcessInfo.processInfo.environment["HYLO_STDLIB_PATH"] {
       logger.info("Hylo stdlib filepath from HYLO_STDLIB_PATH: \(path)")
       return URL(fileURLWithPath: path)
-    }
-    else {
-      return StandardLibrary.hostedLibrarySourceRoot
+    } else {
+      return StandardLibrary.standardLibrarySources
     }
   }
 
@@ -155,14 +160,14 @@ public actor DocumentProvider {
     return (defaultStdlibFilepath, false)
   }
 
-  func getRelativePathInWorkspace(_ uri: DocumentUri, relativeTo workspace: DocumentUri) -> String? {
+  func getRelativePathInWorkspace(_ uri: DocumentUri, relativeTo workspace: DocumentUri) -> String?
+  {
     if uri.starts(with: workspace) {
       let start = uri.index(uri.startIndex, offsetBy: workspace.count)
       let tail = uri[start...]
       let relPath = tail.trimmingPrefix("/")
       return String(relPath)
-    }
-    else {
+    } else {
       return nil
     }
   }
@@ -171,7 +176,6 @@ public actor DocumentProvider {
     let workspace: DocumentUri
     let relativePath: String
   }
-
 
   func getWorkspaceFile(_ uri: DocumentUri) -> WorkspaceFile? {
     var wsRoots = workspaceFolders.map { $0.uri }
@@ -201,342 +205,280 @@ public actor DocumentProvider {
     return url.path
   }
 
-  private func buildStdlibAST(_ stdlibPath: URL, uriMap: inout UriMapping) throws -> AST {
-    let sourceFiles = try sourceFiles(in: [stdlibPath]).map { file in
+  private func buildStdlibProgram(_ stdlibPath: AbsoluteUrl, uriMap: inout UriMapping) throws
+    -> Program
+  {
+    var program = Program()
 
-      // We need to replace stdlib files from in memory buffers if they have unsaved changes
-      if let context = documents[file.url.absoluteString] {
-        logger.debug("Replace content for stdlib source file: \(file.url)")
-        return SourceFile(synthesizedText: context.doc.text)
-      }
-      else {
-        return file
+    var sourcesUrls: [URL] = []
+    SourceFile.forEachURL(in: stdlibPath.url) { sourcesUrls.append($0) }
+
+    let moduleId = program.demandModule(.standardLibrary)
+    try modify(&program[moduleId]) { (m: inout Module) in
+      for url in sourcesUrls {
+        let absoluteUrl = AbsoluteUrl(url)
+
+        let sourceId: SourceFile.ID
+        if let inMemorySource = documents[AbsoluteUrl(url)]?.doc.text {
+          sourceId =
+            m.addSource(SourceFile(representing: url, inMemoryContents: inMemorySource)).identity
+        } else {
+          sourceId = m.addSource(try SourceFile(contentsOf: url)).identity
+        }
+        uriMap.insert(realPath: absoluteUrl, sourceFile: sourceId)
       }
     }
-
-    // logger.info("Build stdlib with files: \(sourceFiles)")
-    let ast = try AST(sourceFiles: sourceFiles)
-    ast[ast.modules.first!].sources.zip
-
   }
 
   // We cache stdlib AST, and since AST is struct the cache values are implicitly immutable (thanks MVS!)
-  private func getStdlibAST(_ stdlibPath: URL, uriMap: inout UriMapping) throws -> AST {
+  private func getStdlibAST(_ stdlibPath: AbsoluteUrl, uriMap: inout UriMapping) throws -> Program {
     if let ast = stdlibCache[stdlibPath] {
       return ast
-    }
-    else {
-      let ast = try buildStdlibAST(stdlibPath)
+    } else {
+      let ast = try buildStdlibProgram(stdlibPath, uriMap: &uriMap)
       stdlibCache[stdlibPath] = ast
       return ast
     }
   }
 
-  private func buildProgram(uri: DocumentUri, extendedAST: ASTWithUriMapping) throws -> AnalyzedDocument {
-    // let inputs = files.map { URL.init(fileURLWithPath: $0)}
-    let compileSequentially = true
-
-    var diagnostics = DiagnosticSet()
-    logger.warning("Build program...")
-
-    let t0 = Date()
-    let p = try TypedProgram(
-      annotating: ScopedProgram(extendedAST.ast), inParallel: !compileSequentially,
-      reportingDiagnosticsTo: &diagnostics
-    )
-
-    let typeCheckTime = Date().timeIntervalSince(t0)
-    logger.debug("Program is built: \(uri)")
-
-    let profiling = DocumentProfiling(stdlibParsing: TimeInterval(), ASTParsing: TimeInterval(), typeChecking: typeCheckTime)
-
-    return AnalyzedDocument(uri: uri, ast: extendedAST.ast, uriMapping: extendedAST.uriMapping, program: p, profiling: profiling)
-  }
-
   // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#uri
   // > Over the wire, it will still be transferred as a string, but this guarantees that the contents of that string can be parsed as a valid URI.
-  public static func validateDocumentUri(_ uri: DocumentUri) -> DocumentUri? {
-    if let url = URL(string: uri) {
-
-      // Make sure the URL is a fully qualified path with scheme
-      if url.scheme != nil {
-        return uri
-      }
-    }
-
-    return nil
-  }
-
-  public static func validateDocumentUrl(_ uri: DocumentUri) -> URL? {
-    if let url = URL(string: uri) {
-
-      // Make sure the URL is a fully qualified path with scheme
-      if url.scheme != nil {
-        return url
-      }
-    }
-
-    return nil
+  public static func validateDocumentUrl(_ uri: DocumentUri) -> AbsoluteUrl? {
+    guard let url = URL(string: uri) else { return nil }
+    // Make sure the URL is a fully qualified path with scheme
+    guard url.scheme != nil else { return nil }
+    return AbsoluteUrl(url)
   }
 
   public func updateDocument(_ params: DidChangeTextDocumentParams) {
-    let uri = params.textDocument.uri
-    guard let context = documents[uri] else {
-      logger.error("Could not find opened document: \(uri)")
-      return
-    }
+    let uri = AbsoluteUrl(fromPath: params.textDocument.uri)
 
-    do {
-      let updatedDoc = try context.doc.withAppliedChanges(params.contentChanges, nextVersion: params.textDocument.version)
-      context.doc = updatedDoc
-      context.astTask = nil
-      context.buildTask = nil
-      logger.debug("Updated changed document: \(uri), version: \(updatedDoc.version ?? -1)")
+    modify(&documents[uri]) { (contextOpt: inout DocumentContext?) in
+      guard var context = contextOpt else {  // this may do an unnecessary copy, now we have 2 mutable references.
+        logger.error("Could not find opened document: \(uri)")
+        return
+      }
+
+      try context.applyChanges(params.contentChanges, version: params.textDocument.version)
+      contextOpt = context
+
+      logger.debug("Updated changed document: \(uri), version: \(context.doc.version ?? -1)")
 
       // NOTE: We also need to invalidate cached stdlib AST if the edited document is part of the stdlib
-      let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
+      let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)  // todo
       if isStdlibDocument {
         stdlibCache[stdlibPath] = nil
       }
-    }
-    catch {
-      logger.error("Failed to apply document changes")
+
     }
   }
 
   public func registerDocument(_ params: DidOpenTextDocumentParams) {
     let doc = Document(textDocument: params.textDocument)
-    let context = DocumentContext(doc)
+    var program = Program()  // TODO build program
+
+    let context = DocumentContext(doc, program: program)
     // requestDocument(doc)
     logger.debug("Register opened document: \(doc.uri)")
     documents[doc.uri] = context
   }
 
   public func unregisterDocument(_ params: DidCloseTextDocumentParams) {
-    let uri = params.textDocument.uri
-    documents[uri] = nil
+    if let validUrl = URL(string: params.textDocument.uri) {
+      documents.removeValue(forKey: AbsoluteUrl(validUrl))
+    }
   }
 
-
-  func implicitlyRegisterDocument(_ uri: DocumentUri)-> DocumentContext? {
-    guard let url = URL.init(string: uri) else {
-      logger.warning("Invalid document URI in implicitlyRegisterDocument: '\(uri)'")
-      return nil
+  func implicitlyRegisterDocument(url: AbsoluteUrl) throws(GetDocumentContextError)
+    -> DocumentContext
+  {
+    guard let text = try? String(contentsOf: url.url, encoding: .utf8) else {
+      throw GetDocumentContextError.documentNotOpened(url)
     }
 
-    guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-      logger.warning("Could not read document contents in implicitlyRegisterDocument: '\(uri)'")
-      return nil
-    }
-
-    let doc = Document(uri: uri, version: 0, text: text)
-    return DocumentContext(doc)
+    let document = Document(uri: url, version: 0, text: text)
+    let program = Program()  // TODO build program
+    return DocumentContext(document, program: program)
   }
 
-
-  func getDocumentContext(_ textDocument: TextDocumentProtocol) -> Result<DocumentContext, GetDocumentContextError> {
-    getDocumentContext(textDocument.uri)
+  func getDocumentContext(uri: DocumentUri) throws(GetDocumentContextError) -> DocumentContext {
+    guard let url = DocumentProvider.validateDocumentUrl(uri) else {
+      throw GetDocumentContextError.invalidUri(uri)
+    }
+    return try getDocumentContext(url: url)
   }
 
-  func getDocumentContext(_ uri: DocumentUri) -> Result<DocumentContext, GetDocumentContextError> {
-    guard let uri = DocumentProvider.validateDocumentUri(uri) else {
-      return .failure(.invalidUri(uri))
-    }
-
-    if let context = documents[uri] {
-      return .success(context)
+  func getDocumentContext(url: AbsoluteUrl) throws(GetDocumentContextError) -> DocumentContext {
+    if let context = documents[url] {
+      return context
     }
 
     // NOTE: We can not assume document is opened, VSCode apparently does not guarantee ordering
     // Specifically `textDocument/diagnostic` -> `textDocument/didOpen` has been observed
-
-    // return .failure(.documentNotOpened(uri))
-
-    logger.warning("Implicitly registering unopened document: \(uri)")
-    guard let context = implicitlyRegisterDocument(uri) else {
-      return .failure(.invalidUri(uri))
-    }
-    return .success(context)
+    logger.warning("Implicitly registering unopened document: \(url)")
+    return try implicitlyRegisterDocument(url: url)
   }
 
-  public func getAST(_ textDocument: TextDocumentProtocol) async -> Result<ASTWithUriMapping, DocumentError> {
-    switch getDocumentContext(textDocument) {
-      case let .failure(error):
-        return .failure(.other(error))
-      case let .success(context):
-        return await getAST(context)
-    }
-  }
-
-  public func getAnalyzedDocument(_ textDocument: TextDocumentProtocol) async -> Result<AnalyzedDocument, DocumentError> {
-    switch getDocumentContext(textDocument) {
-      case let .failure(error):
-        return .failure(.other(error))
-      case let .success(context):
-        return await getAnalyzedDocument(context)
-    }
-  }
-
-  private func createASTTask(_ context: DocumentContext) -> Task<ASTWithUriMapping, Error> {
-    if context.astTask == nil {
-      let uri = context.uri
-      let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
-
-
-      context.astTask = Task {
-        var diagnostics = DiagnosticSet()
-        logger.debug("Build ast for document: \(uri), with stdlibPath: \(stdlibPath)")
-
-        var uriMapping = UriMapping()
-        
-        var ast = try getStdlibAST(stdlibPath, uriMap: &uriMapping)
-        if isStdlibDocument {
-          return (ast, uriMapping)
-        }
-
-
-        let productName = "lsp-build"
-        let moduleId = try ast.loadModule(productName, parsing: [SourceFile(synthesizedText: context.doc.text)], withBuiltinModuleAccess: false, reportingDiagnosticsTo: &diagnostics)
-
-        uriMapping[uri] = ast[moduleId].sources.first!
-
-        return (ast, uriMapping)
-      }
-    }
-
-    return context.astTask!
-  }
-
-  private func getAST(_ context: DocumentContext) async -> Result<ASTWithUriMapping, DocumentError> {
+  public func getParsedProgram(url: DocumentUri) async throws(DocumentError)
+    -> Program
+  {
+    let context: DocumentContext
     do {
-      let astTask = createASTTask(context)
-      let ast = try await astTask.value
-      return .success(ast)
+      context = try getDocumentContext(uri: url)
+    } catch {
+      throw DocumentError.other(error)
     }
-    catch let d as DiagnosticSet {
-      // NOTE: We want to be able to use partial AST, need to update Hylo call to not throw
-      return .failure(.diagnostics(d))
-    }
-    catch {
-      return .failure(.other(error))
-    }
+    return context.program
   }
 
-  private func getAnalyzedDocument(_ context: DocumentContext) async -> Result<AnalyzedDocument, DocumentError> {
-    if context.buildTask == nil {
-      context.buildTask = Task {
-        let astTask = createASTTask(context)
-        let ast = try await astTask.value
-        return try buildProgram(uri: context.uri, extendedAST: ast)
-      }
+  public func getAnalyzedDocument(_ textDocument: TextDocumentProtocol) async throws(DocumentError)
+    -> AnalyzedDocument
+  {
+    let context: DocumentContext
+    do { context = try getDocumentContext(uri: textDocument.uri) } catch {
+      throw DocumentError.other(error)
+    } catch {
+      throw .other(error)
     }
-
-    do {
-      let doc = try await context.buildTask!.value
-      return .success(doc)
-    }
-    catch let d as DiagnosticSet {
-      return .failure(.diagnostics(d))
-    }
-    catch {
-      return .failure(.other(error))
-    }
+    return AnalyzedDocument(
+      url: context.url,
+      program: context.program)
   }
 
+  // private func createASTTask(_ context: DocumentContext) -> Task<ProgramWithUriMapping, Error> {
+  //   if context.astTask == nil {
+  //     let uri = context.uri
+  //     let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
 
-#if false
-  // NOTE: We currently write cached results inside the workspace
-  // These should perhaps be stored outside workspace, but then it is more important
-  // to implement some kind of garbage collection for out-dated workspace cache entries
-  private func getResultCacheFilepath(_ wsFile: WorkspaceFile) -> String {
-    NSString.path(withComponents: [uriAsFilepath(wsFile.workspace)!, ".hylo-lsp", "cache", wsFile.relativePath + ".json"])
-  }
+  //     context.astTask = Task {
+  //       var diagnostics = DiagnosticSet()
+  //       logger.debug("Build ast for document: \(uri), with stdlibPath: \(stdlibPath)")
 
-  private func loadCachedDocumentResult(_ uri: DocumentUri) -> CachedDocumentResult? {
-    do {
-      guard let filepath = uriAsFilepath(uri) else {
-        return nil
-      }
+  //       var uriMapping = UriMapping()
 
-      guard let wsFile = getWorkspaceFile(uri) else {
-        logger.debug("Cached LSP result did not locate relative workspace path: \(uri)")
-        return nil
-      }
+  //       var ast = try getStdlibAST(stdlibPath, uriMap: &uriMapping)
+  //       if isStdlibDocument {
+  //         return (ast, uriMapping)
+  //       }
 
-      let fm = FileManager.default
+  //       let productName = "lsp-build"
+  //       let moduleId = try ast.loadModule(
+  //         productName, parsing: [SourceFile(synthesizedText: context.doc.text)],
+  //         withBuiltinModuleAccess: false, reportingDiagnosticsTo: &diagnostics)
 
-      let attr = try fm.attributesOfItem(atPath: filepath)
-      guard let modificationDate = attr[FileAttributeKey.modificationDate] as? Date else {
-        return nil
-      }
+  //       uriMapping[uri] = ast[moduleId].sources.first!
 
-      let cachedDocumentResultPath = getResultCacheFilepath(wsFile)
-      let url = URL(fileURLWithPath: cachedDocumentResultPath)
+  //       return (ast, uriMapping)
+  //     }
+  //   }
 
-      guard fm.fileExists(atPath: cachedDocumentResultPath) else {
-        logger.debug("Cached LSP result does not exist: \(cachedDocumentResultPath)")
-        return nil
-      }
+  //   return context.astTask!
+  // }
 
-      let cachedDocumentAttr = try fm.attributesOfItem(atPath: cachedDocumentResultPath)
-      guard let cachedDocumentModificationDate = cachedDocumentAttr[FileAttributeKey.modificationDate] as? Date else {
-        return nil
-      }
+  // #if false
+  //   // NOTE: We currently write cached results inside the workspace
+  //   // These should perhaps be stored outside workspace, but then it is more important
+  //   // to implement some kind of garbage collection for out-dated workspace cache entries
+  //   private func getResultCacheFilepath(_ wsFile: WorkspaceFile) -> String {
+  //     NSString.path(withComponents: [
+  //       uriAsFilepath(wsFile.workspace)!, ".hylo-lsp", "cache", wsFile.relativePath + ".json",
+  //     ])
+  //   }
 
-      guard cachedDocumentModificationDate > modificationDate else {
-        logger.debug("Cached LSP result is out-of-date: \(cachedDocumentResultPath), source code date: \(modificationDate), cache file date: \(cachedDocumentModificationDate)")
-        return nil
-      }
+  //   private func loadCachedDocumentResult(_ uri: DocumentUri) -> CachedDocumentResult? {
+  //     do {
+  //       guard let filepath = uriAsFilepath(uri) else {
+  //         return nil
+  //       }
 
-      logger.debug("Found cached LSP result file: \(cachedDocumentResultPath)")
-      let jsonData = try Data(contentsOf: url)
-      return try JSONDecoder().decode(CachedDocumentResult.self, from: jsonData)
-    }
-    catch {
-      logger.error("Failed to read cached result: \(error)")
-      return nil
-    }
-  }
+  //       guard let wsFile = getWorkspaceFile(uri) else {
+  //         logger.debug("Cached LSP result did not locate relative workspace path: \(uri)")
+  //         return nil
+  //       }
 
-  public func writeCachedDocumentResult(_ doc: AnalyzedDocument, writer: (inout CachedDocumentResult) -> Void) async {
-    guard let wsFile = getWorkspaceFile(doc.uri) else {
-      logger.warning("Cached LSP result did not locate relative workspace path: \(doc.uri)")
-      return
-    }
+  //       let fm = FileManager.default
 
-    let t0 = Date()
+  //       let attr = try fm.attributesOfItem(atPath: filepath)
+  //       guard let modificationDate = attr[FileAttributeKey.modificationDate] as? Date else {
+  //         return nil
+  //       }
 
-    let cachedDocumentResultPath = getResultCacheFilepath(wsFile)
-    let url = URL(fileURLWithPath: cachedDocumentResultPath)
-    let fm = FileManager.default
-    // var cachedDocument = CachedDocumentResult(uri: doc.uri)
-    var cachedDocument = if let doc = loadCachedDocumentResult(doc.uri) { doc } else { CachedDocumentResult(uri: doc.uri) }
+  //       let cachedDocumentResultPath = getResultCacheFilepath(wsFile)
+  //       let url = URL(fileURLWithPath: cachedDocumentResultPath)
 
-    do {
+  //       guard fm.fileExists(atPath: cachedDocumentResultPath) else {
+  //         logger.debug("Cached LSP result does not exist: \(cachedDocumentResultPath)")
+  //         return nil
+  //       }
 
-      writer(&cachedDocument)
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = .prettyPrinted
-      let jsonData = try encoder.encode(cachedDocument)
-      let dirUrl = url.deletingLastPathComponent()
+  //       let cachedDocumentAttr = try fm.attributesOfItem(atPath: cachedDocumentResultPath)
+  //       guard
+  //         let cachedDocumentModificationDate = cachedDocumentAttr[FileAttributeKey.modificationDate]
+  //           as? Date
+  //       else {
+  //         return nil
+  //       }
 
-      if !fm.fileExists(atPath: dirUrl.path) {
-        try fm.createDirectory(
-          at: dirUrl,
-          withIntermediateDirectories: true,
-          attributes: nil
-        )
-      }
+  //       guard cachedDocumentModificationDate > modificationDate else {
+  //         logger.debug(
+  //           "Cached LSP result is out-of-date: \(cachedDocumentResultPath), source code date: \(modificationDate), cache file date: \(cachedDocumentModificationDate)"
+  //         )
+  //         return nil
+  //       }
 
-      try jsonData.write(to: url)
-      let t = Date().timeIntervalSince(t0)
-      logger.debug("Wrote result cache: \(cachedDocumentResultPath), cache operation took \(t.milliseconds)ms")
-    }
-    catch {
-      logger.error("Failed to write cached result: \(error)")
-    }
+  //       logger.debug("Found cached LSP result file: \(cachedDocumentResultPath)")
+  //       let jsonData = try Data(contentsOf: url)
+  //       return try JSONDecoder().decode(CachedDocumentResult.self, from: jsonData)
+  //     } catch {
+  //       logger.error("Failed to read cached result: \(error)")
+  //       return nil
+  //     }
+  //   }
 
-  }
-#endif
+  //   public func writeCachedDocumentResult(
+  //     _ doc: AnalyzedDocument, writer: (inout CachedDocumentResult) -> Void
+  //   ) async {
+  //     guard let wsFile = getWorkspaceFile(doc.uri) else {
+  //       logger.warning("Cached LSP result did not locate relative workspace path: \(doc.uri)")
+  //       return
+  //     }
+
+  //     let t0 = Date()
+
+  //     let cachedDocumentResultPath = getResultCacheFilepath(wsFile)
+  //     let url = URL(fileURLWithPath: cachedDocumentResultPath)
+  //     let fm = FileManager.default
+  //     // var cachedDocument = CachedDocumentResult(uri: doc.uri)
+  //     var cachedDocument =
+  //       if let doc = loadCachedDocumentResult(doc.uri) { doc } else {
+  //         CachedDocumentResult(uri: doc.uri)
+  //       }
+
+  //     do {
+
+  //       writer(&cachedDocument)
+  //       let encoder = JSONEncoder()
+  //       encoder.outputFormatting = .prettyPrinted
+  //       let jsonData = try encoder.encode(cachedDocument)
+  //       let dirUrl = url.deletingLastPathComponent()
+
+  //       if !fm.fileExists(atPath: dirUrl.path) {
+  //         try fm.createDirectory(
+  //           at: dirUrl,
+  //           withIntermediateDirectories: true,
+  //           attributes: nil
+  //         )
+  //       }
+
+  //       try jsonData.write(to: url)
+  //       let t = Date().timeIntervalSince(t0)
+  //       logger.debug(
+  //         "Wrote result cache: \(cachedDocumentResultPath), cache operation took \(t.milliseconds)ms"
+  //       )
+  //     } catch {
+  //       logger.error("Failed to write cached result: \(error)")
+  //     }
+
+  //   }
+  // #endif
 }
-

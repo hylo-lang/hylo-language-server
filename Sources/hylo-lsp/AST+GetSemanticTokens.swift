@@ -6,14 +6,14 @@ import Logging
 struct SemanticTokensWalker {
   public let document: DocumentUri
   public let translationUnit: TranslationUnit
-  public let ast: AST
+  public let program: Program
   private let logger: Logger
   private(set) var tokens: [SemanticToken]
 
-  public init(document: DocumentUri, translationUnit: TranslationUnit, ast: AST, logger: Logger) {
+  public init(document: DocumentUri, translationUnit: SourceFile, program: Program, logger: Logger) {
     self.document = document
     self.translationUnit = translationUnit
-    self.ast = ast
+    self.program = program
     self.tokens = []
     self.logger = logger
   }
@@ -701,7 +701,7 @@ struct SemanticTokensWalker {
   }
 }
 
-extension AST {
+extension Program {
 
   public func getSemanticTokens(_ document: DocumentUri, uriMapping: UriMapping, logger: Logger) -> [SemanticToken] {
     logger.debug("List semantic tokens in document: \(document)")
@@ -711,7 +711,7 @@ extension AST {
       return []
     }
 
-    var walker = SemanticTokensWalker(document: document, translationUnit: self[translationUnit], ast: self, logger: logger)
+    var walker = SemanticTokensWalker(document: document, translationUnit: self[translationUnit.module].sou[translationUnit.offset], ast: self, logger: logger)
     return walker.walk()
   }
 }

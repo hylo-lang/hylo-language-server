@@ -15,9 +15,9 @@ public extension LanguageServerProtocol.DiagnosticSeverity {
 }
 
 public extension LanguageServerProtocol.Diagnostic {
-  init(_ diagnostic: FrontEnd.Diagnostic, uriMapping: UriMapping, ast: AST) {
+  init(_ diagnostic: FrontEnd.Diagnostic, uriMapping: UriMapping, program: Program) {
     let relatedInformation = diagnostic.notes.map { note in
-      DiagnosticRelatedInformation(location: Location(note.site, uriMapping: uriMapping, ast: ast), message: note.message)
+      DiagnosticRelatedInformation(location: Location(note.site), message: note.message)
     }
 
     self.init(
@@ -31,9 +31,9 @@ public extension LanguageServerProtocol.Diagnostic {
     )
   }
 
-  init(withoutRemappingPath diagnostic: FrontEnd.Diagnostic) {
+  init(_ diagnostic: FrontEnd.Diagnostic) {
     let relatedInformation = diagnostic.notes.map { note in
-      DiagnosticRelatedInformation(location: Location(withoutRemappingPath: note.site), message: note.message)
+      DiagnosticRelatedInformation(location: Location(note.site), message: note.message)
     }
 
     self.init(

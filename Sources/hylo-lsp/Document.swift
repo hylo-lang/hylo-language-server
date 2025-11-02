@@ -1,161 +1,151 @@
-import LanguageServerProtocol
-@preconcurrency import FrontEnd
 import Foundation
-
+import FrontEnd
+import LanguageServerProtocol
 
 public struct Document {
-  public let uri: DocumentUri
-  public let version: Int?
-  public let text: String
+  public let uri: AbsoluteUrl
+  public var version: Int?
+  public var text: String
 
-  public init(uri: DocumentUri, version: Int?, text: String) {
+  public init(uri: AbsoluteUrl, version: Int?, text: String) {
     self.uri = uri
     self.version = version
     self.text = text
   }
 
+  public mutating func applyChanges(_ changes: [TextDocumentContentChangeEvent], version: Int?)
+    throws
+  {
+    for c in changes {
+      try applyChange(c, on: &self.text)
+    }
+    self.version = version
+  }
+}
+
+extension Document {
   public init(textDocument: TextDocumentItem) {
-    uri = textDocument.uri
+    uri = AbsoluteUrl(fromPath: textDocument.uri)
     version = textDocument.version
     text = textDocument.text
   }
 }
 
-struct InvalidDocumentChangeRange : Error {
+struct InvalidDocumentChangeRange: Error {
   public let range: LSPRange
 }
 
-extension Document {
+/// Translates a (line, column) position in a text document to a String.Index.
+private func positionToStringIndex(_ position: Position, in text: String) -> String.Index? {
+  positionToStringIndex(position, in: text, startIndex: text.startIndex, startPos: Position.zero)
+}
 
-  public func withAppliedChanges(_ changes: [TextDocumentContentChangeEvent], nextVersion: Int?) throws -> Document {
-    var text = self.text
-    for c in changes {
-      try Document.applyChange(c, on: &text)
-    }
+private func positionToStringIndex(
+  _ position: Position, in text: String, startIndex: String.Index, startPos: Position
+) -> String.Index? {
 
-    return Document(uri: uri, version: nextVersion, text: text)
-  }
+  let lineStart = text.index(startIndex, offsetBy: -startPos.character)
 
-  private static func findPosition(_ position: Position, in text: String) -> String.Index? {
-    findPosition(position, in: text, startIndex: text.startIndex, startPos: Position.zero)
-  }
-
-  private static func findPosition(_ position: Position, in text: String, startIndex: String.Index, startPos: Position) -> String.Index? {
-
-    let lineStart = text.index(startIndex, offsetBy: -startPos.character)
-
-    var it = text[lineStart...]
-    for _ in startPos.line..<position.line {
-      guard let i = it.firstIndex(of: "\n") else {
-        return nil
-      }
-
-      it = it[it.index(after: i)...]
-    }
-
-    return text.index(it.startIndex, offsetBy: position.character)
-  }
-
-  private static func findRange(_ range: LSPRange, in text: String) -> Range<String.Index>? {
-    guard let startIndex = findPosition(range.start, in: text) else {
+  var it = text[lineStart...]
+  for _ in startPos.line..<position.line {
+    guard let i = it.firstIndex(of: "\n") else {
       return nil
     }
 
-    guard let endIndex = findPosition(range.end, in: text, startIndex: startIndex, startPos: range.start) else {
-      return nil
-    }
-
-    return startIndex..<endIndex
+    it = it[it.index(after: i)...]
   }
 
-  private static func applyChange(_ change: TextDocumentContentChangeEvent, on text: inout String) throws {
-    if let range = change.range {
-      guard let range = findRange(range, in: text) else {
-        throw InvalidDocumentChangeRange(range: range)
-      }
+  return text.index(it.startIndex, offsetBy: position.character)
+}
 
-      text.replaceSubrange(range, with: change.text)
+/// Finds the String range corresponding to the given LSP range.
+private func findRange(_ range: LSPRange, in text: String) -> Range<String.Index>? {
+  guard let startIndex = positionToStringIndex(range.start, in: text) else {
+    return nil
+  }
+
+  guard
+    let endIndex = positionToStringIndex(
+      range.end, in: text, startIndex: startIndex, startPos: range.start)
+  else {
+    return nil
+  }
+
+  return startIndex..<endIndex
+}
+
+private func applyChange(_ change: TextDocumentContentChangeEvent, on text: inout String)
+  throws
+{
+  if let range = change.range {
+    guard let range = findRange(range, in: text) else {
+      throw InvalidDocumentChangeRange(range: range)
     }
-    else {
-      text = change.text
-    }
+
+    text.replaceSubrange(range, with: change.text)
+  } else {
+    text = change.text
   }
 }
 
-public struct DocumentProfiling : Sendable {
-  public let stdlibParsing: TimeInterval
-  public let ASTParsing: TimeInterval
-  public let typeChecking: TimeInterval
-}
+public struct AnalyzedDocument: Sendable {
+  public let url: AbsoluteUrl
+  public let program: Program
 
-public struct AnalyzedDocument : Sendable {
-  public let uri: DocumentUri
-  public let program: TypedProgram
-  public let ast: AST
-  public let uriMapping: [DocumentUri: TranslationUnit.ID]
-  public let profiling: DocumentProfiling
-
-  public init(uri: DocumentUri, ast: AST, uriMapping: [DocumentUri: TranslationUnit.ID], program: TypedProgram, profiling: DocumentProfiling) {
-    self.uri = uri
-    self.ast = ast
-    self.uriMapping = uriMapping
+  public init(
+    url: AbsoluteUrl, program: Program
+  ) {
+    self.url = url
     self.program = program
-    self.profiling = profiling
   }
 }
 
+/// A two-way mapping between real file paths and AST source file IDs.
 public struct UriMapping: Sendable {
-  private var translationUnitsByRealPath: [DocumentUri: TranslationUnit.ID] = [:]
-  private var realPathByAstUri: [String: String] = [:]
-  
-  func realPathOf(astUri: String) -> DocumentUri? {
-    return realPathByAstUri[astUri]
+  private var translationUnitsByRealPath: [AbsoluteUrl: SourceFile.ID] = [:]
+  private var realPathByAstUri: [SourceFile.ID: AbsoluteUrl] = [:]
+
+  func realPathOf(sourceFile: SourceFile.ID) -> AbsoluteUrl? {
+    return realPathByAstUri[sourceFile]
   }
 
-  func synthesizedUriOf(realUri: String, ast: AST) -> String? {
-    guard let tuID = translationUnitsByRealPath[realUri] else {
-      return nil
-    }
-    
-    return ast[tuID].site.file.url.absoluteString
-  }
-
-  func translationUnitOf(realPath: String) -> TranslationUnit.ID? {
+  func translationUnitOf(realPath: AbsoluteUrl) -> SourceFile.ID? {
     return translationUnitsByRealPath[realPath]
   }
 
-  func translationUnitOf(astUri: String) -> TranslationUnit.ID? {
-    guard let realPath = realPathByAstUri[astUri] else {
-      return nil
-    }
-    
-    return translationUnitsByRealPath[realPath]
-  }
-
-  mutating func insert(realPath: String, tuID: TranslationUnit.ID, astUri: String) {
-    translationUnitsByRealPath[realPath] = tuID
-    realPathByAstUri[astUri] = realPath
+  mutating func insert(realPath: AbsoluteUrl, sourceFile: SourceFile.ID) {
+    translationUnitsByRealPath[realPath] = sourceFile
+    realPathByAstUri[sourceFile] = realPath
   }
 }
 
-public typealias ASTWithUriMapping = (ast: AST, uriMapping: UriMapping)
+/// Holds a valid document and a fully typed program.
+///
+/// May be updated when the document changes.
+struct DocumentContext {
+  public private(set) var doc: Document
+  public private(set) var program: Program
 
-extension DocumentProvider {
-  // This should really be a struct since we are building for Hylo
-  class DocumentContext {
-    public var doc: Document
-    public var uri: DocumentUri { doc.uri }
-    var astTask: Task<ASTWithUriMapping, Error>?
-    var buildTask: Task<AnalyzedDocument, Error>?
+  public var url: AbsoluteUrl { doc.uri }
 
-    public init(_ doc: Document) {
-      self.doc = doc
-    }
+  /// Creates a new document context with a fully typed program.
+  public init(_ doc: Document, program: Program) {
+    self.doc = doc
+    self.program = program
   }
+
+  public mutating func applyChanges(_ changes: [TextDocumentContentChangeEvent], version: Int?)
+    throws
+  {
+    try doc.applyChanges(changes, version: version)
+    doc.version = version
+
+    // todo re-typecheck here
+  }
+
 }
 
-
-public enum DocumentError : Error {
+public enum DocumentError: Error {
   case diagnostics(DiagnosticSet)
   case other(Error)
 }

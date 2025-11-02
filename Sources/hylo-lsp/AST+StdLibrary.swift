@@ -1,7 +1,7 @@
 import FrontEnd
 import Foundation
 
-extension AST {
+extension Program {
   internal init(sourceFiles: [SourceFile]) throws {
     self.init(ConditionalCompilationFactors())
     var diagnostics = DiagnosticSet()

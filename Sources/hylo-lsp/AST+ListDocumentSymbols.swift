@@ -342,7 +342,7 @@ struct DocumentSymbolWalker {
 
 }
 
-extension AST {
+extension Program {
   public func listDocumentSymbols(_ document: DocumentUri, uriMapping: UriMapping, logger: Logger) -> [DocumentSymbol] {
     logger.debug("List symbols in document: \(document)")
     guard let translationUnit = uriMapping.translationUnitOf(realPath: document) else {

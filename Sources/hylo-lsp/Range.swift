@@ -1,29 +1,43 @@
 import FrontEnd
 import LanguageServerProtocol
+import Foundation
 
-extension LanguageServerProtocol.Location {
-  public init(_ range: SourceRange, uriMapping: UriMapping, ast: AST) {
-    let originalPath: String
-    let astUri = range.file.url.absoluteString
+public struct AbsoluteUrl : Sendable, Hashable, Equatable{
+  let url: URL
 
-    if let realPath = uriMapping.realPathOf(astUri: astUri) {
-      originalPath = realPath
-    } else {
-      print("Didn't find mapping for uri: '\(astUri)'")
-      originalPath = range.file.url.path
-    }
-
-    self.init(uri: originalPath, range: LSPRange(range))
+  init(fromPath path: String) {
+    precondition(!path.contains("://"))
+    self.url = URL(string: "file:///\(path.replacingOccurrences(of: "\\", with: "/"))")!
   }
 
-  /// Doesn't remap synthesized URIs to original paths
-  public init(withoutRemappingPath range: SourceRange) {
-    self.init(uri: range.file.url.path, range: LSPRange(range))
+  init(_ url: URL) {
+    self.url = url.absoluteURL
+  }
+
+  var nativePath: String {
+    url.path
+  }
+}
+
+extension FileName {
+  public var absoluteUrl: AbsoluteUrl? {
+    switch self {
+    case .local(let url), .localInMemory(let url):
+      return AbsoluteUrl(url)
+    case .virtual:
+      return nil
+    }
+  }
+}
+
+extension LanguageServerProtocol.Location {
+  public init(_ range: SourceSpan) {
+    self.init(uri: range.url.nativePath, range: LSPRange(range))
   }
 }
 
 extension LanguageServerProtocol.LSPRange {
-  public init(_ range: SourceRange) {
+  public init(_ range: SourceSpan) {
     self.init(start: Position(range.start), end: Position(range.end))
   }
 }
@@ -32,5 +46,16 @@ extension LanguageServerProtocol.Position {
   public init(_ pos: SourcePosition) {
     let (line, column) = pos.lineAndColumn
     self.init(line: line - 1, character: column - 1)
+  }
+}
+
+extension SourceSpan {
+  var url: AbsoluteUrl {
+    switch source.name {
+    case .local(let url), .localInMemory(let url):
+      return AbsoluteUrl(url)
+    case .virtual:
+      return AbsoluteUrl(URL(string: source.name.description)!)
+    }
   }
 }
