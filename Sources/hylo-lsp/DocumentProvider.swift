@@ -19,20 +19,72 @@ public enum GetDocumentContextError: Error {
   case documentNotOpened(AbsoluteUrl)
 }
 
+/// Cached standard library data
+private struct StandardLibraryCache {
+  let program: Program
+  let fingerprint: UInt64
+  
+  init(program: Program, sources: [SourceFile]) {
+    self.program = program
+    self.fingerprint = SourceFile.fingerprint(contentsOf: sources)
+  }
+}
+
+/// A simple compilation helper for LSP document processing
+private struct CompilationHelper {
+  var program: Program
+  
+  init() {
+    self.program = Program()
+  }
+  
+  /// Parses sources into a module
+  @discardableResult
+  mutating func parse(_ sources: [SourceFile], into module: Module.ID) async -> (elapsed: Duration, containsError: Bool) {
+    let clock = ContinuousClock()
+    let elapsed = clock.measure {
+      modify(&program[module]) { (m) in
+        for s in sources { m.addSource(s) }
+      }
+    }
+    return (elapsed, program[module].containsError)
+  }
+  
+  /// Assigns scopes to trees in module
+  @discardableResult
+  mutating func assignScopes(of module: Module.ID) async -> (elapsed: Duration, containsError: Bool) {
+    let clock = ContinuousClock()
+    let elapsed = await clock.measure {
+      await program.assignScopes(module)
+    }
+    return (elapsed, program[module].containsError)
+  }
+  
+  /// Assigns types to trees in module
+  @discardableResult
+  mutating func assignTypes(of module: Module.ID) async -> (elapsed: Duration, containsError: Bool) {
+    let clock = ContinuousClock()
+    let elapsed = clock.measure {
+      program.assignTypes(module)
+    }
+    return (elapsed, program[module].containsError)
+  }
+}
+
 public actor DocumentProvider {
   private var documents: [AbsoluteUrl: DocumentContext]
   public let logger: Logger
   let connection: JSONRPCClientConnection
   var rootUri: String?
   var workspaceFolders: [WorkspaceFolder]
-  var stdlibCache: [AbsoluteUrl: Program]
-
+  
+  // Standard library caching
+  private var stdlibCache: [AbsoluteUrl: StandardLibraryCache] = [:]
   public let defaultStdlibFilepath: URL
 
   public init(connection: JSONRPCClientConnection, logger: Logger) {
     self.logger = logger
     documents = [:]
-    stdlibCache = [:]
     self.connection = connection
     self.workspaceFolders = []
     defaultStdlibFilepath = DocumentProvider.loadDefaultStdlibFilepath(logger: logger)
@@ -201,42 +253,150 @@ public actor DocumentProvider {
     return url.path
   }
 
-  // todo review
-  private func buildStdlibProgram(_ stdlibPath: AbsoluteUrl, uriMap: inout UriMapping) throws
-    -> Program
-  {
-    var program = Program()
-
-    var sourcesUrls: [URL] = []
-    SourceFile.forEachURL(in: stdlibPath.url) { sourcesUrls.append($0) }
-
-    let moduleId = program.demandModule(.standardLibrary)
-    try modify(&program[moduleId]) { (m: inout Module) in
-      for url in sourcesUrls {
-        let absoluteUrl = AbsoluteUrl(url)
-
-        let sourceId: SourceFile.ID
-        if let inMemorySource = documents[AbsoluteUrl(url)]?.doc.text {
-          sourceId =
-            m.addSource(SourceFile(representing: url, inMemoryContents: inMemorySource)).identity
-        } else {
-          sourceId = m.addSource(try SourceFile(contentsOf: url)).identity
-        }
-        uriMap.insert(realPath: absoluteUrl, sourceFile: sourceId)
+  // MARK: - Standard Library Management
+  
+  /// Loads standard library sources from the given path
+  private func loadStandardLibrarySources(from stdlibPath: AbsoluteUrl) throws -> [SourceFile] {
+    var sources: [SourceFile] = []
+    
+    try SourceFile.forEach(in: stdlibPath.url) { sourceFile in
+      // Check if we have an in-memory version of this file
+      let sourceUrl: AbsoluteUrl?
+      switch sourceFile.name {
+      case .local(let url), .localInMemory(let url):
+        sourceUrl = AbsoluteUrl(url)
+      case .virtual:
+        sourceUrl = nil
+      }
+      
+      if let sourceUrl = sourceUrl,
+         let context = documents[sourceUrl] {
+        let url = sourceUrl.url
+        let text = context.doc.text
+        sources.append(SourceFile(representing: url, inMemoryContents: text))
+      } else {
+        sources.append(sourceFile)
       }
     }
-
-    return program
+    
+    return sources
   }
-
-  // We cache stdlib AST, and since AST is struct the cache values are implicitly immutable (thanks MVS!)
-  private func getStdlibAST(_ stdlibPath: AbsoluteUrl, uriMap: inout UriMapping) throws -> Program {
-    if let ast = stdlibCache[stdlibPath] {
-      return ast
+  
+  /// Builds a program with standard library loaded and typed
+  private func buildStandardLibraryProgram(from stdlibPath: AbsoluteUrl) async throws -> StandardLibraryCache {
+    logger.debug("Building standard library program from: \(stdlibPath)")
+    
+    // Load sources
+    let sources = try loadStandardLibrarySources(from: stdlibPath)
+    
+    // Create program and helper
+    var helper = CompilationHelper()
+    let moduleId = helper.program.demandModule(.init("hylo.Hylo")) // Standard library module name
+    
+    // Parse sources
+    let (parseTime, parseError) = await helper.parse(sources, into: moduleId)
+    logger.debug("Standard library parsing took: \(parseTime)")
+    if parseError {
+      logger.error("Standard library parsing failed")
+      // Continue anyway for LSP features, just log the error
+    }
+    
+    // Assign scopes
+    let (scopeTime, scopeError) = await helper.assignScopes(of: moduleId)
+    logger.debug("Standard library scope assignment took: \(scopeTime)")
+    if scopeError {
+      logger.error("Standard library scope assignment failed")
+      // Continue anyway for LSP features
+    }
+    
+    // Type check
+    let (typeTime, typeError) = await helper.assignTypes(of: moduleId)
+    logger.debug("Standard library type checking took: \(typeTime)")
+    if typeError {
+      logger.error("Standard library type checking failed")
+      // Continue anyway for LSP features
+    }
+    
+    return StandardLibraryCache(program: helper.program, sources: sources)
+  }
+  
+  /// Gets or builds the standard library program, with caching
+  private func getStandardLibraryProgram(from stdlibPath: AbsoluteUrl) async throws -> StandardLibraryCache {
+    // Check if we have a cached version
+    if let cached = stdlibCache[stdlibPath] {
+      // Verify the cache is still valid by checking fingerprint
+      let currentSources = try loadStandardLibrarySources(from: stdlibPath)
+      let currentFingerprint = SourceFile.fingerprint(contentsOf: currentSources)
+      
+      if cached.fingerprint == currentFingerprint {
+        logger.debug("Using cached standard library")
+        return cached
+      } else {
+        logger.debug("Standard library cache invalidated, rebuilding")
+      }
+    }
+    
+    // Build new program
+    let cache = try await buildStandardLibraryProgram(from: stdlibPath)
+    stdlibCache[stdlibPath] = cache
+    return cache
+  }
+  
+  /// Invalidates standard library cache for the given path
+  private func invalidateStandardLibraryCache(for stdlibPath: AbsoluteUrl) {
+    logger.debug("Invalidating standard library cache for: \(stdlibPath)")
+    stdlibCache.removeValue(forKey: stdlibPath)
+  }
+  
+  // MARK: - Program Building
+  
+  /// Builds a complete program for a document
+  private func buildProgramForDocument(url: AbsoluteUrl, text: String) async throws -> Program {
+    let (stdlibPath, isStdlibDocument) = getStdlibPath(url)
+    
+    if isStdlibDocument {
+      // Document is part of standard library
+      let cache = try await getStandardLibraryProgram(from: stdlibPath)
+      return cache.program
     } else {
-      let ast = try buildStdlibProgram(stdlibPath, uriMap: &uriMap)
-      stdlibCache[stdlibPath] = ast
-      return ast
+      // Document is separate from standard library
+      let stdlibCache = try await getStandardLibraryProgram(from: stdlibPath)
+      
+      // Create a copy of the standard library program
+      var program = stdlibCache.program
+      
+      // Add the main module
+      let mainModuleId = program.demandModule(.init("MainModule"))
+      let sourceFile = SourceFile(representing: url.url, inMemoryContents: text)
+      
+      var helper = CompilationHelper()
+      helper.program = program
+      
+      // Parse the main file
+      let (parseTime, parseError) = await helper.parse([sourceFile], into: mainModuleId)
+      logger.debug("Main module parsing took: \(parseTime)")
+      if parseError {
+        logger.error("Main module parsing failed")
+        // Continue anyway for LSP features
+      }
+      
+      // Assign scopes
+      let (scopeTime, scopeError) = await helper.assignScopes(of: mainModuleId)
+      logger.debug("Main module scope assignment took: \(scopeTime)")
+      if scopeError {
+        logger.error("Main module scope assignment failed")
+        // Continue anyway for LSP features
+      }
+      
+      // Type check
+      let (typeTime, typeError) = await helper.assignTypes(of: mainModuleId)
+      logger.debug("Main module type checking took: \(typeTime)")
+      if typeError {
+        logger.error("Main module type checking failed")
+        // Continue anyway for LSP features
+      }
+      
+      return helper.program
     }
   }
 
@@ -249,43 +409,51 @@ public actor DocumentProvider {
     return AbsoluteUrl(url)
   }
 
-  public func updateDocument(_ params: DidChangeTextDocumentParams) {
+  public func updateDocument(_ params: DidChangeTextDocumentParams) async {
     let uri = AbsoluteUrl(fromUrlString: params.textDocument.uri)!
 
-    modify(&documents[uri]) { (contextOpt: inout DocumentContext?) in
-      guard var context = contextOpt else {  // this may do an unnecessary copy, now we have 2 mutable references.
-        logger.error("Could not find opened document: \(uri)")
-        return
-      }
+    guard var context = documents[uri] else {
+      logger.error("Could not find opened document: \(uri)")
+      return
+    }
 
-      do {
-        try context.applyChanges(params.contentChanges, version: params.textDocument.version)
-      } catch {
-        logger.error("Failed to apply document changes: \(error)")
-        return
-      }
-
-      contextOpt = context
-
+    do {
+      try context.applyChanges(params.contentChanges, version: params.textDocument.version)
+      
+      // Rebuild program with updated content
+      let program = try await buildProgramForDocument(url: uri, text: context.doc.text)
+      context = DocumentContext(context.doc, program: program)
+      
+      documents[uri] = context
+      
       logger.debug("Updated changed document: \(uri), version: \(context.doc.version ?? -1)")
 
-      // NOTE: We also need to invalidate cached stdlib AST if the edited document is part of the stdlib
-      let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)  // todo
+      // Invalidate cached stdlib AST if the edited document is part of the stdlib
+      let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
       if isStdlibDocument {
-        stdlibCache[stdlibPath] = nil
+        invalidateStandardLibraryCache(for: stdlibPath)
       }
-
+    } catch {
+      logger.error("Failed to update document: \(error)")
     }
   }
 
-  public func registerDocument(_ params: DidOpenTextDocumentParams) {
+  public func registerDocument(_ params: DidOpenTextDocumentParams) async {
     let doc = Document(textDocument: params.textDocument)
-    var program = Program()  // TODO build program
-
-    let context = DocumentContext(doc, program: program)
-    // requestDocument(doc)
-    logger.debug("Register opened document: \(doc.uri)")
-    documents[doc.uri] = context
+    
+    do {
+      // Build program for the document
+      let program = try await buildProgramForDocument(url: doc.uri, text: doc.text)
+      let context = DocumentContext(doc, program: program)
+      
+      logger.debug("Register opened document: \(doc.uri)")
+      documents[doc.uri] = context
+    } catch {
+      logger.error("Failed to build program for document \(doc.uri): \(error)")
+      // Create context with empty program as fallback
+      let context = DocumentContext(doc, program: Program())
+      documents[doc.uri] = context
+    }
   }
 
   public func unregisterDocument(_ params: DidCloseTextDocumentParams) {
@@ -294,7 +462,7 @@ public actor DocumentProvider {
     }
   }
 
-  func implicitlyRegisterDocument(url: AbsoluteUrl) throws(GetDocumentContextError)
+  func implicitlyRegisterDocument(url: AbsoluteUrl) async throws(GetDocumentContextError)
     -> DocumentContext
   {
     guard let text = try? String(contentsOf: url.url, encoding: .utf8) else {
@@ -302,18 +470,25 @@ public actor DocumentProvider {
     }
 
     let document = Document(uri: url, version: 0, text: text)
-    let program = Program()  // TODO build program
-    return DocumentContext(document, program: program)
+    
+    do {
+      let program = try await buildProgramForDocument(url: url, text: text)
+      return DocumentContext(document, program: program)
+    } catch {
+      logger.error("Failed to build program for implicitly registered document \(url): \(error)")
+      // Return context with empty program as fallback
+      return DocumentContext(document, program: Program())
+    }
   }
 
-  func getDocumentContext(uri: DocumentUri) throws(GetDocumentContextError) -> DocumentContext {
+  func getDocumentContext(uri: DocumentUri) async throws(GetDocumentContextError) -> DocumentContext {
     guard let url = DocumentProvider.validateDocumentUrl(uri) else {
       throw GetDocumentContextError.invalidUri(uri)
     }
-    return try getDocumentContext(url: url)
+    return try await getDocumentContext(url: url)
   }
 
-  func getDocumentContext(url: AbsoluteUrl) throws(GetDocumentContextError) -> DocumentContext {
+  func getDocumentContext(url: AbsoluteUrl) async throws(GetDocumentContextError) -> DocumentContext {
     if let context = documents[url] {
       return context
     }
@@ -321,7 +496,7 @@ public actor DocumentProvider {
     // NOTE: We can not assume document is opened, VSCode apparently does not guarantee ordering
     // Specifically `textDocument/diagnostic` -> `textDocument/didOpen` has been observed
     logger.warning("Implicitly registering unopened document: \(url)")
-    return try implicitlyRegisterDocument(url: url)
+    return try await implicitlyRegisterDocument(url: url)
   }
 
   public func getParsedProgram(url: DocumentUri) async throws(DocumentError)
@@ -329,7 +504,7 @@ public actor DocumentProvider {
   {
     let context: DocumentContext
     do {
-      context = try getDocumentContext(uri: url)
+      context = try await getDocumentContext(uri: url)
     } catch {
       throw DocumentError.other(error)
     }
@@ -340,8 +515,8 @@ public actor DocumentProvider {
     -> AnalyzedDocument
   {
     let context: DocumentContext
-    do { context = try getDocumentContext(uri: textDocument.uri) } catch {
-      throw DocumentError.other(error)
+    do { 
+      context = try await getDocumentContext(uri: textDocument.uri) 
     } catch {
       throw .other(error)
     }
@@ -349,141 +524,4 @@ public actor DocumentProvider {
       url: context.url,
       program: context.program)
   }
-
-  // private func createASTTask(_ context: DocumentContext) -> Task<ProgramWithUriMapping, Error> {
-  //   if context.astTask == nil {
-  //     let uri = context.uri
-  //     let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
-
-  //     context.astTask = Task {
-  //       var diagnostics = DiagnosticSet()
-  //       logger.debug("Build ast for document: \(uri), with stdlibPath: \(stdlibPath)")
-
-  //       var uriMapping = UriMapping()
-
-  //       var ast = try getStdlibAST(stdlibPath, uriMap: &uriMapping)
-  //       if isStdlibDocument {
-  //         return (ast, uriMapping)
-  //       }
-
-  //       let productName = "lsp-build"
-  //       let moduleId = try ast.loadModule(
-  //         productName, parsing: [SourceFile(synthesizedText: context.doc.text)],
-  //         withBuiltinModuleAccess: false, reportingDiagnosticsTo: &diagnostics)
-
-  //       uriMapping[uri] = ast[moduleId].sources.first!
-
-  //       return (ast, uriMapping)
-  //     }
-  //   }
-
-  //   return context.astTask!
-  // }
-
-  // #if false
-  //   // NOTE: We currently write cached results inside the workspace
-  //   // These should perhaps be stored outside workspace, but then it is more important
-  //   // to implement some kind of garbage collection for out-dated workspace cache entries
-  //   private func getResultCacheFilepath(_ wsFile: WorkspaceFile) -> String {
-  //     NSString.path(withComponents: [
-  //       uriAsFilepath(wsFile.workspace)!, ".hylo-lsp", "cache", wsFile.relativePath + ".json",
-  //     ])
-  //   }
-
-  //   private func loadCachedDocumentResult(_ uri: DocumentUri) -> CachedDocumentResult? {
-  //     do {
-  //       guard let filepath = uriAsFilepath(uri) else {
-  //         return nil
-  //       }
-
-  //       guard let wsFile = getWorkspaceFile(uri) else {
-  //         logger.debug("Cached LSP result did not locate relative workspace path: \(uri)")
-  //         return nil
-  //       }
-
-  //       let fm = FileManager.default
-
-  //       let attr = try fm.attributesOfItem(atPath: filepath)
-  //       guard let modificationDate = attr[FileAttributeKey.modificationDate] as? Date else {
-  //         return nil
-  //       }
-
-  //       let cachedDocumentResultPath = getResultCacheFilepath(wsFile)
-  //       let url = URL(fileURLWithPath: cachedDocumentResultPath)
-
-  //       guard fm.fileExists(atPath: cachedDocumentResultPath) else {
-  //         logger.debug("Cached LSP result does not exist: \(cachedDocumentResultPath)")
-  //         return nil
-  //       }
-
-  //       let cachedDocumentAttr = try fm.attributesOfItem(atPath: cachedDocumentResultPath)
-  //       guard
-  //         let cachedDocumentModificationDate = cachedDocumentAttr[FileAttributeKey.modificationDate]
-  //           as? Date
-  //       else {
-  //         return nil
-  //       }
-
-  //       guard cachedDocumentModificationDate > modificationDate else {
-  //         logger.debug(
-  //           "Cached LSP result is out-of-date: \(cachedDocumentResultPath), source code date: \(modificationDate), cache file date: \(cachedDocumentModificationDate)"
-  //         )
-  //         return nil
-  //       }
-
-  //       logger.debug("Found cached LSP result file: \(cachedDocumentResultPath)")
-  //       let jsonData = try Data(contentsOf: url)
-  //       return try JSONDecoder().decode(CachedDocumentResult.self, from: jsonData)
-  //     } catch {
-  //       logger.error("Failed to read cached result: \(error)")
-  //       return nil
-  //     }
-  //   }
-
-  //   public func writeCachedDocumentResult(
-  //     _ doc: AnalyzedDocument, writer: (inout CachedDocumentResult) -> Void
-  //   ) async {
-  //     guard let wsFile = getWorkspaceFile(doc.uri) else {
-  //       logger.warning("Cached LSP result did not locate relative workspace path: \(doc.uri)")
-  //       return
-  //     }
-
-  //     let t0 = Date()
-
-  //     let cachedDocumentResultPath = getResultCacheFilepath(wsFile)
-  //     let url = URL(fileURLWithPath: cachedDocumentResultPath)
-  //     let fm = FileManager.default
-  //     // var cachedDocument = CachedDocumentResult(uri: doc.uri)
-  //     var cachedDocument =
-  //       if let doc = loadCachedDocumentResult(doc.uri) { doc } else {
-  //         CachedDocumentResult(uri: doc.uri)
-  //       }
-
-  //     do {
-
-  //       writer(&cachedDocument)
-  //       let encoder = JSONEncoder()
-  //       encoder.outputFormatting = .prettyPrinted
-  //       let jsonData = try encoder.encode(cachedDocument)
-  //       let dirUrl = url.deletingLastPathComponent()
-
-  //       if !fm.fileExists(atPath: dirUrl.path) {
-  //         try fm.createDirectory(
-  //           at: dirUrl,
-  //           withIntermediateDirectories: true,
-  //           attributes: nil
-  //         )
-  //       }
-
-  //       try jsonData.write(to: url)
-  //       let t = Date().timeIntervalSince(t0)
-  //       logger.debug(
-  //         "Wrote result cache: \(cachedDocumentResultPath), cache operation took \(t.milliseconds)ms"
-  //       )
-  //     } catch {
-  //       logger.error("Failed to write cached result: \(error)")
-  //     }
-
-  //   }
-  // #endif
 }

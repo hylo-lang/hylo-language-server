@@ -22,12 +22,16 @@ struct SemanticTokensWalker {
 
   public mutating func walk() -> [SemanticToken] {
     precondition(tokens.isEmpty)
+    logger.debug("Walking \(translationUnit.topLevelDeclarations.count) top-level declarations")
     addMemberDeclarations(translationUnit.topLevelDeclarations)
+    logger.debug("Generated \(tokens.count) semantic tokens")
     return tokens
   }
 
   mutating func addMemberDeclarations(_ members: [DeclarationIdentity]) {
-    for m in members {
+    logger.debug("Processing \(members.count) member declarations")
+    for (index, m) in members.enumerated() {
+      logger.debug("Processing member \(index + 1)/\(members.count): \(m)")
       addSyntax(syntaxId: m.erased)
     }
   }
@@ -37,6 +41,8 @@ struct SemanticTokensWalker {
   }
 
   mutating func addSyntax(_ syntax: any Syntax) {
+    let syntaxType = type(of: syntax)
+    logger.debug("Processing syntax: \(syntaxType)")
 
     switch syntax {
     // Declarations:
@@ -137,7 +143,7 @@ struct SemanticTokensWalker {
       addTuplePattern(p)
 
     default:
-      logger.warning("Unknown node: \(syntax)")
+      logger.warning("Unknown syntax node type: \(type(of: syntax)) - \(syntax)")
     // printStackTrace()
     }
   }
@@ -158,7 +164,7 @@ struct SemanticTokensWalker {
   mutating func addVariant(_ d: VariantDeclaration) {
     addKeywordIntroducer(site: d.effect.site)
     // todo: add body if present
-    if let body = d.body {
+    if d.body != nil {
       // addStatements(body)
     }
   }
@@ -604,21 +610,26 @@ struct SemanticTokensWalker {
   // }
 
   mutating func addFunction(_ d: FunctionDeclaration) {
-    // addAttributes(d.attributes)
-    // addAccessModifier(d.accessModifier)
-    // addIntroducer(d.memberModifier)
-    // addIntroducer(d.notation)
-    // addIntroducer(d.introducerSite)
-    // if let identifier = d.identifier {
-    //   addToken(range: identifier.site, type: .function)
-    // }
-
-    // addGenericClause(d.genericClause)
-    // addParameters(d.parameters)
-    // addIntroducer(d.receiverEffect)
-    // addExpr(d.output, typeHint: .type)
-    // todo
-    // addBody(d.body)
+    // Add the "fun" keyword
+    addKeywordIntroducer(site: d.introducer.site)
+    
+    // Add function name
+    addToken(range: d.identifier.site, type: .function)
+    
+    // Add parameters
+    addParameters(d.parameters)
+    
+    // Add return type if present
+    if let output = d.output {
+      addSyntax(syntaxId: output.erased)
+    }
+    
+    // Add body if present
+    if let body = d.body {
+      for statement in body {
+        addSyntax(syntaxId: statement.erased)
+      }
+    }
   }
 
   // mutating func addOperator(_ d: OperatorDecl) {
@@ -814,7 +825,13 @@ struct SemanticTokensWalker {
   }
 
   mutating func addReturn(_ s: Return) {
-    // todo
+    if let introducer = s.introducer {
+      addKeywordIntroducer(site: introducer.site)
+    }
+    
+    if let value = s.value {
+      addSyntax(syntaxId: value.erased)
+    }
   }
 
   // MARK: - Expression methods
@@ -824,11 +841,20 @@ struct SemanticTokensWalker {
   }
 
   mutating func addBooleanLiteral(_ e: BooleanLiteral) {
-    // todo
+    addToken(range: e.site, type: .keyword)
   }
 
   mutating func addCall(_ e: Call) {
-    // todo
+    // Add the function being called
+    addSyntax(syntaxId: e.callee.erased)
+    
+    // Add arguments
+    for argument in e.arguments {
+      if let label = argument.label {
+        addToken(range: label.site, type: .label)
+      }
+      addSyntax(syntaxId: argument.value.erased)
+    }
   }
 
   mutating func addConversion(_ e: Conversion) {
@@ -852,7 +878,7 @@ struct SemanticTokensWalker {
   }
 
   mutating func addIntegerLiteral(_ e: IntegerLiteral) {
-    // todo
+    addToken(range: e.site, type: .number)
   }
 
   mutating func addKindExpression(_ e: KindExpression) {
@@ -864,7 +890,7 @@ struct SemanticTokensWalker {
   }
 
   mutating func addNameExpression(_ e: NameExpression) {
-    // todo
+    addToken(range: e.name.site, type: .identifier)
   }
 
   mutating func addNew(_ e: New) {
@@ -888,7 +914,7 @@ struct SemanticTokensWalker {
   }
 
   mutating func addStringLiteral(_ e: StringLiteral) {
-    // todo
+    addToken(range: e.site, type: .string)
   }
 
   mutating func addSyntheticExpression(_ e: SynthethicExpression) {
@@ -930,6 +956,8 @@ extension Program {
     logger.debug("List semantic tokens in document: \(document)")
 
     if let source = findTranslationUnit(AbsoluteUrl(URL(string: document)!), logger: logger) {
+      logger.debug("Translation unit found with \(source.topLevelDeclarations.count) top-level declarations")
+      
       var walker = SemanticTokensWalker(
         document: document, translationUnit: source,
         program: self, logger: logger)
