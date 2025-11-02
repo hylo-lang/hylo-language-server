@@ -131,18 +131,14 @@ public actor DocumentProvider {
     }
   }
 
-  public func isStdlibDocument(_ uri: DocumentUri) -> Bool {
+  public func isStdlibDocument(_ uri: AbsoluteUrl) -> Bool {
     let (_, isStdlibDocument) = getStdlibPath(uri)
     return isStdlibDocument
   }
 
-  public func getStdlibPath(_ uri: DocumentUri) -> (stdlibPath: URL, isStdlibDocument: Bool) {
-    guard let url = URL(string: uri) else {
-      logger.error("invalid document uri: \(uri)")
-      return (defaultStdlibFilepath, false)
-    }
-
-    var it = url.deletingLastPathComponent()
+  public func getStdlibPath(_ uri: AbsoluteUrl) -> (stdlibPath: AbsoluteUrl, isStdlibDocument: Bool)
+  {
+    var it = uri.url.deletingLastPathComponent()
 
     // Check if current document is inside a stdlib source directory
     while it.path != "/" {
@@ -151,13 +147,13 @@ public actor DocumentProvider {
       var isDirectory: ObjCBool = false
       if fm.fileExists(atPath: voidPath, isDirectory: &isDirectory) && !isDirectory.boolValue {
         logger.info("Use local stdlib path: \(it.path)")
-        return (it, true)
+        return (AbsoluteUrl(it), true)
       }
 
       it = it.deletingLastPathComponent()
     }
 
-    return (defaultStdlibFilepath, false)
+    return (AbsoluteUrl(defaultStdlibFilepath), false)
   }
 
   func getRelativePathInWorkspace(_ uri: DocumentUri, relativeTo workspace: DocumentUri) -> String?
@@ -205,6 +201,7 @@ public actor DocumentProvider {
     return url.path
   }
 
+  // todo review
   private func buildStdlibProgram(_ stdlibPath: AbsoluteUrl, uriMap: inout UriMapping) throws
     -> Program
   {
@@ -228,6 +225,8 @@ public actor DocumentProvider {
         uriMap.insert(realPath: absoluteUrl, sourceFile: sourceId)
       }
     }
+
+    return program
   }
 
   // We cache stdlib AST, and since AST is struct the cache values are implicitly immutable (thanks MVS!)
@@ -251,7 +250,7 @@ public actor DocumentProvider {
   }
 
   public func updateDocument(_ params: DidChangeTextDocumentParams) {
-    let uri = AbsoluteUrl(fromPath: params.textDocument.uri)
+    let uri = AbsoluteUrl(fromUrlString: params.textDocument.uri)!
 
     modify(&documents[uri]) { (contextOpt: inout DocumentContext?) in
       guard var context = contextOpt else {  // this may do an unnecessary copy, now we have 2 mutable references.
@@ -259,7 +258,13 @@ public actor DocumentProvider {
         return
       }
 
-      try context.applyChanges(params.contentChanges, version: params.textDocument.version)
+      do {
+        try context.applyChanges(params.contentChanges, version: params.textDocument.version)
+      } catch {
+        logger.error("Failed to apply document changes: \(error)")
+        return
+      }
+
       contextOpt = context
 
       logger.debug("Updated changed document: \(uri), version: \(context.doc.version ?? -1)")

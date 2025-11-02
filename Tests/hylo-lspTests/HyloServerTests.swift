@@ -46,7 +46,7 @@ final class hyloLspTests: XCTestCase {
 
     let textDocument = TextDocumentItem(uri: uri, languageId: "hylo", version: 0, text: beforeEdit)
 
-    let doc = Document(textDocument: textDocument)
+    var doc = Document(textDocument: textDocument)
 
     let changes = [
       TextDocumentContentChangeEvent(range: LSPRange(startPair: (0, 4), endPair: (0, 13)), rangeLength: nil, text: "foo"),
@@ -55,8 +55,8 @@ final class hyloLspTests: XCTestCase {
       TextDocumentContentChangeEvent(range: LSPRange(startPair: (4, 14), endPair: (4, 15)), rangeLength: nil, text: "123"),
     ]
 
-    let updatedDoc = try doc.withAppliedChanges(changes, nextVersion: 2)
-    XCTAssertEqual(updatedDoc.text, afterEdit)
+    try doc.applyChanges(changes, version: 2)
+    XCTAssertEqual(doc.text, afterEdit)
   }
 
   func testFindDocumentRelativeWorkspacePath() async throws {
@@ -81,7 +81,7 @@ final class hyloLspTests: XCTestCase {
       ]
     )
 
-    _ = await documentProvider.initialize(initParam)
+    _ = try await documentProvider.initialize(initParam)
 
     var ws1 = await documentProvider.getWorkspaceFile("/foo/a/x.hylo")
     var ws = try XCTUnwrap(ws1)

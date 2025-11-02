@@ -90,12 +90,13 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
   #endif
 
   public func documentSymbol(
-    id: JSONId, params: DocumentSymbolParams, context: ProgramWithUriMapping
+    id: JSONId, params: DocumentSymbolParams, program: Program
   )
     async -> Result<DocumentSymbolResponse, AnyJSONRPCResponseError>
   {
-    let symbols = context.program.listDocumentSymbols(
-      params.textDocument.uri, uriMapping: context.uriMapping, logger: logger)
+    let symbols = program.listDocumentSymbols(
+      AbsoluteUrl(fromUrlString: params.textDocument.uri)!, logger: logger)
+
     if symbols.isEmpty {
       return .success(nil)
     }
@@ -119,7 +120,7 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
   > {
 
     await withDocumentAST(params.textDocument) { ast in
-      await documentSymbol(id: id, params: params, context: ast)
+      await documentSymbol(id: id, params: params, program: ast)
     }
   }
 
@@ -133,7 +134,7 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
       switch error {
       case .diagnostics(let d):
         return .success(
-          buildDiagnosticReport(uri: AbsoluteUrl(fromPath: params.textDocument.uri), diagnostics: d)
+          buildDiagnosticReport(uri: AbsoluteUrl(fromUrlString: params.textDocument.uri)!, diagnostics: d)
         )
       case .other:
         return .failure(
@@ -262,15 +263,15 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
   > {
 
     await withDocumentAST(params.textDocument) { ast in
-      await semanticTokensFull(id: id, params: params, ast: ast)
+      await semanticTokensFull(id: id, params: params, program: ast)
     }
   }
 
   public func semanticTokensFull(
-    id: JSONId, params: SemanticTokensParams, ast: ProgramWithUriMapping
+    id: JSONId, params: SemanticTokensParams, program: Program
   ) async -> Result<SemanticTokensResponse, AnyJSONRPCResponseError> {
-    let tokens = ast.program.getSemanticTokens(
-      params.textDocument.uri, uriMapping: ast.uriMapping, logger: logger)
+    let tokens = program.getSemanticTokens(
+      params.textDocument.uri, logger: logger)
     logger.debug("[\(params.textDocument.uri)] Return \(tokens.count) semantic tokens")
     return .success(SemanticTokens(tokens: tokens))
   }

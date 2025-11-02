@@ -10,6 +10,13 @@ public struct AbsoluteUrl : Sendable, Hashable, Equatable{
     self.url = URL(string: "file:///\(path.replacingOccurrences(of: "\\", with: "/"))")!
   }
 
+  init?(fromUrlString urlString: String) {
+    guard let url = URL(string: urlString) else {
+      return nil
+    }
+    self.init(url)
+  }
+
   init(_ url: URL) {
     self.url = url.absoluteURL
   }

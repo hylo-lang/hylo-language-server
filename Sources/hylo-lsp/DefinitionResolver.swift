@@ -52,7 +52,7 @@ struct DefinitionResolver {
   }
 
 
-  func resolveName(_ id: NameExpr.ID, source: AnyNodeID, in program: Program) -> DefinitionResponse? {
+  func resolveName(_ id: NameExpr.ID, source: AnySyntaxIdentity, in program: Program) -> DefinitionResponse? {
     if let d = program.referredDecl[id] {
       switch d {
       case let .constructor(d, _):

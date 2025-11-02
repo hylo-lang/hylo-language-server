@@ -25,7 +25,7 @@ public struct Document {
 
 extension Document {
   public init(textDocument: TextDocumentItem) {
-    uri = AbsoluteUrl(fromPath: textDocument.uri)
+    uri = AbsoluteUrl(fromUrlString: textDocument.uri)!
     version = textDocument.version
     text = textDocument.text
   }
