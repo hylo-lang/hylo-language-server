@@ -153,7 +153,19 @@ struct SemanticTokensWalker {
   }
 
   mutating func addEnum(_ d: EnumDeclaration) {
-    // todo
+    // Add modifiers
+    for modifier in d.modifiers {
+      addKeywordIntroducer(site: modifier.site)
+    }
+    
+    // Add the "enum" keyword  
+    addKeywordIntroducer(site: d.introducer.site)
+    
+    // Add enum name
+    addToken(range: d.identifier.site, type: .type)
+    
+    // Add members
+    addMemberDeclarations(d.members)
   }
 
   mutating func addImport(_ d: ImportDeclaration) {
@@ -197,13 +209,23 @@ struct SemanticTokensWalker {
   // }
 
   mutating func addBinding(_ d: BindingDeclaration) {
-    // addAttributes(d.attributes)
-
-    // addAccessModifier(d.accessModifier)
-    // addIntroducer(d.memberModifier)
-    // addBindingPattern(d.pattern)
-    // addExpr(d.initializer)
-    // todo
+    // Add modifiers
+    for modifier in d.modifiers {
+      addKeywordIntroducer(site: modifier.site)
+    }
+    
+    // Add role-specific keywords
+    if d.role == .given {
+      // "given" keyword is already handled by modifiers or would need separate tracking
+    }
+    
+    // Add the binding pattern
+    addSyntax(syntaxId: d.pattern.erased)
+    
+    // Add initializer if present
+    if let initializer = d.initializer {
+      addSyntax(syntaxId: initializer.erased)
+    }
   }
 
   // mutating func addPattern(_ pattern: AnyPatternID) {
@@ -248,9 +270,13 @@ struct SemanticTokensWalker {
     let p = program[pattern]
     addKeywordIntroducer(p.introducer)
 
-    // addPattern(p.subpattern)
-    // addExpr(p.annotation, typeHint: .type)
-    // todo
+    // Add nested pattern
+    addSyntax(syntaxId: p.pattern.erased)
+    
+    // Add type ascription if present
+    if let ascription = p.ascription {
+      addSyntax(syntaxId: ascription.erased)
+    }
   }
 
   // mutating func addAttributes(_ attributes: [SourceRepresentable<Attribute>]) {
@@ -281,18 +307,30 @@ struct SemanticTokensWalker {
     // for aesthetic purposes. This is similar to swift tokens (todo review)
     addToken(range: p.identifier.site, type: .identifier)
 
-    // todo
-    // if let annotation = p.annotation {
-    //   let a = program[annotation]
-    //   let c = a.convention
-    //   if c.site.start != c.site.end {
-    //     addIntroducer(c.site)
-    //   }
+    // Add type annotation if present
+    if let annotation = p.ascription {
+      addSyntax(syntaxId: annotation.erased)
+    }
 
-    //   addExpr(a.bareType, typeHint: .type)
-    // }
+    // Add default value if present
+    if let defaultValue = p.defaultValue {
+      addSyntax(syntaxId: defaultValue.erased)
+    }
+  }
 
-    // addExpr(p.defaultValue)
+  mutating func addContextParameters(_ contextParams: ContextParameters) {
+    // Add type parameters (generics)
+    for typeParam in contextParams.types {
+      addSyntax(syntaxId: typeParam.erased)
+    }
+    
+    // Add where clause (usings)
+    if !contextParams.usings.isEmpty {
+      // The "where" keyword would be implicit in the site, but we can try to extract it
+      for using in contextParams.usings {
+        addSyntax(syntaxId: using.erased)
+      }
+    }
   }
 
   #if false
@@ -515,65 +553,124 @@ struct SemanticTokensWalker {
   // }
 
   mutating func addExtension(_ d: ExtensionDeclaration) {
-    // addAccessModifier(d.accessModifier)
-    // addIntroducer(d.introducerSite)
-    // addExpr(d.subject)
-    // addWhereClause(d.whereClause)
-    // addMembers(d.members)
-    // todo
+    // Add the "extension" keyword
+    addKeywordIntroducer(site: d.introducer.site)
+    
+    // Add context parameters (generics and where clauses)
+    if !d.contextParameters.isEmpty {
+      addContextParameters(d.contextParameters)
+    }
+    
+    // Add the extended type
+    addSyntax(syntaxId: d.extendee.erased)
+    
+    // Add members
+    addMemberDeclarations(d.members)
   }
 
   mutating func addAssociatedType(_ d: AssociatedTypeDeclaration) {
-    // addIntroducer(d.introducerSite)
-    // addToken(range: d.identifier.site, type: .type)
-    // addConformances(d.conformances)
-    // addWhereClause(d.whereClause)
-    // addExpr(d.defaultValue)
-    //todo
+    addKeywordIntroducer(site: d.introducer.site)
+    addToken(range: d.identifier.site, type: .type)
   }
 
   mutating func addTypeAlias(_ d: TypeAliasDeclaration) {
-    // addAccessModifier(d.accessModifier)
-    // addIntroducer(d.introducerSite)
-    // addToken(range: d.identifier.site, type: .type)
-    // addGenericClause(d.genericClause)
-    // addExpr(d.aliasedType)
-    // todo
+    // Add modifiers
+    for modifier in d.modifiers {
+      addKeywordIntroducer(site: modifier.site)
+    }
+    
+    // Add the "type" keyword
+    addKeywordIntroducer(site: d.introducer.site)
+    
+    // Add type alias name
+    addToken(range: d.identifier.site, type: .type)
+    
+    // Add generic parameters
+    for param in d.parameters {
+      addSyntax(syntaxId: param.erased)
+    }
+    
+    // Add aliased type
+    addSyntax(syntaxId: d.aliasee.erased)
   }
 
   mutating func addConformance(_ d: ConformanceDeclaration) {
-    // addAccessModifier(d.accessModifier)
-    // addIntroducer(d.introducerSite)
-    // addExpr(d.subject)
-    // addConformances(d.conformances)
-    // addWhereClause(d.whereClause)
-    // addMembers(d.members)
-    // todo
+    // Add modifiers
+    for modifier in d.modifiers {
+      addKeywordIntroducer(site: modifier.site)
+    }
+    
+    // Add the "given" keyword
+    addKeywordIntroducer(site: d.introducer.site)
+    
+    // Add identifier if present
+    if let identifier = d.identifier {
+      addToken(range: identifier.site, type: .identifier)
+    }
+    
+    // Add context parameters (generics and where clauses)
+    if !d.contextParameters.isEmpty {
+      addContextParameters(d.contextParameters)
+    }
+    
+    // Add the witness (static call)
+    addSyntax(syntaxId: d.witness.erased)
+    
+    // Add members if present
+    if let members = d.members {
+      addMemberDeclarations(members)
+    }
   }
 
   mutating func addGenericParameter(_ d: GenericParameterDeclaration) {
-    // addToken(range: d.identifier.site, type: .typeParameter)
-    // addConformances(d.conformances)
-    // addExpr(d.defaultValue)
+    addToken(range: d.identifier.site, type: .typeParameter)
+    
+    // Add kind ascription if present
+    if let ascription = d.ascription {
+      addSyntax(syntaxId: ascription.erased)
+    }
   }
 
   mutating func addTrait(_ d: TraitDeclaration) {
-    // addAccessModifier(d.accessModifier)
-    // addIntroducer(d.introducerSite)
-    // addToken(range: d.identifier.site, type: .type)
-    // addConformances(d.bounds)
-    // addMembers(d.members)
-    // todo
+    // Add modifiers
+    for modifier in d.modifiers {
+      addKeywordIntroducer(site: modifier.site)
+    }
+    
+    // Add the "trait" keyword
+    addKeywordIntroducer(site: d.introducer.site)
+    
+    // Add trait name
+    addToken(range: d.identifier.site, type: .type)
+    
+    // Add members
+    addMemberDeclarations(d.members)
   }
 
   mutating func addStruct(_ d: StructDeclaration) {
-    // addAccessModifier(d.accessModifier)
-    // addIntroducer(d.introducerSite)
-    // addToken(range: d.identifier.site, type: .type)
-    // addGenericClause(d.genericClause)
-    // addConformances(d.conformances)
-    // addMembers(d.members)
-    // todo
+    // Add modifiers
+    for modifier in d.modifiers {
+      addKeywordIntroducer(site: modifier.site)
+    }
+    
+    // Add the "struct" keyword
+    addKeywordIntroducer(site: d.introducer.site)
+    
+    // Add struct name
+    addToken(range: d.identifier.site, type: .type)
+    
+    // Add generic parameters
+    for param in d.parameters {
+      addSyntax(syntaxId: param.erased)
+    }
+    
+    // Add conformances
+    for conformance in d.conformances {
+      addSyntax(syntaxId: conformance.erased)
+    }
+    
+    // Add members
+    addMemberDeclarations(d.members)
   }
 
   mutating func addMembers(_ members: [AnySyntaxIdentity]) {
@@ -610,11 +707,21 @@ struct SemanticTokensWalker {
   // }
 
   mutating func addFunction(_ d: FunctionDeclaration) {
+    // Add modifiers
+    for modifier in d.modifiers {
+      addKeywordIntroducer(site: modifier.site)
+    }
+    
     // Add the "fun" keyword
     addKeywordIntroducer(site: d.introducer.site)
     
     // Add function name
     addToken(range: d.identifier.site, type: .function)
+    
+    // Add context parameters (generics and where clauses)
+    if !d.contextParameters.isEmpty {
+      addContextParameters(d.contextParameters)
+    }
     
     // Add parameters
     addParameters(d.parameters)
@@ -645,23 +752,34 @@ struct SemanticTokensWalker {
   // }
 
   mutating func addFunctionBundle(_ d: FunctionBundleDeclaration) {
-    // addAttributes(d.attributes)
-    // addAccessModifier(d.accessModifier)
-    // addIntroducer(d.notation)
-    // addIntroducer(d.introducerSite)
-    // addToken(range: d.identifier.site, type: .function)
-
-    // addGenericClause(d.genericClause)
-    // addParameters(d.parameters)
-    // addExpr(d.output, typeHint: .type)
-
-    // for i in d.impls {
-    //   let i = program[i]
-    //   addIntroducer(i.introducer)
-    //   // addParameter(i.receiver)
-    //   addBody(i.body)
-    // }
-    // todo
+    // Add modifiers
+    for modifier in d.modifiers {
+      addKeywordIntroducer(site: modifier.site)
+    }
+    
+    // Add "fun" keyword
+    addKeywordIntroducer(site: d.introducer.site)
+    
+    // Add function bundle name
+    addToken(range: d.identifier.site, type: .function)
+    
+    // Add context parameters (generics and where clauses)
+    if !d.contextParameters.isEmpty {
+      addContextParameters(d.contextParameters)
+    }
+    
+    // Add parameters
+    addParameters(d.parameters)
+    
+    // Add return type if present
+    if let output = d.output {
+      addSyntax(syntaxId: output.erased)
+    }
+    
+    // Add variants
+    for variant in d.variants {
+      addSyntax(syntaxId: variant.erased)
+    }
   }
 
   // mutating func addBody(_ body: FunctionBody?) {
@@ -813,15 +931,28 @@ struct SemanticTokensWalker {
   // MARK: - Statement methods
 
   mutating func addAssignment(_ s: Assignment) {
-    // todo
+    // Add left-hand side
+    addSyntax(syntaxId: s.lhs.erased)
+    
+    // Add right-hand side
+    addSyntax(syntaxId: s.rhs.erased)
   }
 
   mutating func addBlock(_ s: Block) {
-    // todo
+    // Add introducer if present (e.g., "do" keyword)
+    if let introducer = s.introducer {
+      addKeywordIntroducer(site: introducer.site)
+    }
+    
+    // Add all statements in the block
+    for statement in s.statements {
+      addSyntax(syntaxId: statement.erased)
+    }
   }
 
   mutating func addDiscard(_ s: Discard) {
-    // todo
+    // Add the discarded value
+    addSyntax(syntaxId: s.value.erased)
   }
 
   mutating func addReturn(_ s: Return) {
@@ -837,7 +968,24 @@ struct SemanticTokensWalker {
   // MARK: - Expression methods
 
   mutating func addArrowExpression(_ e: ArrowExpression) {
-    // todo
+    // Add environment if present
+    if let environment = e.environment {
+      addSyntax(syntaxId: environment.erased)
+    }
+    
+    // Add parameters
+    for parameter in e.parameters {
+      if let label = parameter.label {
+        addToken(range: label.site, type: .label)
+      }
+      addSyntax(syntaxId: parameter.ascription.erased)
+    }
+    
+    // Add effect
+    addKeywordIntroducer(site: e.effect.site)
+    
+    // Add output type
+    addSyntax(syntaxId: e.output.erased)
   }
 
   mutating func addBooleanLiteral(_ e: BooleanLiteral) {
@@ -858,23 +1006,51 @@ struct SemanticTokensWalker {
   }
 
   mutating func addConversion(_ e: Conversion) {
-    // todo
+    // Add source expression
+    addSyntax(syntaxId: e.source.erased)
+    
+    // Add target type
+    addSyntax(syntaxId: e.target.erased)
+    
+    // The operator (as, as!, as*) would need special handling
+    // but it doesn't seem to have a separate token site
   }
 
   mutating func addEqualityWitnessExpression(_ e: EqualityWitnessExpression) {
-    // todo
+    // Add left-hand side
+    addSyntax(syntaxId: e.lhs.erased)
+    
+    // Add right-hand side
+    addSyntax(syntaxId: e.rhs.erased)
   }
 
   mutating func addIf(_ e: If) {
-    // todo
+    // Add "if" keyword
+    addKeywordIntroducer(site: e.introducer.site)
+    
+    // Add conditions
+    for condition in e.conditions {
+      addSyntax(syntaxId: condition.erased)
+    }
+    
+    // Add success block
+    addSyntax(syntaxId: e.success.erased)
+    
+    // Add failure block
+    addSyntax(syntaxId: e.failure.erased)
   }
 
   mutating func addImplicitQualification(_ e: ImplicitQualification) {
-    // todo
+    // This is an implicit qualification (e.g., `.bar`), but it doesn't have
+    // explicit content to tokenize beyond the site itself
   }
 
   mutating func addInoutExpression(_ e: InoutExpression) {
-    // todo
+    // Add the mutation marker ("&")
+    addToken(range: e.marker.site, type: .operator)
+    
+    // Add the lvalue
+    addSyntax(syntaxId: e.lvalue.erased)
   }
 
   mutating func addIntegerLiteral(_ e: IntegerLiteral) {
@@ -882,11 +1058,20 @@ struct SemanticTokensWalker {
   }
 
   mutating func addKindExpression(_ e: KindExpression) {
-    // todo
+    switch e.value {
+    case .proper:
+      // "*" kind - already handled by the site
+      addToken(range: e.site, type: .keyword)
+    case .arrow(let input, let output):
+      // Arrow kind
+      addSyntax(syntaxId: input.erased)
+      addSyntax(syntaxId: output.erased)
+    }
   }
 
   mutating func addLambda(_ e: Lambda) {
-    // todo
+    // Add the underlying function
+    addSyntax(syntaxId: e.function.erased)
   }
 
   mutating func addNameExpression(_ e: NameExpression) {
@@ -894,23 +1079,55 @@ struct SemanticTokensWalker {
   }
 
   mutating func addNew(_ e: New) {
-    // todo
+    // Add qualification
+    addSyntax(syntaxId: e.qualification.erased)
+    
+    // Add the target name expression
+    addSyntax(syntaxId: e.target.erased)
   }
 
   mutating func addPatternMatch(_ e: PatternMatch) {
-    // todo
+    // Add "match" keyword
+    addKeywordIntroducer(site: e.introducer.site)
+    
+    // Add scrutinee
+    addSyntax(syntaxId: e.scrutinee.erased)
+    
+    // Add branches
+    for branch in e.branches {
+      addSyntax(syntaxId: branch.erased)
+    }
   }
 
   mutating func addPatternMatchCase(_ e: PatternMatchCase) {
-    // todo
+    // Add "case" keyword
+    addKeywordIntroducer(site: e.introducer.site)
+    
+    // Add pattern
+    addSyntax(syntaxId: e.pattern.erased)
+    
+    // Add body statements
+    for statement in e.body {
+      addSyntax(syntaxId: statement.erased)
+    }
   }
 
   mutating func addRemoteTypeExpression(_ e: RemoteTypeExpression) {
-    // todo
+    // Add access effect
+    addKeywordIntroducer(site: e.access.site)
+    
+    // Add projectee type
+    addSyntax(syntaxId: e.projectee.erased)
   }
 
   mutating func addStaticCall(_ e: StaticCall) {
-    // todo
+    // Add callee
+    addSyntax(syntaxId: e.callee.erased)
+    
+    // Add arguments
+    for argument in e.arguments {
+      addSyntax(syntaxId: argument.erased)
+    }
   }
 
   mutating func addStringLiteral(_ e: StringLiteral) {
@@ -918,33 +1135,67 @@ struct SemanticTokensWalker {
   }
 
   mutating func addSyntheticExpression(_ e: SynthethicExpression) {
-    // todo
+    // Synthetic expressions are compiler-generated, may not need tokenization
+    // or the structure may vary
   }
 
   mutating func addTupleLiteral(_ e: TupleLiteral) {
-    // todo
+    // Add all elements
+    for element in e.elements {
+      addSyntax(syntaxId: element.erased)
+    }
   }
 
   mutating func addTupleTypeExpression(_ e: TupleTypeExpression) {
-    // todo
+    // Add all element types
+    for element in e.elements {
+      addSyntax(syntaxId: element.erased)
+    }
+    
+    // Note: ellipsis token could be handled here if needed
+    if let ellipsis = e.ellipsis {
+      addToken(range: ellipsis.site, type: .operator)
+    }
   }
 
   mutating func addWildcardLiteral(_ e: WildcardLiteral) {
-    // todo
+    // Add wildcard token
+    addToken(range: e.site, type: .keyword)
   }
 
   // MARK: - Pattern methods
 
   mutating func addBindingPattern(_ p: BindingPattern) {
-    // todo
+    // Add introducer keyword (let, set, var, inout, sinklet)
+    addKeywordIntroducer(site: p.introducer.site)
+    
+    // Add nested pattern
+    addSyntax(syntaxId: p.pattern.erased)
+    
+    // Add type ascription if present
+    if let ascription = p.ascription {
+      addSyntax(syntaxId: ascription.erased)
+    }
   }
 
   mutating func addExtractorPattern(_ p: ExtractorPattern) {
-    // todo
+    // Add extractor expression
+    addSyntax(syntaxId: p.extractor.erased)
+    
+    // Add elements
+    for element in p.elements {
+      if let label = element.label {
+        addToken(range: label.site, type: .label)
+      }
+      addSyntax(syntaxId: element.value.erased)
+    }
   }
 
   mutating func addTuplePattern(_ p: TuplePattern) {
-    // todo
+    // Add all element patterns
+    for element in p.elements {
+      addSyntax(syntaxId: element.erased)
+    }
   }
 }
 
