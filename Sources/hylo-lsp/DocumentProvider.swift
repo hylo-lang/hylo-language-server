@@ -265,15 +265,8 @@ public actor DocumentProvider {
 
     try SourceFile.forEach(in: stdlibPath.url) { sourceFile in
       // Check if we have an in-memory version of this file
-      let sourceUrl: AbsoluteUrl?
-      switch sourceFile.name {
-      case .local(let url), .localInMemory(let url):
-        sourceUrl = AbsoluteUrl(url)
-      case .virtual:
-        sourceUrl = nil
-      }
 
-      if let sourceUrl = sourceUrl,
+      if let sourceUrl = sourceFile.name.absoluteUrl,
         let context = documents[sourceUrl]
       {
         let url = sourceUrl.url
@@ -298,7 +291,7 @@ public actor DocumentProvider {
 
     // Create program and helper
     var helper = CompilationHelper()
-    let moduleId = helper.program.demandModule(.init("hylo.Hylo"))  // Standard library module name
+    let moduleId = helper.program.demandModule(.standardLibrary)  // Use the correct standard library module name
 
     // Parse sources
     let (parseTime, parseError) = await helper.parse(sources, into: moduleId)
@@ -364,7 +357,7 @@ public actor DocumentProvider {
     let (stdlibPath, isStdlibDocument) = getStdlibPath(url)
 
     if isStdlibDocument {
-      // Document is part of standard library
+      // Document is part of standard library - just return the stdlib program
       let cache = try await getStandardLibraryProgram(from: stdlibPath)
       return cache.program
     } else {
@@ -374,8 +367,12 @@ public actor DocumentProvider {
       // Create a copy of the standard library program
       var program = stdlibCache.program
 
-      // Add the main module
+      // Add the main module for user code
       let mainModuleId = program.demandModule(.init("MainModule"))
+      
+
+      program[mainModuleId].addDependency(.standardLibrary)
+      
       let sourceFile = SourceFile(representing: url.url, inMemoryContents: text)
 
       var helper = CompilationHelper()
