@@ -15,6 +15,22 @@ public extension LanguageServerProtocol.DiagnosticSeverity {
 }
 
 public extension LanguageServerProtocol.Diagnostic {
+  init(_ diagnostic: FrontEnd.Diagnostic, uriMapping: UriMapping, program: Program) {
+    let relatedInformation = diagnostic.notes.map { note in
+      DiagnosticRelatedInformation(location: Location(note.site), message: note.message)
+    }
+
+    self.init(
+      range: LSPRange(diagnostic.site),
+      severity: DiagnosticSeverity(diagnostic.level),
+      code: nil,
+      source: nil,
+      message: diagnostic.message,
+      tags: nil,
+      relatedInformation: relatedInformation
+    )
+  }
+
   init(_ diagnostic: FrontEnd.Diagnostic) {
     let relatedInformation = diagnostic.notes.map { note in
       DiagnosticRelatedInformation(location: Location(note.site), message: note.message)

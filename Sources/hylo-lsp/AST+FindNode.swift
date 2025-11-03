@@ -1,60 +1,56 @@
 import FrontEnd
+import Logging
 
-extension AST {
-  private struct NodeFinder: ASTWalkObserver {
+extension Program {
+  private struct NodeFinder: SyntaxVisitor {
     // var outermostFunctions: [FunctionDecl.ID] = []
     let query: SourcePosition
-    private(set) var match: AnyNodeID?
-
+    private(set) var match: AnySyntaxIdentity?
 
     public init(_ query: SourcePosition) {
       self.query = query
     }
 
-    mutating func willEnter(_ n: AnyNodeID, in ast: AST) -> Bool {
-      let node = ast[n]
+    // todo this doesn't work in general because syntax elements don't necessarily nest, it's only guaranteed that scopes nest.
+    mutating func willEnter(_ n: AnySyntaxIdentity, in program: Program) -> Bool {
+      let node = program[n]
       let site = node.site
-
-      if let scheme = site.file.url.scheme {
-        if scheme == "synthesized" {
-          // logger.debug("Enter: \(site), id: \(n)")
-          return true
-        }
-      }
-
 
       // NOTE: We should cache root node per file
 
-      if site.file != query.file {
-        return false
-      }
+      // if site.sfile != query.file {
+      //   print("Different files were found in NodeFinder: \(site.file.url.absoluteString) vs \(query.file.url.absoluteString)")
+      //   return false
+      // }
 
       // logger.debug("Enter: \(site), id: \(n)")
 
-      if site.startIndex > query.index {
+      if site.start.index > query.index {
         return false
       }
 
       // We have a match, but nested children may be more specific
-      if site.endIndex >= query.index {
+      if site.end.index >= query.index {
         match = n
         // logger.debug("Found match: \(n)")
-        return true
       }
 
       return true
     }
   }
 
-  public func findNode(_ position: SourcePosition) -> AnyNodeID? {
-    var finder = NodeFinder(position)
-    for m in modules {
-      walk(m, notifying: &finder)
-      if finder.match != nil {
-        break
-      }
+  public func findNode(_ position: SourcePosition, logger: Logger) -> AnySyntaxIdentity? {
+    guard let absoluteUrl = position.source.name.absoluteUrl else {
+      print("Could not get absolute URL for file: \(position.source.name)")
+      return nil
+    }
+    guard let sourceContainer = findTranslationUnit(absoluteUrl, logger: logger)?.identity else {
+      print("Could not find translation unit for file: \(absoluteUrl)")
+      return nil
     }
 
+    var finder = NodeFinder(position)
+    visit(sourceContainer, calling: &finder)
     return finder.match
   }
 }

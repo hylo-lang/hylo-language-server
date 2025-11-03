@@ -1,4 +1,8 @@
 FROM ghcr.io/hylo-lang/hylo-dev-toolchain:v1.0.0
 RUN apt-get update && apt-get install jq -y && rm -rf /var/lib/apt/lists/*
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash && \
-    \. "$HOME/.nvm/nvm.sh" && nvm install 22 && node -v
+RUN apt-get update && apt-get install -y curl gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    # Cleanup to reduce image size
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

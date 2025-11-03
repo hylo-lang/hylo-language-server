@@ -9,5 +9,7 @@
     "*.agxComponent": "xml",
     "__locale": "cpp"
   },
-  "atlascode.jira.enabled": false
+  "atlascode.jira.enabled": false,
+  "swift.path": "/usr/bin",
+  "swift.swiftEnvironmentVariables": {}
 }

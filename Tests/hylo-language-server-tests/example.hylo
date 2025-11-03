@@ -1,0 +1,13 @@
+public fun main() {
+    print("Hello world!")
+}
+
+
+
+
+public fun add(a: Int, b: Int) -> Int{
+    return a + b
+}
+
+
+

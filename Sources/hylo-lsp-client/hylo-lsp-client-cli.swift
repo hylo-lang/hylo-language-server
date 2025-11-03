@@ -213,21 +213,6 @@ func printDiagnostic(_ d: LanguageServerProtocol.Diagnostic, in filepath: String
   }
 }
 
-func withDiagnosticsCheck<T>(_ fn: () async throws -> T) async throws -> T {
-  do {
-    return try await fn()
-  }
-  catch let d as DiagnosticSet {
-
-    for d in d.elements {
-      let _d = LanguageServerProtocol.Diagnostic(d)
-      printDiagnostic(_d, in: d.site.file.url.path)
-    }
-
-    throw d
-  }
-}
-
 protocol DocumentCommand : AsyncParsableCommand {
   func process(doc: DocumentLocation, using server: ServerConnection) async throws
 }

@@ -1,355 +1,218 @@
+import Foundation
 import FrontEnd
 import LanguageServerProtocol
 import Logging
 
-struct DocumentSymbolWalker {
-  public let document: DocumentUri
-  public let translationUnit: TranslationUnit
-  public let ast: AST
+/// A helper for collecting document symbols from the syntax tree.
+struct DocumentSymbolCollector {
+  public let program: Program
   private let logger: Logger
-  private(set) var symbols: [DocumentSymbol]
 
-  public init(document: DocumentUri, translationUnit: TranslationUnit, ast: AST, logger: Logger) {
-      self.document = document
-      self.translationUnit = translationUnit
-      self.ast = ast
-      self.symbols = []
-      self.logger = logger
+  public init(program: Program, logger: Logger) {
+    self.program = program
+    self.logger = logger
   }
 
-  public mutating func walk() -> [DocumentSymbol] {
-    precondition(symbols.isEmpty)
-    return getSymbols(translationUnit.decls) ?? []
+  public func collectSymbols(from declarations: [DeclarationIdentity]) -> [DocumentSymbol] {
+    return declarations.compactMap { getDocumentSymbol(for: $0.erased) }
   }
 
-  func getSymbols(_ ids: [AnyDeclID]) -> [DocumentSymbol]? {
-    let symbols = ids.flatMap{ getSymbols($0) ?? [] }
-    return if symbols.isEmpty { nil } else { symbols }
-  }
+  private func getDocumentSymbol(for node: AnySyntaxIdentity) -> DocumentSymbol? {
+    let syntax = program[node]
 
-  func getSymbols(_ id: AnyDeclID) -> [DocumentSymbol]? {
-    let node = ast[id]
-    // logger.debug("Found symbol node: \(id), site: \(node.site)")
+    switch syntax {
+    // Type declarations
+    case let d as StructDeclaration:
+      return createSymbol(
+        name: d.identifier.value,
+        kind: .struct,
+        range: d.site,
+        selectionRange: d.identifier.site,
+        children: getChildSymbols(d.members)
+      )
 
-    switch node {
-    case let d as NamespaceDecl:
-      return [getSymbol(d)]
-    case let d as ProductTypeDecl:
-      return [getSymbol(d)]
-    case let d as ExtensionDecl:
-      return [getSymbol(d)]
-    case let d as ConformanceDecl:
-      return [getSymbol(d)]
-    case let d as AssociatedTypeDecl:
-      return [getSymbol(d)]
-    case let d as TypeAliasDecl:
-      return [getSymbol(d)]
-    case let d as TraitDecl:
-      return [getSymbol(d)]
-    case let d as OperatorDecl:
-      return [getSymbol(d)]
-    case let d as FunctionDecl:
-      return [getSymbol(d)]
-    case let d as MethodDecl:
-      return getSymbols(d)
-    case let d as InitializerDecl:
-      return [getSymbol(d)]
-    case let d as SubscriptDecl:
-      return [getSymbol(d)]
-    case let d as BindingDecl:
-      return getSymbols(d)
-    case _ as GenericParameterDecl:
-      return nil
-      // return [getSymbol(d)]
+    case let d as EnumDeclaration:
+      return createSymbol(
+        name: d.identifier.value,
+        kind: .enum,
+        range: d.site,
+        selectionRange: d.identifier.site,
+        children: getChildSymbols(d.members)
+      )
+
+    case let d as TraitDeclaration:
+      return createSymbol(
+        name: d.identifier.value,
+        kind: .interface,
+        range: d.site,
+        selectionRange: d.identifier.site,
+        children: getChildSymbols(d.members)
+      )
+
+    case let d as TypeAliasDeclaration:
+      return createSymbol(
+        name: d.identifier.value,
+        kind: .class,  // Using class as closest match for type alias
+        range: d.site,
+        selectionRange: d.identifier.site
+      )
+
+    case let d as AssociatedTypeDeclaration:
+      return createSymbol(
+        name: d.identifier.value,
+        kind: .typeParameter,
+        range: d.site,
+        selectionRange: d.identifier.site
+      )
+
+    // Extension declarations
+    case let d as ExtensionDeclaration:
+      let extendedTypeName = getTypeName(d.extendee)
+      return createSymbol(
+        name: "extension \(extendedTypeName)",
+        kind: .class,
+        range: d.site,
+        selectionRange: d.site,  // Use whole declaration as selection
+        children: getChildSymbols(d.members)
+      )
+
+    case let d as ConformanceDeclaration:
+      let subjectName = getStaticCallName(d.witness)
+      return createSymbol(
+        name: "conformance \(subjectName)",
+        kind: .class,
+        range: d.site,
+        selectionRange: d.site,
+        children: getChildSymbols(d.members)
+      )
+
+    // Function declarations
+    case let d as FunctionDeclaration:
+      return createSymbol(
+        name: getFunctionName(d.identifier.value),
+        kind: .function,
+        range: d.site,
+        selectionRange: d.identifier.site
+      )
+
+    case let d as FunctionBundleDeclaration:
+      return createSymbol(
+        name: d.identifier.value,
+        kind: .function,
+        range: d.site,
+        selectionRange: d.identifier.site
+      )
+
+    // Enum case
+    case let d as EnumCaseDeclaration:
+      return createSymbol(
+        name: d.identifier.value,
+        kind: .enumMember,
+        range: d.site,
+        selectionRange: d.identifier.site
+      )
+
+    // Variable bindings
+    case let d as BindingDeclaration:
+      return getBindingSymbol(d)
+
+    // Import declarations
+    case let d as ImportDeclaration:
+      return createSymbol(
+        name: "import \(d.identifier.value)",
+        kind: .namespace,
+        range: d.site,
+        selectionRange: d.identifier.site
+      )
+
     default:
-      logger.warning("Unknown node: \(node)")
       return nil
     }
   }
 
-  func getSymbol(_ d: NamespaceDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.identifier.site)
-
-    return DocumentSymbol(
-      name: d.identifier.value,
-      detail: nil,
-      kind: SymbolKind.namespace,
-      range: range,
-      selectionRange: selectionRange,
-      children: getSymbols(d.members)
-    )
-  }
-
-  func getSymbol(_ d: ProductTypeDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.identifier.site)
-
-    return DocumentSymbol(
-      name: d.identifier.value,
-      detail: nil,
-      kind: SymbolKind.struct,
-      range: range,
-      selectionRange: selectionRange,
-      children: getSymbols(d.members)
-    )
-  }
-
-  func name(of e: AnyExprID, fallback: String) -> String {
-    let node = ast[e.base]
-    if let name = node as? NameExpr {
-      return name.name.value.description
-    }
-
-    logger.warning("Unknown named expression: \(node)")
-    return fallback
-  }
-
-
-  func getSymbol(_ d: ExtensionDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let sub = ast[d.subject]
-    let selectionRange = LSPRange(sub.site)
-
-
-    return DocumentSymbol(
-      name: name(of: d.subject, fallback: "extension"),
-      detail: nil,
-      kind: SymbolKind.struct,
-      range: range,
-      selectionRange: selectionRange,
-      children: getSymbols(d.members)
-    )
-  }
-
-  func getSymbol(_ d: AssociatedTypeDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.identifier.site)
-
-    return DocumentSymbol(
-      name: d.identifier.value,
-      detail: nil,
-      kind: SymbolKind.struct,
-      range: range,
-      selectionRange: selectionRange
-    )
-  }
-
-  func getSymbol(_ d: TypeAliasDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.identifier.site)
-
-    return DocumentSymbol(
-      name: d.identifier.value,
-      detail: nil,
-      kind: SymbolKind.struct,
-      range: range,
-      selectionRange: selectionRange
-    )
-  }
-
-
-  func getSymbol(_ d: ConformanceDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let sub = ast[d.subject]
-    let selectionRange = LSPRange(sub.site)
-
-    return DocumentSymbol(
-      name: name(of: d.subject, fallback: "conformance"),
-      detail: nil,
-      kind: SymbolKind.struct,
-      range: range,
-      selectionRange: selectionRange,
-      children: getSymbols(d.members)
-    )
-  }
-
-  func getSymbol(_ d: TraitDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.identifier.site)
-
-    return DocumentSymbol(
-      name: d.identifier.value,
-      detail: nil,
-      kind: SymbolKind.interface,
-      range: range,
-      selectionRange: selectionRange,
-      children: getSymbols(d.members)
-    )
-  }
-
-  func getSymbol(_ d: OperatorDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.name.site)
-
-    return DocumentSymbol(
-      name: d.name.value,
-      detail: nil,
-      kind: SymbolKind.operator,
-      range: range,
-      selectionRange: selectionRange
-    )
-  }
-
-  func getSymbol(_ d: FunctionDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.identifier?.site ?? d.site)
-
-    return DocumentSymbol(
-      name: d.identifier?.value ?? "fun",
-      detail: nil,
-      kind: SymbolKind.function,
-      range: range,
-      selectionRange: selectionRange
-    )
-  }
-
-  func getSymbols(_ d: MethodDecl) -> [DocumentSymbol] {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.identifier.site)
-
-    return [DocumentSymbol(
-      name: d.identifier.value,
-      detail: nil,
-      kind: SymbolKind.method,
-      range: range,
-      selectionRange: selectionRange
-    )]
-
-    // return d.impls.map { i in
-    //   let i = ast[i]
-    //   let range = LSPRange(i.site)
-    //   let selectionRange = LSPRange(i.introducer.site)
-
-    //   return DocumentSymbol(
-    //     name: d.identifier.value,
-    //     detail: nil,
-    //     kind: SymbolKind.method,
-    //     range: range,
-    //     selectionRange: selectionRange
-    //   )
-
-  }
-
-
-  func getSymbol(_ d: InitializerDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.introducer.site)
-
-    return DocumentSymbol(
-      name: "init",
-      detail: nil,
-      kind: SymbolKind.constructor,
-      range: range,
-      selectionRange: selectionRange
-    )
-  }
-
-  func getSymbol(_ d: GenericParameterDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.identifier.site)
-
-    return DocumentSymbol(
-      name: d.identifier.value,
-      detail: nil,
-      kind: SymbolKind.typeParameter,
-      range: range,
-      selectionRange: selectionRange
-    )
-  }
-
-  func getSymbol(_ d: SubscriptDecl) -> DocumentSymbol {
-    let range = LSPRange(d.site)
-    let selectionRange = LSPRange(d.introducer.site)
-    let name = d.identifier?.value ?? "subscript"
-
+  private func createSymbol(
+    name: String,
+    kind: SymbolKind,
+    range: SourceSpan,
+    selectionRange: SourceSpan,
+    children: [DocumentSymbol]? = nil
+  ) -> DocumentSymbol {
     return DocumentSymbol(
       name: name,
       detail: nil,
-      kind: SymbolKind.constructor,
-      range: range,
-      selectionRange: selectionRange
+      kind: kind,
+      range: LSPRange(range),
+      selectionRange: LSPRange(selectionRange),
+      children: children
     )
   }
 
-  func getSymbols(_ d: BindingDecl) -> [DocumentSymbol] {
-    let p = ast[d.pattern]
-    var symbols: [DocumentSymbol] = []
-    getSymbols(p.subpattern, symbols: &symbols)
-    return symbols
+  private func getChildSymbols(_ members: [DeclarationIdentity]?) -> [DocumentSymbol]? {
+    guard let members = members else { return nil }
+    let symbols = collectSymbols(from: members)
+    return symbols.isEmpty ? nil : symbols
   }
 
-  func getSymbols(_ pattern: AnyPatternID, symbols: inout [DocumentSymbol]) {
-    let p = ast[pattern]
+  private func getBindingSymbol(_ binding: BindingDeclaration) -> DocumentSymbol? {
+    // For binding declarations, we need to extract variable names from the pattern
+    let pattern = program[binding.pattern]
+    return getPatternSymbol(pattern, at: binding.site)
+  }
 
-    switch p {
-    case let p as NamePattern:
-      let v = ast[p.decl]
-      symbols.append(DocumentSymbol(
-        name: v.identifier.value,
-        detail: nil,
-        kind: SymbolKind.variable,
-        range: LSPRange(v.site),
-        selectionRange: LSPRange(v.identifier.site)
-      ))
+  private func getPatternSymbol(_ pattern: BindingPattern, at site: SourceSpan) -> DocumentSymbol? {
+    // This is a simplified implementation - in practice, you might want to
+    // handle more complex patterns differently
+    if let variablePattern = program[pattern.pattern] as? VariableDeclaration {
+      return createSymbol(
+        name: variablePattern.identifier.value,
+        kind: .variable,
+        range: site,  // Use the binding declaration's site for the full range
+        selectionRange: variablePattern.identifier.site
+      )
+    }
+    return nil
+  }
 
-    case let p as BindingPattern:
-      getSymbols(p.subpattern, symbols: &symbols)
-    case let p as TuplePattern:
-      for e in p.elements {
-        getSymbols(e.pattern, symbols: &symbols)
-      }
-    default:
-      logger.debug("Unknown pattern: \(p)")
+  private func getTypeName(_ typeExpr: ExpressionIdentity) -> String {
+    let expr = program[typeExpr]
+
+    if let nameExpr = expr as? NameExpression {
+      return nameExpr.name.value.description
+    }
+
+    // Fallback for other expression types
+    return "UnknownType"
+  }
+
+  private func getStaticCallName(_ staticCall: StaticCall.ID) -> String {
+    let call = program[staticCall]
+    // For conformance declarations, try to extract the type name from the callee
+    return getTypeName(call.callee)
+  }
+
+  private func getFunctionName(_ functionId: FunctionIdentifier) -> String {
+    switch functionId {
+    case .simple(let name):
+      return name
+    case .operator(let notation, let symbol):
+      return "\(notation) \(symbol)"
+    case .lambda:
+      return "lambda"
     }
   }
-
-  func kind(_ id: AnyDeclID) -> SymbolKind {
-    switch id.kind {
-      case BindingDecl.self: return SymbolKind.variable
-      case VarDecl.self: return SymbolKind.variable
-      case InitializerDecl.self: return SymbolKind.constructor
-      case FunctionDecl.self: return SymbolKind.function
-      case SubscriptDecl.self: return SymbolKind.function
-      case ProductTypeDecl.self: return SymbolKind.struct
-      case ConformanceDecl.self: return SymbolKind.struct
-      case TraitDecl.self: return SymbolKind.interface
-      default: return SymbolKind.object
-    }
-  }
-
-  func name(of t: AnyType) -> String {
-    switch t.base {
-    case let u as ProductType:
-      return u.name.value
-    case let u as TypeAliasType:
-      return u.name.value
-    // case let u as ConformanceLensType:
-    //   return u.name.value
-    case let u as AssociatedTypeType:
-      return u.name.value
-    case let u as GenericTypeParameterType:
-      return u.name.value
-    case let u as NamespaceType:
-      return u.name.value
-    case let u as TraitType:
-      return u.name.value
-    default:
-      // logger.warning("Unexpected type: \(t.base)")
-      return "unknown"
-    }
-  }
-
 }
 
-extension AST {
-  public func listDocumentSymbols(_ document: DocumentUri, logger: Logger) -> [DocumentSymbol] {
+extension Program {
+  public func listDocumentSymbols(_ document: AbsoluteUrl, logger: Logger) -> [DocumentSymbol] {
     logger.debug("List symbols in document: \(document)")
-    guard let translationUnit = findTranslationUnit(document) else {
+
+    guard let sourceContainer = findTranslationUnit(document, logger: logger) else {
       logger.error("Failed to locate translation unit: \(document)")
       return []
     }
-    var walker = DocumentSymbolWalker(document: document, translationUnit: self[translationUnit], ast: self, logger: logger)
-    return walker.walk()
+
+    let collector = DocumentSymbolCollector(program: self, logger: logger)
+
+    return collector.collectSymbols(from: sourceContainer.topLevelDeclarations)
   }
 }
