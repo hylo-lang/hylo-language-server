@@ -23,7 +23,7 @@ public enum GetDocumentContextError: Error {
 private struct StandardLibraryCache {
   let program: Program
   let fingerprint: UInt64
-  
+
   init(program: Program, sources: [SourceFile]) {
     self.program = program
     self.fingerprint = SourceFile.fingerprint(contentsOf: sources)
@@ -33,14 +33,16 @@ private struct StandardLibraryCache {
 /// A simple compilation helper for LSP document processing
 private struct CompilationHelper {
   var program: Program
-  
+
   init() {
     self.program = Program()
   }
-  
+
   /// Parses sources into a module
   @discardableResult
-  mutating func parse(_ sources: [SourceFile], into module: Module.ID) async -> (elapsed: Duration, containsError: Bool) {
+  mutating func parse(_ sources: [SourceFile], into module: Module.ID) async -> (
+    elapsed: Duration, containsError: Bool
+  ) {
     let clock = ContinuousClock()
     let elapsed = clock.measure {
       modify(&program[module]) { (m) in
@@ -49,20 +51,22 @@ private struct CompilationHelper {
     }
     return (elapsed, program[module].containsError)
   }
-  
+
   /// Assigns scopes to trees in module
   @discardableResult
-  mutating func assignScopes(of module: Module.ID) async -> (elapsed: Duration, containsError: Bool) {
+  mutating func assignScopes(of module: Module.ID) async -> (elapsed: Duration, containsError: Bool)
+  {
     let clock = ContinuousClock()
     let elapsed = await clock.measure {
       await program.assignScopes(module)
     }
     return (elapsed, program[module].containsError)
   }
-  
+
   /// Assigns types to trees in module
   @discardableResult
-  mutating func assignTypes(of module: Module.ID) async -> (elapsed: Duration, containsError: Bool) {
+  mutating func assignTypes(of module: Module.ID) async -> (elapsed: Duration, containsError: Bool)
+  {
     let clock = ContinuousClock()
     let elapsed = clock.measure {
       program.assignTypes(module)
@@ -77,7 +81,7 @@ public actor DocumentProvider {
   let connection: JSONRPCClientConnection
   var rootUri: String?
   var workspaceFolders: [WorkspaceFolder]
-  
+
   // Standard library caching
   private var stdlibCache: [AbsoluteUrl: StandardLibraryCache] = [:]
   public let defaultStdlibFilepath: URL
@@ -254,11 +258,11 @@ public actor DocumentProvider {
   }
 
   // MARK: - Standard Library Management
-  
+
   /// Loads standard library sources from the given path
   private func loadStandardLibrarySources(from stdlibPath: AbsoluteUrl) throws -> [SourceFile] {
     var sources: [SourceFile] = []
-    
+
     try SourceFile.forEach(in: stdlibPath.url) { sourceFile in
       // Check if we have an in-memory version of this file
       let sourceUrl: AbsoluteUrl?
@@ -268,9 +272,10 @@ public actor DocumentProvider {
       case .virtual:
         sourceUrl = nil
       }
-      
+
       if let sourceUrl = sourceUrl,
-         let context = documents[sourceUrl] {
+        let context = documents[sourceUrl]
+      {
         let url = sourceUrl.url
         let text = context.doc.text
         sources.append(SourceFile(representing: url, inMemoryContents: text))
@@ -278,21 +283,23 @@ public actor DocumentProvider {
         sources.append(sourceFile)
       }
     }
-    
+
     return sources
   }
-  
+
   /// Builds a program with standard library loaded and typed
-  private func buildStandardLibraryProgram(from stdlibPath: AbsoluteUrl) async throws -> StandardLibraryCache {
+  private func buildStandardLibraryProgram(from stdlibPath: AbsoluteUrl) async throws
+    -> StandardLibraryCache
+  {
     logger.debug("Building standard library program from: \(stdlibPath)")
-    
+
     // Load sources
     let sources = try loadStandardLibrarySources(from: stdlibPath)
-    
+
     // Create program and helper
     var helper = CompilationHelper()
-    let moduleId = helper.program.demandModule(.init("hylo.Hylo")) // Standard library module name
-    
+    let moduleId = helper.program.demandModule(.init("hylo.Hylo"))  // Standard library module name
+
     // Parse sources
     let (parseTime, parseError) = await helper.parse(sources, into: moduleId)
     logger.debug("Standard library parsing took: \(parseTime)")
@@ -300,7 +307,7 @@ public actor DocumentProvider {
       logger.error("Standard library parsing failed")
       // Continue anyway for LSP features, just log the error
     }
-    
+
     // Assign scopes
     let (scopeTime, scopeError) = await helper.assignScopes(of: moduleId)
     logger.debug("Standard library scope assignment took: \(scopeTime)")
@@ -308,7 +315,7 @@ public actor DocumentProvider {
       logger.error("Standard library scope assignment failed")
       // Continue anyway for LSP features
     }
-    
+
     // Type check
     let (typeTime, typeError) = await helper.assignTypes(of: moduleId)
     logger.debug("Standard library type checking took: \(typeTime)")
@@ -316,18 +323,20 @@ public actor DocumentProvider {
       logger.error("Standard library type checking failed")
       // Continue anyway for LSP features
     }
-    
+
     return StandardLibraryCache(program: helper.program, sources: sources)
   }
-  
+
   /// Gets or builds the standard library program, with caching
-  private func getStandardLibraryProgram(from stdlibPath: AbsoluteUrl) async throws -> StandardLibraryCache {
+  private func getStandardLibraryProgram(from stdlibPath: AbsoluteUrl) async throws
+    -> StandardLibraryCache
+  {
     // Check if we have a cached version
     if let cached = stdlibCache[stdlibPath] {
       // Verify the cache is still valid by checking fingerprint
       let currentSources = try loadStandardLibrarySources(from: stdlibPath)
       let currentFingerprint = SourceFile.fingerprint(contentsOf: currentSources)
-      
+
       if cached.fingerprint == currentFingerprint {
         logger.debug("Using cached standard library")
         return cached
@@ -335,25 +344,25 @@ public actor DocumentProvider {
         logger.debug("Standard library cache invalidated, rebuilding")
       }
     }
-    
+
     // Build new program
     let cache = try await buildStandardLibraryProgram(from: stdlibPath)
     stdlibCache[stdlibPath] = cache
     return cache
   }
-  
+
   /// Invalidates standard library cache for the given path
   private func invalidateStandardLibraryCache(for stdlibPath: AbsoluteUrl) {
     logger.debug("Invalidating standard library cache for: \(stdlibPath)")
     stdlibCache.removeValue(forKey: stdlibPath)
   }
-  
+
   // MARK: - Program Building
-  
+
   /// Builds a complete program for a document
   private func buildProgramForDocument(url: AbsoluteUrl, text: String) async throws -> Program {
     let (stdlibPath, isStdlibDocument) = getStdlibPath(url)
-    
+
     if isStdlibDocument {
       // Document is part of standard library
       let cache = try await getStandardLibraryProgram(from: stdlibPath)
@@ -361,17 +370,17 @@ public actor DocumentProvider {
     } else {
       // Document is separate from standard library
       let stdlibCache = try await getStandardLibraryProgram(from: stdlibPath)
-      
+
       // Create a copy of the standard library program
       var program = stdlibCache.program
-      
+
       // Add the main module
       let mainModuleId = program.demandModule(.init("MainModule"))
       let sourceFile = SourceFile(representing: url.url, inMemoryContents: text)
-      
+
       var helper = CompilationHelper()
       helper.program = program
-      
+
       // Parse the main file
       let (parseTime, parseError) = await helper.parse([sourceFile], into: mainModuleId)
       logger.debug("Main module parsing took: \(parseTime)")
@@ -379,7 +388,7 @@ public actor DocumentProvider {
         logger.error("Main module parsing failed")
         // Continue anyway for LSP features
       }
-      
+
       // Assign scopes
       let (scopeTime, scopeError) = await helper.assignScopes(of: mainModuleId)
       logger.debug("Main module scope assignment took: \(scopeTime)")
@@ -387,7 +396,7 @@ public actor DocumentProvider {
         logger.error("Main module scope assignment failed")
         // Continue anyway for LSP features
       }
-      
+
       // Type check
       let (typeTime, typeError) = await helper.assignTypes(of: mainModuleId)
       logger.debug("Main module type checking took: \(typeTime)")
@@ -395,7 +404,7 @@ public actor DocumentProvider {
         logger.error("Main module type checking failed")
         // Continue anyway for LSP features
       }
-      
+
       return helper.program
     }
   }
@@ -419,13 +428,13 @@ public actor DocumentProvider {
 
     do {
       try context.applyChanges(params.contentChanges, version: params.textDocument.version)
-      
+
       // Rebuild program with updated content
       let program = try await buildProgramForDocument(url: uri, text: context.doc.text)
       context = DocumentContext(context.doc, program: program)
-      
+
       documents[uri] = context
-      
+
       logger.debug("Updated changed document: \(uri), version: \(context.doc.version ?? -1)")
 
       // Invalidate cached stdlib AST if the edited document is part of the stdlib
@@ -440,12 +449,12 @@ public actor DocumentProvider {
 
   public func registerDocument(_ params: DidOpenTextDocumentParams) async {
     let doc = Document(textDocument: params.textDocument)
-    
+
     do {
       // Build program for the document
       let program = try await buildProgramForDocument(url: doc.uri, text: doc.text)
       let context = DocumentContext(doc, program: program)
-      
+
       logger.debug("Register opened document: \(doc.uri)")
       documents[doc.uri] = context
     } catch {
@@ -470,7 +479,7 @@ public actor DocumentProvider {
     }
 
     let document = Document(uri: url, version: 0, text: text)
-    
+
     do {
       let program = try await buildProgramForDocument(url: url, text: text)
       return DocumentContext(document, program: program)
@@ -481,14 +490,16 @@ public actor DocumentProvider {
     }
   }
 
-  func getDocumentContext(uri: DocumentUri) async throws(GetDocumentContextError) -> DocumentContext {
+  func getDocumentContext(uri: DocumentUri) async throws(GetDocumentContextError) -> DocumentContext
+  {
     guard let url = DocumentProvider.validateDocumentUrl(uri) else {
       throw GetDocumentContextError.invalidUri(uri)
     }
     return try await getDocumentContext(url: url)
   }
 
-  func getDocumentContext(url: AbsoluteUrl) async throws(GetDocumentContextError) -> DocumentContext {
+  func getDocumentContext(url: AbsoluteUrl) async throws(GetDocumentContextError) -> DocumentContext
+  {
     if let context = documents[url] {
       return context
     }
@@ -499,27 +510,18 @@ public actor DocumentProvider {
     return try await implicitlyRegisterDocument(url: url)
   }
 
-  public func getParsedProgram(url: DocumentUri) async throws(DocumentError)
+  public func getParsedProgram(url: DocumentUri) async throws
     -> Program
   {
-    let context: DocumentContext
-    do {
-      context = try await getDocumentContext(uri: url)
-    } catch {
-      throw DocumentError.other(error)
-    }
-    return context.program
+    (try await getDocumentContext(uri: url)).program
   }
 
-  public func getAnalyzedDocument(_ textDocument: TextDocumentProtocol) async throws(DocumentError)
+  public func getAnalyzedDocument(_ textDocument: TextDocumentProtocol) async throws
     -> AnalyzedDocument
   {
-    let context: DocumentContext
-    do { 
-      context = try await getDocumentContext(uri: textDocument.uri) 
-    } catch {
-      throw .other(error)
-    }
+
+    let context = try await getDocumentContext(uri: textDocument.uri)
+
     return AnalyzedDocument(
       url: context.url,
       program: context.program)
