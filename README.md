@@ -4,24 +4,26 @@ Proof of concept LSP server for the [Hylo](https://github.com/hylo-lang/hylo) pr
 
 The [Hylo VSCode extension](https://github.com/koliyo/hylo-vscode-extension) dynamically downloads the LSP binaries for the current machine OS/architecture.
 
-This is currently very early in development!
+This is currently very early in development, and the project is being transitioned from the old frontend to the new one.
 
 ## Features
 
 The Hylo LSP currently support the following LSP features:
 
 - Semantic token
-  - Syntax highlighting
+  - Syntax highlighting (works with new frontend)
 - Document symbols
-  - Document outline and navigate to local symbol
-- Definition
-  - Jump to definition
+  - Document outline and navigate to local symbol (works with new frontend)
 - Diagnostics
-  - Errors and warnings reported by the compiler
+  - Errors and warnings reported by the compiler (works with new frontend)
+- Definition
+  - Jump to definition (worked with old frontend, now broken)
 
 The LSP distribution currently includes a copy of the Hylo stdlib, until we have a reliable way of locating the local Hylo installation.
 
 ## Developer
+
+You can use the development container to set up a development environment easily, but as of now, the project only requires Swift 6.2 and NodeJs.
 
 To build and install a local dev version of the LSP + VSCode extension:
 
