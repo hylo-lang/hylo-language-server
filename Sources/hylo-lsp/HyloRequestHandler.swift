@@ -127,22 +127,33 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
   public func diagnostics(id: JSONId, params: DocumentDiagnosticParams) async -> Response<
     DocumentDiagnosticReport
   > {
+    logger.debug("Begin handle diagnostics")
     do {
-      _ = try await documentProvider.getAnalyzedDocument(params.textDocument)
-      return .success(RelatedDocumentDiagnosticReport(kind: .full, items: []))
-    } catch {
-      switch error {
-      case .diagnostics(let d):
-        return .success(
-          buildDiagnosticReport(uri: AbsoluteUrl(fromUrlString: params.textDocument.uri)!, diagnostics: d)
-        )
-      case .other:
+      let context = try await documentProvider.getAnalyzedDocument(params.textDocument)
+      let program = context.program
+
+      guard
+        let sourceContainer = program.findTranslationUnit(
+          AbsoluteUrl(fromUrlString: params.textDocument.uri)!, logger: logger)
+      else {
+        logger.error("Failed to locate translation unit: \(params.textDocument.uri)")
         return .failure(
           JSONRPCResponseError(
-            code: ErrorCodes.InternalError, message: "Unknown build error: \(error)"))
+            code: ErrorCodes.InternalError,
+            message: "Failed to locate translation unit: \(params.textDocument.uri)"))
       }
-    }
 
+      logger.debug("Diagnostics: \(sourceContainer.diagnostics)")
+      return .success(
+        buildDiagnosticReport(
+          uri: AbsoluteUrl(fromUrlString: params.textDocument.uri)!,
+          diagnostics: sourceContainer.diagnostics)
+      )
+    } catch {
+      return .failure(
+        JSONRPCResponseError(
+          code: ErrorCodes.InternalError, message: "Unknown build error: \(error)"))
+    }
   }
 
   func buildDiagnosticReport(uri: AbsoluteUrl, diagnostics: DiagnosticSet)
@@ -224,15 +235,9 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
       let docResult = try await documentProvider.getAnalyzedDocument(textDocument)
       return await fn(docResult)
     } catch {
-      switch error {
-      case .diagnostics(let d):
-        logger.warning("Program build failed\n\n\(d)")
-        return .success(nil)
-      case .other:
-        return .failure(
-          JSONRPCResponseError(
-            code: ErrorCodes.InternalError, message: "Unknown build error: \(error)"))
-      }
+      return .failure(
+        JSONRPCResponseError(
+          code: ErrorCodes.InternalError, message: "Unknown build error: \(error)"))
     }
   }
 
@@ -245,12 +250,8 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
     do {
       result = try await documentProvider.getParsedProgram(url: textDocument.uri)
     } catch {
-      let errorMsg =
-        switch error {
-        case .diagnostics: "Failed to build AST"
-        case .other(let e): e.localizedDescription
-        }
-      return .failure(JSONRPCResponseError(code: ErrorCodes.InvalidParams, message: errorMsg))
+      return .failure(
+        JSONRPCResponseError(code: ErrorCodes.InvalidParams, message: error.localizedDescription))
     }
 
     return await fn(result)

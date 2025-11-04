@@ -1,5 +1,5 @@
 {
-    "name": "Hylo Swift+LLVM",
+    "name": "Hylo Swift+LLVM+Node",
     "build": {
         "dockerfile": "Dockerfile",
         "args": {

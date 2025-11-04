@@ -8,9 +8,9 @@ extension Program {
   public func findTranslationUnit(_ url: AbsoluteUrl, logger: Logger) -> Module.SourceContainer? {
     // todo improve this, it's very inefficient. We should probably cache a mapping from URLs to translation units.
     for (_, module) in modules {
-      if let (_, source) = module.sources.first(where: { $0.value.source.name.absoluteUrl == url })
-      {
-        logger.debug("Found translation unit for url \(url)")
+      if let (_, source) = module.sources.first(where: {
+        return $0.value.source.name.absoluteUrl == url
+      }) {
         return source
       }
     }

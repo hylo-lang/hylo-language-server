@@ -144,8 +144,3 @@ struct DocumentContext {
   }
 
 }
-
-public enum DocumentError: Error {
-  case diagnostics(DiagnosticSet)
-  case other(Error)
-}
