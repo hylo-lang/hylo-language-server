@@ -338,10 +338,9 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
           res.append(CompletionItem.fromVariableDeclaration(decl: member, program: program))
         }
         for member in structDecl.members {
-          let completionItem = CompletionItem.fromDeclaration(declaration: member, program: program)
-          if completionItem != nil {
-            res.append(completionItem!)
-          }
+          let completionItems = CompletionItem.fromDeclaration(
+            declaration: member, program: program)
+          res.append(contentsOf: completionItems)
         }
       }
     }
@@ -454,11 +453,9 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
                 // If declaration has no name -> binding declaration -> we ignore it
                 continue
               }
-              let completionItem = CompletionItem.fromDeclaration(
+              let completionItems = CompletionItem.fromDeclaration(
                 declaration: decl, program: analyzed_doc.program)
-              if completionItem != nil {
-                response.append(completionItem!)
-              }
+              response.append(contentsOf: completionItems)
             }
           }
           return .success(TwoTypeOption.optionA(response))

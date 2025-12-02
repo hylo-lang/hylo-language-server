@@ -3,33 +3,40 @@ import LanguageServerProtocol
 
 extension CompletionItem {
 
-  static public func fromDeclaration(declaration: DeclarationIdentity, program: Program) -> Self? {
+  static public func fromDeclaration(declaration: DeclarationIdentity, program: Program) -> [Self] {
     let tag = program.tag(of: declaration)
     switch tag {
     case .init(VariableDeclaration.self):
       let varDecl = program.cast(declaration, to: VariableDeclaration.self)!
-      return CompletionItem.fromVariableDeclaration(decl: varDecl, program: program)
+      return [CompletionItem.fromVariableDeclaration(decl: varDecl, program: program)]
     case .init(FunctionDeclaration.self):
       let funcDecl = program[program.cast(declaration, to: FunctionDeclaration.self)!]
-      return CompletionItem.fromFunctionDeclaration(
-        functionDecl: funcDecl, program: program)
+      return [
+        CompletionItem.fromFunctionDeclaration(
+          functionDecl: funcDecl, program: program)
+      ]
     case .init(StructDeclaration.self):
       let structDecl = program[program.cast(declaration, to: StructDeclaration.self)!]
       return CompletionItem.fromStructDeclaration(structDecl: structDecl, program: program)
     case .init(EnumDeclaration.self):
       let enumDecl = program[program.cast(declaration, to: EnumDeclaration.self)!]
-      return CompletionItem.fromEnumDeclaration(enumDecl: enumDecl, program: program)
+      return [CompletionItem.fromEnumDeclaration(enumDecl: enumDecl, program: program)]
     case .init(ParameterDeclaration.self):
       let paramDecl = program[program.cast(declaration, to: ParameterDeclaration.self)!]
-      return CompletionItem.fromParameterDeclaration(parameterDecl: paramDecl, program: program)
+      return [CompletionItem.fromParameterDeclaration(parameterDecl: paramDecl, program: program)]
     case .init(BindingDeclaration.self):
       // TODO: This seems not like a pretty way to handle binding declaration. I'm not advanced enough in this to know the purpose of binding declarations -> so I don't know what I should do with them
-      return nil
+      return []
     default:
-      return CompletionItem(
-        label: "void",
-        documentation: TwoTypeOption.optionA("Did not find a type for : \n\(tag.description)"))
+      // TODO: This is for debug purpose only
+      // It is nice for know to know which type is not implemented withtout throwing an error -> this will need to change
+      return [
+        CompletionItem(
+          label: "void",
+          documentation: TwoTypeOption.optionA("Did not find a type for : \n\(tag.description)"))
+      ]
     }
+
   }
 
   static public func fromFunctionDeclaration(
@@ -75,7 +82,8 @@ extension CompletionItem {
 
   static public func fromStructDeclaration(
     structDecl: StructDeclaration, program: Program
-  ) -> CompletionItem {
+  ) -> [CompletionItem] {
+    var initItems: [CompletionItem] = []
     for member in structDecl.members {
       if program.tag(of: member) == .init(FunctionDeclaration.self)
         && program.name(of: member)!.identifier == "init"
@@ -88,7 +96,6 @@ extension CompletionItem {
         var index = 0
         for p in funcDecl.parameters {
           let paramDecl = program[p]
-          let paramDeclDesc = program.show(paramDecl)
           if paramDecl.identifier.value == "self" {
             continue
           }
@@ -105,13 +112,15 @@ extension CompletionItem {
         }
         snippet += ")"
         docu += ")"
-        return CompletionItem(
-          label: structDecl.identifier.description, kind: CompletionItemKind.struct,
-          documentation: TwoTypeOption.optionA(docu), insertText: snippet,
-          insertTextFormat: InsertTextFormat.snippet)
+        initItems.append(
+          CompletionItem(
+            label: structDecl.identifier.description, kind: CompletionItemKind.struct,
+            documentation: TwoTypeOption.optionA(docu), insertText: snippet,
+            insertTextFormat: InsertTextFormat.snippet)
+        )
       }
     }
-    return CompletionItem(label: structDecl.identifier.description, detail: "Not instanciable")
+    return initItems
   }
 
   static public func fromEnumDeclaration(
