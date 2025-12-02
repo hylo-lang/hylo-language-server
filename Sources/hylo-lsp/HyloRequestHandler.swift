@@ -338,6 +338,16 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
           res.append(CompletionItem.fromVariableDeclaration(decl: member, program: program))
         }
         for member in structDecl.members {
+          let tag = program.tag(of: member)
+          if tag == .init(FunctionDeclaration.self) {
+            let funcDecl = program[program.cast(member, to: FunctionDeclaration.self)!]
+            if funcDecl.introducer.value == FunctionDeclaration.Introducer.`init`
+              || funcDecl.introducer.value == FunctionDeclaration.Introducer.memberwiseinit
+            {
+              // We ignore all the constructor declarations in the struct (as we do not want to show them as members of the instance of the struct)
+              continue
+            }
+          }
           let completionItems = CompletionItem.fromDeclaration(
             declaration: member, program: program)
           res.append(contentsOf: completionItems)
@@ -358,8 +368,8 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
       }
 
       // TODO: I think this method can be replaced by finding the node in the AST directly.
-      // I've created before finding that, so for now it is there but it needs to be replaced as
-      // we want to have exactly the same parsing as the compiler
+      // I've created it before finding that, so for now it is there but it needs to be replaced as
+      // we want to have exactly the same parsing as the compiler, not two versions that lives side by side
       func getCurrentExpression(text: String, position: Position) -> (
         [String.SubSequence], CompletionType
       ) {
@@ -399,14 +409,6 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
           CompletionType.variableMembers
         )
       }
-      func findMemberOfVariable(expression: [String.SubSequence], pos: Position) -> Response<
-        CompletionResponse
-      > {
-        let members: [CompletionItem] = getMembers(
-          expression: expression, program: analyzed_doc.program)
-        return Response.success(
-          TwoTypeOption.optionA(members))
-      }
 
       guard let url = DocumentProvider.validateDocumentUrl(params.textDocument.uri) else {
         throw AnyJSONRPCResponseError(
@@ -429,7 +431,10 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
       let (current_expr, completion_type) = getCurrentExpression(
         text: doc.text, position: params.position)
       if completion_type == CompletionType.variableMembers {
-        return findMemberOfVariable(expression: current_expr, pos: params.position)
+        let members: [CompletionItem] = getMembers(
+          expression: current_expr, program: analyzed_doc.program)
+        return Response.success(
+          TwoTypeOption.optionA(members))
       } else if completion_type == CompletionType.scopeMembers {
         // We do not have a '.' for now in our expr -> we need to find all variable availabe in this scope !
         var response: [CompletionItem] = []
