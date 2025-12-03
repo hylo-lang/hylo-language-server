@@ -64,7 +64,7 @@ extension CompletionItem {
         snippet_string += ", "
       }
       snippet_string +=
-        "\(splitted.first!):${\(index):\(splitted.last!.split(separator:" ").last!)}"
+        "\(splitted.first!): ${\(index):\(splitted.last!.split(separator:" ").last!)}"
       index += 1
       current_string += temp_string
     }
