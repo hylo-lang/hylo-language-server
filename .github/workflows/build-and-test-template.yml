@@ -220,6 +220,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
 
       - name: Set up Swift ${{ matrix.swift }} on ${{ matrix.os }}
         uses: SwiftyLab/setup-swift@latest
