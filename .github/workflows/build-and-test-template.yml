@@ -161,26 +161,26 @@ jobs:
     #     where swift
     #     Get-ChildItem -Recurse "C:\Program Files\Swift"
 
-    - name: Build and copy support library
-      run: |
-        clang -c ./StandardLibrary/Sources/LibC.c -o HyloLibC.lib
-        xcopy HyloLibC.lib c:\program" "files\microsoft" "visual" "studio\2022\enterprise\vc\tools\msvc\${{ env.VCToolsVersion }}\lib\x64\
-      working-directory: hylo
+    # - name: Build and copy support library
+    #   run: |
+    #     clang -c ./StandardLibrary/Sources/LibC.c -o HyloLibC.lib
+    #     xcopy HyloLibC.lib c:\program" "files\microsoft" "visual" "studio\2022\enterprise\vc\tools\msvc\${{ env.VCToolsVersion }}\lib\x64\
+    #   working-directory: hylo
 
     - name: Build (${{ inputs.build-type }})
       id: build
-      continue-on-error: true
+      # continue-on-error: true
       run: |
         $BUILD_DIR = swift build -c ${{ inputs.build-type }} --show-bin-path
         echo BUILD_DIR=$BUILD_DIR
         echo BUILD_DIR=$BUILD_DIR >> $env:GITHUB_ENV
         swift build -c ${{ inputs.build-type }}
 
-    # Windows build sometimes just fails
-    - name: Retry on failure
-      continue-on-error: false
-      if: steps.build.outcome != 'success'
-      run: swift build -c ${{ inputs.build-type }}
+    # # Windows build sometimes just fails
+    # - name: Retry on failure
+    #   continue-on-error: false
+    #   if: steps.build.outcome != 'success'
+    #   run: swift build -c ${{ inputs.build-type }}
 
 
     # - name: List build artifacts
