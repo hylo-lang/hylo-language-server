@@ -253,7 +253,7 @@ jobs:
         id: prepare-distributable
         run: |
           BIN_PATH=$(swift build -c release --show-bin-path)
-          ${BIN_PATH}/hc --help
+          ${BIN_PATH}/hylo-lsp-server --help
           echo "path=${BIN_PATH}" >> $GITHUB_OUTPUT
 
         shell: bash
