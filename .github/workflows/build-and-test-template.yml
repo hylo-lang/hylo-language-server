@@ -247,12 +247,12 @@ jobs:
           # The Swift compiler team is aware of the issue and they are going to release a fix some time.
 
       - name: Build in release mode
-        run: swift build -c release --verbose --target hylo-lsp-server --static-swift-stdlib
+        run: swift build -c release --verbose --product hylo-lsp-server --static-swift-stdlib
 
       - name: Prepare distributable
         id: prepare-distributable
         run: |
-          BIN_PATH=$(swift build -c release --show-bin-path)
+          BIN_PATH=$(swift build -c release --product hylo-lsp-server --static-swift-stdlib --show-bin-path)
           ${BIN_PATH}/hylo-lsp-server --help
           echo "path=${BIN_PATH}" >> $GITHUB_OUTPUT
 
