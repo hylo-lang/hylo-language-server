@@ -28,8 +28,6 @@ on:
         type: string
 
 env:
-  spm-build-options: -Xswiftc -enable-testing --explicit-target-dependency-import-check error
-  spm-test-options: --parallel
   swift-version: '6.2'
 
 jobs:
@@ -40,7 +38,7 @@ jobs:
       matrix:
         host: [
           { type: linux, os: ubuntu-latest,
-            build-options: "-Xswiftc -static-stdlib",
+            build-options: "",
             test-options: "--enable-code-coverage"
           }
         ]
@@ -56,8 +54,6 @@ jobs:
       uses: SwiftyLab/setup-swift@latest
       with:
         swift-version: ${{ env.swift-version }}
-
-    - run: swift --version
 
     - name: Build (${{ inputs.build-type }})
       id: build
