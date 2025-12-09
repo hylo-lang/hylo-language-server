@@ -108,7 +108,7 @@ extension CompletionItem {
           docu += program.show(paramDecl)
           index += 1
           snippet +=
-            paramDecl.identifier.value + ":${\(index):\(program.show(paramDecl.ascription!))}"
+            paramDecl.identifier.value + ": ${\(index):\(program.show(paramDecl.ascription!))}"
         }
         snippet += ")"
         docu += ")"
