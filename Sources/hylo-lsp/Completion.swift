@@ -104,7 +104,7 @@ extension CompletionItem {
         // We found the init function
         let funcDecl = program[program.cast(member, to: FunctionDeclaration.self)!]
         var snippet = structDecl.identifier.value + "("
-        var docu = structDecl.identifier.value + "("
+        var details = structDecl.identifier.value + "("
         var first = true
         var index = 0
         for p in funcDecl.parameters {
@@ -115,20 +115,20 @@ extension CompletionItem {
           if first {
             first = false
           } else {
-            docu += ", "
+            details += ", "
             snippet += ", "
           }
-          docu += program.show(paramDecl)
+          details += program.show(paramDecl)
           index += 1
           snippet +=
             paramDecl.identifier.value + ": ${\(index):\(program.show(paramDecl.ascription!))}"
         }
         snippet += ")"
-        docu += ")"
+        details += ")"
         initItems.append(
           CompletionItem(
             label: structDecl.identifier.description, kind: CompletionItemKind.struct,
-            documentation: TwoTypeOption.optionA(docu), insertText: snippet,
+            detail: details, insertText: snippet,
             insertTextFormat: InsertTextFormat.snippet)
         )
       }
