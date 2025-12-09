@@ -42,10 +42,10 @@ extension CompletionItem {
   static public func fromFunctionDeclaration(
     functionDecl: FunctionDeclaration, program: Program
   ) -> CompletionItem {
-    var current_string = ""
-    var snippet_string = ""
-    current_string += functionDecl.identifier.value.description + "("
-    snippet_string += functionDecl.identifier.value.description + "("
+    var currentString = ""
+    var snippetString = ""
+    currentString += functionDecl.identifier.value.description + "("
+    snippetString += functionDecl.identifier.value.description + "("
     var index = 1
     var first = true
     for paramID in functionDecl.parameters {
@@ -60,23 +60,23 @@ extension CompletionItem {
       if first {
         first = false
       } else {
-        current_string += ", "
-        snippet_string += ", "
+        currentString += ", "
+        snippetString += ", "
       }
-      snippet_string +=
+      snippetString +=
         "\(splitted.first!): ${\(index):\(splitted.last!.split(separator:" ").last!)}"
       index += 1
-      current_string += temp_string
+      currentString += temp_string
     }
-    current_string += ")"
-    snippet_string += ")"
+    currentString += ")"
+    snippetString += ")"
     if functionDecl.output != nil {
-      current_string += " -> " + program.show(functionDecl.output!)
+      currentString += " -> " + program.show(functionDecl.output!)
     }
     return CompletionItem(
       label: functionDecl.identifier.value.description, kind: CompletionItemKind.function,
-      documentation: TwoTypeOption.optionA(current_string),
-      insertText: snippet_string, insertTextFormat: InsertTextFormat.snippet
+      detail: currentString,
+      insertText: snippetString, insertTextFormat: InsertTextFormat.snippet
     )
   }
 

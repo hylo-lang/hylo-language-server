@@ -295,40 +295,40 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
     }
     let identity = selection.first!
     let declaration = program.castToDeclaration(identity)!
-    var curr_type_identity: AnyTypeIdentity = program.type(assignedTo: declaration)
+    var currTypeIdentity: AnyTypeIdentity = program.type(assignedTo: declaration)
 
     var variableDeclarations: [VariableDeclaration.ID] = []
 
-    var curr_decl: VariableDeclaration.ID? = nil
+    var currDecl: VariableDeclaration.ID? = nil
 
     for element: Substring in expression {
       if element != expression.first {
         for v in variableDeclarations {
           let name = program[v].identifier.value
           if name == element {
-            curr_decl = v
+            currDecl = v
             break
           }
         }
-        if curr_decl == nil {
+        guard let currDecl = currDecl else {
           // We did not find a member with this name :(
+          // TODO: We may want to add a warning here ?
           break
         }
         // We found a member with this name :)
 
         // We reset the declarations to fill them with the current one
-        curr_type_identity = program.type(assignedTo: curr_decl!)
+        currTypeIdentity = program.type(assignedTo: currDecl)
       }
       variableDeclarations = []
 
-      let underlyingType = (program.types[curr_type_identity] as! RemoteType).projectee
+      let underlyingType = (program.types[currTypeIdentity] as! RemoteType).projectee
       let isStructType = program.types[underlyingType] as? Struct
-      if isStructType == nil {
+      guard let structType = isStructType else {
         // This is not a struct
         // TODO: We need to fullfill the request even for other types (for example GenericParameter)
         return res
       }
-      let structType = isStructType!
       let structDeclId = structType.declaration
       let structDecl = program[structDeclId]
       variableDeclarations = program.storedProperties(of: structDeclId)
@@ -378,34 +378,34 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
         // Ex: foo.bar. -> (["foo", "bar"], true)
         // foo.bar -> (["foo"], ) // As the expression does not end with a dot -> we want to return completions items for the members of foo
         let lines = doc.text.split(separator: "\n", omittingEmptySubsequences: false)
-        let curr_line = lines[params.position.line]
+        let currLine = lines[params.position.line]
         // Getting the position of the cursor to split the current line from start to cursor
-        let endIndex = curr_line.index(curr_line.startIndex, offsetBy: position.character)
+        let endIndex = currLine.index(currLine.startIndex, offsetBy: position.character)
         // Getting the line from start to cursor position
-        let start_to_position = curr_line[curr_line.startIndex..<endIndex]
+        let startToPosition = currLine[currLine.startIndex..<endIndex]
         // Splitting on space to separate mutliple expression -> !! THIS IS NO GOOD, and is why we need to replace this method by getting the node from the AST directly
         // Splitting on space does not suffice, but it will for now...
-        let splitted = start_to_position.split(separator: " ")
+        let splitted = startToPosition.split(separator: " ")
         // If line is empty -> return an empty expression
         if splitted.count == 0 {
           return ([], CompletionType.scopeMembers)
         }
         // Get the last expression of the line
-        let curr_expression = splitted.last!
-        if !curr_expression.contains(".") {
+        let currExpression = splitted.last!
+        if !currExpression.contains(".") {
           // If the expression does not contains a dot -> we want to get the scope members
-          return ([curr_expression], CompletionType.scopeMembers)
+          return ([currExpression], CompletionType.scopeMembers)
         }
         // Else -> we want to get the members of a variable
         // Get all parts of this expression
-        var dot_splitted = curr_expression.split(separator: ".")
+        var dotSplitted = currExpression.split(separator: ".")
         // If the current expression ends with a dot -> we don't do anything
-        if !curr_expression.hasSuffix(".") {
+        if !currExpression.hasSuffix(".") {
           // As the current expression does not end with a dot -> we want to ignore the last part (after the last dot), as the IDE will filter the completion results itself, we want to provide everything available
-          dot_splitted.popLast()
+          dotSplitted.popLast()
         }
         return (
-          dot_splitted,
+          dotSplitted,
           CompletionType.variableMembers
         )
       }
@@ -416,9 +416,9 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
           message: "Invalid document uri: \(params.textDocument.uri)")
       }
 
-      let source_pos = makeSourcePosition(url: url, position: params.position)
+      let sourcePos = makeSourcePosition(url: url, position: params.position)
 
-      let analyzed_doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
+      let analyzedDoc = try await documentProvider.getAnalyzedDocument(params.textDocument)
 
       let doc = try await documentProvider.getDocumentContext(uri: params.textDocument.uri).doc
 
@@ -428,38 +428,38 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
             code: 500, message: "No context given for this completion request"))
       }
 
-      let (current_expr, completion_type) = getCurrentExpression(
+      let (currentExpr, completionType) = getCurrentExpression(
         text: doc.text, position: params.position)
-      if completion_type == CompletionType.variableMembers {
+      if completionType == CompletionType.variableMembers {
         let members: [CompletionItem] = getMembers(
-          expression: current_expr, program: analyzed_doc.program)
+          expression: currentExpr, program: analyzedDoc.program)
         return Response.success(
           TwoTypeOption.optionA(members))
-      } else if completion_type == CompletionType.scopeMembers {
+      } else if completionType == CompletionType.scopeMembers {
         // We do not have a '.' for now in our expr -> we need to find all variable availabe in this scope !
         var response: [CompletionItem] = []
-        let res: AnySyntaxIdentity? = analyzed_doc.program.findNode(
-          source_pos!, logger: Logger(label: "eheehe"))
+        let res: AnySyntaxIdentity? = analyzedDoc.program.findNode(
+          sourcePos!, logger: Logger(label: "eheehe"))
         // TODO: Is it necessary to pass a logger to this method ? Does this make sense ? And if so, which logger do we pass ?
 
         if res != nil {
           // We try to cast the AST node to a scope -> If it succeed, we know that we can directly get the members of this scope (and the parents)
-          var scope = analyzed_doc.program.castToScope(res!)
+          var scope = analyzedDoc.program.castToScope(res!)
           if scope == nil {
             // If it fails -> we get the containing scope instead
-            scope = analyzed_doc.program.parent(containing: res!)
+            scope = analyzedDoc.program.parent(containing: res!)
           }
           // Here, we have the smallest scope containing res, or res directly if it is a scope
-          for scope in analyzed_doc.program.scopes(from: scope!) {
-            let decls = analyzed_doc.program.declarations(lexicallyIn: scope)
+          for scope in analyzedDoc.program.scopes(from: scope!) {
+            let decls = analyzedDoc.program.declarations(lexicallyIn: scope)
             for decl in decls {
-              let name = analyzed_doc.program.name(of: decl)
+              let name = analyzedDoc.program.name(of: decl)
               if name == nil {
                 // If declaration has no name -> binding declaration -> we ignore it
                 continue
               }
               let completionItems = CompletionItem.fromDeclaration(
-                declaration: decl, program: analyzed_doc.program)
+                declaration: decl, program: analyzedDoc.program)
               response.append(contentsOf: completionItems)
             }
           }
