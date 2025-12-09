@@ -435,40 +435,39 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
       } else if completionType == CompletionType.scopeMembers {
         // We do not have a '.' for now in our expr -> we need to find all variable availabe in this scope !
         var response: [CompletionItem] = []
-        let res: AnySyntaxIdentity? = analyzedDoc.program.findNode(
-          sourcePos!, logger: Logger(label: "eheehe"))
         // TODO: Is it necessary to pass a logger to this method ? Does this make sense ? And if so, which logger do we pass ?
-
-        if res != nil {
-          // We try to cast the AST node to a scope -> If it succeed, we know that we can directly get the members of this scope (and the parents)
-          var scope = analyzedDoc.program.castToScope(res!)
-          if scope == nil {
-            // If it fails -> we get the containing scope instead
-            scope = analyzedDoc.program.parent(containing: res!)
-          }
-          // Here, we have the smallest scope containing res, or res directly if it is a scope
-          for scope in analyzedDoc.program.scopes(from: scope!) {
-            let decls = analyzedDoc.program.declarations(lexicallyIn: scope)
-            for decl in decls {
-              let name = analyzedDoc.program.name(of: decl)
-              if name == nil {
-                // If declaration has no name -> binding declaration -> we ignore it
-                continue
-              }
-              let completionItems = CompletionItem.fromDeclaration(
-                declaration: decl, program: analyzedDoc.program)
-              response.append(contentsOf: completionItems)
-            }
-          }
-          return .success(TwoTypeOption.optionA(response))
+        guard let res: AnySyntaxIdentity? = analyzedDoc.program.findNode(
+          sourcePos!, logger: Logger(label: "eheehe")) else {
+            return .failure(AnyJSONRPCResponseError(
+              code: 500, message: "Could not find an AST node for this position"
+            ))
         }
+        // We try to cast the AST node to a scope -> If it succeed, we know that we can directly get the members of this scope (and the parents)
+        var scope = analyzedDoc.program.castToScope(res!)
+        if scope == nil {
+          // If it fails -> we get the containing scope instead
+          scope = analyzedDoc.program.parent(containing: res!)
+        }
+        // Here, we have the smallest scope containing res, or res directly if it is a scope
+        for scope in analyzedDoc.program.scopes(from: scope!) {
+          let decls = analyzedDoc.program.declarations(lexicallyIn: scope)
+          for decl in decls {
+            let name = analyzedDoc.program.name(of: decl)
+            if name == nil {
+              // If declaration has no name -> binding declaration -> we ignore it
+              continue
+            }
+            let completionItems = CompletionItem.fromDeclaration(
+              declaration: decl, program: analyzedDoc.program)
+            response.append(contentsOf: completionItems)
+          }
+        }
+        return .success(TwoTypeOption.optionA(response))
       } else {
         return .failure(
           AnyJSONRPCResponseError(
             code: 500, message: "Could not find a completion type for this request"))
       }
-      return .failure(
-        AnyJSONRPCResponseError(code: 500, message: "Could not fill this completion request."))
     } catch {
       return .failure(
         AnyJSONRPCResponseError.init(code: 500, message: String("Server error")))
