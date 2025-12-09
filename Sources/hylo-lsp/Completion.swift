@@ -25,16 +25,11 @@ extension CompletionItem {
       let paramDecl = program[program.cast(declaration, to: ParameterDeclaration.self)!]
       return [CompletionItem.fromParameterDeclaration(parameterDecl: paramDecl, program: program)]
     case .init(BindingDeclaration.self):
-      // TODO: This seems not like a pretty way to handle binding declaration. I'm not advanced enough in this to know the purpose of binding declarations -> so I don't know what I should do with them
-      return []
+      let bindingDecl = program[program.cast(declaration, to: BindingDeclaration.self)!]
+      return [fromBindingDeclaration(bindingDecl: bindingDecl, program: program)]
     default:
-      // TODO: This is for debug purpose only
-      // It is nice for know to know which type is not implemented withtout throwing an error -> this will need to change
-      return [
-        CompletionItem(
-          label: "void",
-          documentation: TwoTypeOption.optionA("Did not find a type for : \n\(tag.description)"))
-      ]
+      print("Warning : Did not find a matching declaration type for : \(tag.description)")
+      return []
     }
 
   }
@@ -44,6 +39,9 @@ extension CompletionItem {
   ) -> CompletionItem {
     var currentString = ""
     var snippetString = ""
+    for mod in functionDecl.modifiers {
+      currentString += mod.description + " "
+    }
     currentString += functionDecl.identifier.value.description + "("
     snippetString += functionDecl.identifier.value.description + "("
     var index = 1
@@ -78,6 +76,21 @@ extension CompletionItem {
       detail: currentString,
       insertText: snippetString, insertTextFormat: InsertTextFormat.snippet
     )
+  }
+
+  static private func fromBindingDeclaration(bindingDecl: BindingDeclaration, program: Program)
+    -> CompletionItem
+  {
+    var detail = ""
+    let pattern = program[bindingDecl.pattern]
+    detail = "\(pattern.introducer.description) \(program.show(pattern.pattern))"
+    if let ascription = pattern.ascription {
+      detail += ": " + program.show(ascription)
+    }
+    for mod in bindingDecl.modifiers {
+      detail = "\(mod) \(detail)"
+    }
+    return CompletionItem(label: program.show(pattern.pattern), detail: detail)
   }
 
   static public func fromStructDeclaration(

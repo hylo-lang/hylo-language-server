@@ -290,8 +290,8 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
     let selection = program.select(.name(varName))
     if selection.count == 0 {
       // If we can't find the variable declaration
-      res.append(CompletionItem(label: "Can't find the variable declaration"))
-      return res
+      print("Error : Can't find the variable declaration (for variable \(varName.identifier))")
+      return []
     }
     let identity = selection.first!
     let declaration = program.castToDeclaration(identity)!
@@ -334,9 +334,6 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
       variableDeclarations = program.storedProperties(of: structDeclId)
 
       if element == expression.last {
-        for member in variableDeclarations {
-          res.append(CompletionItem.fromVariableDeclaration(decl: member, program: program))
-        }
         for member in structDecl.members {
           let tag = program.tag(of: member)
           if tag == .init(FunctionDeclaration.self) {
