@@ -20,23 +20,42 @@ jobs:
       with:
         submodules: 'true'
 
-    - name: Download hylo-lsp-artifacts-mac
+    # Download all architecture-specific artifacts
+    - name: Download Linux x64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-lsp-artifacts-mac
-        path: hylo-lsp-mac-x64
-
-    - name: Download hylo-lsp-artifacts-linux
-      uses: actions/download-artifact@v4
-      with:
-        name: hylo-lsp-artifacts-linux
+        name: hylo-language-server-Linux-X64
         path: hylo-lsp-linux-x64
 
-    - name: Download hylo-lsp-artifacts-windows
+    - name: Download Linux ARM64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-lsp-artifacts-windows
+        name: hylo-language-server-Linux-ARM64
+        path: hylo-lsp-linux-arm64
+
+    - name: Download macOS x64 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: hylo-language-server-macOS-X64
+        path: hylo-lsp-macos-x64
+
+    - name: Download macOS ARM64 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: hylo-language-server-macOS-ARM64
+        path: hylo-lsp-macos-arm64
+
+    - name: Download Windows x64 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: hylo-language-server-Windows-X64
         path: hylo-lsp-windows-x64
+
+    - name: Download Windows ARM64 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: hylo-language-server-Windows-ARM64
+        path: hylo-lsp-windows-arm64
 
     - name: Package Hylo release artifacts
       run: |
@@ -44,19 +63,38 @@ jobs:
         git -C hylo rev-parse HEAD > ref
         cp -Rp hylo/StandardLibrary/Sources hylo-stdlib
         mkdir -p release-artifacts
-        # tar -zcvf release-artifacts/hylo-stdlib.tar.gz hylo-stdlib
+        
+        # Package stdlib
         zip -r release-artifacts/hylo-stdlib.zip hylo-stdlib ref
-        # Repackage with just the server binaries, for minimal size, and zip for easy unpacking in node.js
-        chmod +x hylo-lsp-mac-x64/*
-        chmod +x hylo-lsp-linux-x64/*
-        chmod +x hylo-lsp-windows-x64/*
+        
+        # Set executable permissions for Unix-like systems
+        chmod +x hylo-lsp-linux-x64/* || true
+        chmod +x hylo-lsp-linux-arm64/* || true
+        chmod +x hylo-lsp-macos-x64/* || true
+        chmod +x hylo-lsp-macos-arm64/* || true
+        
+        # Create version reference file
         echo ${{ github.ref_name }} > ref
-        zip release-artifacts/hylo-lsp-server-mac-x64.zip hylo-lsp-mac-x64/hylo-lsp-server ref
-        zip release-artifacts/hylo-lsp-client-mac-x64.zip hylo-lsp-mac-x64/hylo-lsp-client ref
+        
+        # Package language server binaries for each platform and architecture
+        # Linux x64
         zip release-artifacts/hylo-lsp-server-linux-x64.zip hylo-lsp-linux-x64/hylo-lsp-server ref
-        zip release-artifacts/hylo-lsp-client-linux-x64.zip hylo-lsp-linux-x64/hylo-lsp-client ref
+        
+        # Linux ARM64
+        zip release-artifacts/hylo-lsp-server-linux-arm64.zip hylo-lsp-linux-arm64/hylo-lsp-server ref
+        
+        # macOS x64
+        zip release-artifacts/hylo-lsp-server-macos-x64.zip hylo-lsp-macos-x64/hylo-lsp-server ref
+        
+        # macOS ARM64 (Apple Silicon)
+        zip release-artifacts/hylo-lsp-server-macos-arm64.zip hylo-lsp-macos-arm64/hylo-lsp-server ref
+        
+        # Windows x64
         zip release-artifacts/hylo-lsp-server-windows-x64.zip hylo-lsp-windows-x64/hylo-lsp-server.exe hylo-lsp-windows-x64/*.dll ref
-        # zip release-artifacts/hylo-lsp-client-windows-x64.zip hylo-lsp-windows-x64/hylo-lsp-client.exe ref
+        
+        # Windows ARM64
+        zip release-artifacts/hylo-lsp-server-windows-arm64.zip hylo-lsp-windows-arm64/hylo-lsp-server.exe hylo-lsp-windows-arm64/*.dll ref
+        
         ls -l release-artifacts
 
     - name: Extract version changelog
