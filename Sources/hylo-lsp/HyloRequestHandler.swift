@@ -436,7 +436,7 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
         // We do not have a '.' for now in our expr -> we need to find all variable availabe in this scope !
         var response: [CompletionItem] = []
         // TODO: Is it necessary to pass a logger to this method ? Does this make sense ? And if so, which logger do we pass ?
-        guard let res: AnySyntaxIdentity? = analyzedDoc.program.findNode(
+        guard let res: AnySyntaxIdentity = analyzedDoc.program.findNode(
           sourcePos!, logger: Logger(label: "eheehe")) else {
             return .failure(AnyJSONRPCResponseError(
               code: 500, message: "Could not find an AST node for this position"
