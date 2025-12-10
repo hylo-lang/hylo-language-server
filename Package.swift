@@ -37,7 +37,7 @@ let package = Package(
     // .package(url: "https://github.com/crspybits/swift-log-file.git", from: "0.1.0"),
     .package(url: "https://github.com/sushichop/Puppy.git", from: "0.7.0"),
     // .package(url: "https://github.com/vapor/console-kit.git", from: "4.7.0"),
-    .package(url: "https://github.com/koliyo/LanguageServer", branch: "main"),
+    .package(url: "https://github.com/MartTave/LanguageServer.git", from: "0.0.1"),
     .package(url: "https://github.com/ChimeHQ/LanguageClient", from: "0.8.0"),
     .package(
       url: "https://github.com/tothambrus11/swift-log-console-colors",

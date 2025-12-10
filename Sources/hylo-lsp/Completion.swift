@@ -1,0 +1,174 @@
+import FrontEnd
+import LanguageServerProtocol
+
+extension CompletionItem {
+
+  static public func fromDeclaration(declaration: DeclarationIdentity, program: Program) -> [Self] {
+    let tag = program.tag(of: declaration)
+    switch tag {
+    case .init(VariableDeclaration.self):
+      let varDecl = program.cast(declaration, to: VariableDeclaration.self)!
+      return [CompletionItem.fromVariableDeclaration(decl: varDecl, program: program)]
+    case .init(FunctionDeclaration.self):
+      let funcDecl = program[program.cast(declaration, to: FunctionDeclaration.self)!]
+      return [
+        CompletionItem.fromFunctionDeclaration(
+          functionDecl: funcDecl, program: program)
+      ]
+    case .init(StructDeclaration.self):
+      let structDecl = program[program.cast(declaration, to: StructDeclaration.self)!]
+      return CompletionItem.fromStructDeclaration(structDecl: structDecl, program: program)
+    case .init(EnumDeclaration.self):
+      let enumDecl = program[program.cast(declaration, to: EnumDeclaration.self)!]
+      return [CompletionItem.fromEnumDeclaration(enumDecl: enumDecl, program: program)]
+    case .init(ParameterDeclaration.self):
+      let paramDecl = program[program.cast(declaration, to: ParameterDeclaration.self)!]
+      return [CompletionItem.fromParameterDeclaration(parameterDecl: paramDecl, program: program)]
+    case .init(BindingDeclaration.self):
+      let bindingDecl = program[program.cast(declaration, to: BindingDeclaration.self)!]
+      return [fromBindingDeclaration(bindingDecl: bindingDecl, program: program)]
+    default:
+      print("Warning : Did not find a matching declaration type for : \(tag.description)")
+      return []
+    }
+
+  }
+
+  static public func fromFunctionDeclaration(
+    functionDecl: FunctionDeclaration, program: Program
+  ) -> CompletionItem {
+    var currentString = ""
+    var snippetString = ""
+    for mod in functionDecl.modifiers {
+      currentString += mod.description + " "
+    }
+    currentString += functionDecl.identifier.value.description + "("
+    snippetString += functionDecl.identifier.value.description + "("
+    var index = 1
+    var first = true
+    for paramID in functionDecl.parameters {
+      let paramDecl = program[paramID]
+      let temp_string = program.show(paramDecl)
+      // TODO: This is not a good way to do this -> there must be a better way, do not leave it like that
+      let splitted = temp_string.split(separator: ": ")
+      // If first arg is self -> we ignore this argument as it should not be filled on method call
+      if splitted.first! == "self" {
+        continue
+      }
+      if first {
+        first = false
+      } else {
+        currentString += ", "
+        snippetString += ", "
+      }
+      snippetString +=
+        "\(splitted.first!): ${\(index):\(splitted.last!.split(separator:" ").last!)}"
+      index += 1
+      currentString += temp_string
+    }
+    currentString += ")"
+    snippetString += ")"
+    if functionDecl.output != nil {
+      currentString += " -> " + program.show(functionDecl.output!)
+    }
+    return CompletionItem(
+      label: functionDecl.identifier.value.description, kind: CompletionItemKind.function,
+      detail: currentString,
+      insertText: snippetString, insertTextFormat: InsertTextFormat.snippet
+    )
+  }
+
+  static private func fromBindingDeclaration(bindingDecl: BindingDeclaration, program: Program)
+    -> CompletionItem
+  {
+    var detail = ""
+    let pattern = program[bindingDecl.pattern]
+    detail = "\(pattern.introducer.description) \(program.show(pattern.pattern))"
+    if let ascription = pattern.ascription {
+      detail += ": " + program.show(ascription)
+    }
+    for mod in bindingDecl.modifiers {
+      detail = "\(mod) \(detail)"
+    }
+    return CompletionItem(label: program.show(pattern.pattern), detail: detail)
+  }
+
+  static public func fromStructDeclaration(
+    structDecl: StructDeclaration, program: Program
+  ) -> [CompletionItem] {
+    var initItems: [CompletionItem] = []
+    for member in structDecl.members {
+      if program.tag(of: member) == .init(FunctionDeclaration.self)
+        && program.name(of: member)!.identifier == "init"
+      {
+        // We found the init function
+        let funcDecl = program[program.cast(member, to: FunctionDeclaration.self)!]
+        var snippet = structDecl.identifier.value + "("
+        var details = structDecl.identifier.value + "("
+        var first = true
+        var index = 0
+        for p in funcDecl.parameters {
+          let paramDecl = program[p]
+          if paramDecl.identifier.value == "self" {
+            continue
+          }
+          if first {
+            first = false
+          } else {
+            details += ", "
+            snippet += ", "
+          }
+          details += program.show(paramDecl)
+          index += 1
+          snippet +=
+            paramDecl.identifier.value + ": ${\(index):\(program.show(paramDecl.ascription!))}"
+        }
+        snippet += ")"
+        details += ")"
+        initItems.append(
+          CompletionItem(
+            label: structDecl.identifier.description, kind: CompletionItemKind.struct,
+            detail: details, insertText: snippet,
+            insertTextFormat: InsertTextFormat.snippet)
+        )
+      }
+    }
+    return initItems
+  }
+
+  static public func fromEnumDeclaration(
+    enumDecl: EnumDeclaration, program: Program
+  ) -> CompletionItem {
+    return CompletionItem(label: "void", detail: "Not implemented - Enum decl")
+  }
+
+  static public func fromParameterDeclaration(
+    parameterDecl: ParameterDeclaration, program: Program
+  )
+    -> CompletionItem
+  {
+    var detail = "\(parameterDecl.identifier.value)"
+    if parameterDecl.ascription != nil {
+      detail += ":\(program.show(parameterDecl.ascription!))"
+    }
+    if parameterDecl.defaultValue != nil {
+      detail += "=\(program.show(parameterDecl.defaultValue!))"
+    }
+    return CompletionItem(
+      label: parameterDecl.identifier.description, kind: CompletionItemKind.variable,
+      detail: detail,
+      documentation: TwoTypeOption.optionA("Label: \(parameterDecl.label!)"))
+  }
+
+  static public func fromVariableDeclaration(
+    decl: ConcreteSyntaxIdentity<VariableDeclaration>, program: Program
+  )
+    -> CompletionItem
+  {
+    let memberType = program.type(assignedTo: decl)
+    let varDecl = program[decl]
+    return CompletionItem(
+      label: varDecl.identifier.value, kind: CompletionItemKind.variable,
+      detail: "\(varDecl.identifier.value): \(program.show(memberType))")
+  }
+}
