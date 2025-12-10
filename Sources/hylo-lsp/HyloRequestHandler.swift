@@ -443,14 +443,14 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
             ))
         }
         // We try to cast the AST node to a scope -> If it succeed, we know that we can directly get the members of this scope (and the parents)
-        var scope = analyzedDoc.program.castToScope(res!)
-        if scope == nil {
+        var targetScope = analyzedDoc.program.castToScope(res)
+        if targetScope == nil {
           // If it fails -> we get the containing scope instead
-          scope = analyzedDoc.program.parent(containing: res!)
+          targetScope = analyzedDoc.program.parent(containing: res)
         }
         // Here, we have the smallest scope containing res, or res directly if it is a scope
-        for scope in analyzedDoc.program.scopes(from: scope!) {
-          let decls = analyzedDoc.program.declarations(lexicallyIn: scope)
+        for parentScope in analyzedDoc.program.scopes(from: targetScope!) {
+          let decls = analyzedDoc.program.declarations(lexicallyIn: parentScope)
           for decl in decls {
             let name = analyzedDoc.program.name(of: decl)
             if name == nil {
