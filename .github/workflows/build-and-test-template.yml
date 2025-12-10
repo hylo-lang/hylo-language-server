@@ -249,8 +249,8 @@ jobs:
       - name: Build in release mode
         run: swift build -c release --verbose --product hylo-lsp-server --static-swift-stdlib
 
-      - name: Prepare distributable
-        id: prepare-distributable
+      - name: Get the distributable path
+        id: get-distributable-path
         run: |
           BIN_PATH=$(swift build -c release --product hylo-lsp-server --static-swift-stdlib --show-bin-path)
           ${BIN_PATH}/hylo-lsp-server --help
@@ -261,4 +261,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hylo-language-server-${{ runner.os }}-${{ runner.arch }}
-          path: ${{ steps.prepare-distributable.outputs.path }}
+          path: ${{ steps.get-distributable-path.outputs.path }}
