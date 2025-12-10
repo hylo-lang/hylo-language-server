@@ -60,8 +60,8 @@ jobs:
     - name: Package Hylo release artifacts
       run: |
         set -eo pipefail
-        git -C hylo rev-parse HEAD > ref
-        cp -Rp hylo/StandardLibrary/Sources hylo-stdlib
+        git -C hylo-new rev-parse HEAD > ref
+        cp -Rp hylo-new/StandardLibrary/Sources hylo-stdlib
         mkdir -p release-artifacts
         
         # Package stdlib
