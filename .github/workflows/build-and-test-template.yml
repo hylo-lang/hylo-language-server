@@ -157,5 +157,5 @@ jobs:
       - name: Upload the distributable
         uses: actions/upload-artifact@v4
         with:
-            name: hylo-language-server-${{ runner.os.toLowerCase() }}-${{ runner.arch.toLowerCase() }}
+            name: hylo-language-server-${{ runner.os }}-${{ runner.arch }}
             path: ${{ steps.get-distributable-path.outputs.path }}

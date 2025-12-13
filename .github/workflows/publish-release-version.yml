@@ -24,37 +24,37 @@ jobs:
     - name: Download Linux x64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-linux-x64
+        name: hylo-language-server-Linux-X64
         path: hylo-language-server-linux-x64
 
     - name: Download Linux ARM64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-linux-arm64
+        name: hylo-language-server-Linux-ARM64
         path: hylo-language-server-linux-arm64
 
     - name: Download macOS x64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-macos-x64
+        name: hylo-language-server-macOS-X64
         path: hylo-language-server-macos-x64
 
     - name: Download macOS ARM64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-macos-arm64
+        name: hylo-language-server-macOS-ARM64
         path: hylo-language-server-macos-arm64
 
     - name: Download Windows x64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-windows-x64
+        name: hylo-language-server-Windows-X64
         path: hylo-language-server-windows-x64
 
     - name: Download Windows ARM64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-windows-arm64
+        name: hylo-language-server-Windows-ARM64
         path: hylo-language-server-windows-arm64
 
     - name: Package Hylo release artifacts
