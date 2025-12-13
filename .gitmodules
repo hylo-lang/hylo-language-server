@@ -4,9 +4,9 @@
 [submodule "JSONRPC-DataChannel-UniSocket"]
 	path = JSONRPC-DataChannel-UniSocket
 	url = https://github.com/koliyo/JSONRPC-DataChannel-UniSocket.git
-[submodule "hylo-vscode-extension"]
-	path = hylo-vscode-extension
-	url = https://github.com/koliyo/hylo-vscode-extension.git
 [submodule "hylo-new"]
 	path = hylo-new
 	url = https://github.com/hylo-lang/hylo-new
+[submodule "vscode-hylo"]
+	path = vscode-hylo
+	url = https://github.com/hylo-lang/vscode-hylo/
