@@ -27,8 +27,8 @@ let package = Package(
 
   products: [
     .library(name: "hylo-lsp", targets: ["hylo-lsp"]),
-    .executable(name: "hylo-lsp-server", targets: ["hylo-lsp-server"]),
-    .executable(name: "hylo-lsp-client", targets: ["hylo-lsp-client"]),
+    .executable(name: "hylo-language-server", targets: ["hylo-language-server"]),
+    .executable(name: "hylo-language-client", targets: ["hylo-language-client"]),
   ],
   dependencies: [
     .package(url: "https://github.com/groue/Semaphore", from: "0.0.8"),
@@ -79,7 +79,7 @@ let package = Package(
     ),
 
     .executableTarget(
-      name: "hylo-lsp-server",
+      name: "hylo-language-server",
       dependencies: [
         "hylo-lsp",
         .product(
@@ -102,7 +102,7 @@ let package = Package(
     ),
 
     .executableTarget(
-      name: "hylo-lsp-client",
+      name: "hylo-language-client",
       dependencies: [
         // .product(name: "ConsoleKit", package: "console-kit"),
         "hylo-lsp",
@@ -128,7 +128,7 @@ let package = Package(
 
     .testTarget(
       name: "hylo-lspTests",
-      dependencies: ["hylo-lsp-server"]),
+      dependencies: ["hylo-language-server"]),
 
     .testTarget(
       name: "hylo-language-server-tests",

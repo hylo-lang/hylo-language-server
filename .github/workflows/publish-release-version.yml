@@ -24,77 +24,64 @@ jobs:
     - name: Download Linux x64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-Linux-X64
-        path: hylo-lsp-linux-x64
+        name: hylo-language-server-linux-x64
+        path: hylo-language-server-linux-x64
 
     - name: Download Linux ARM64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-Linux-ARM64
-        path: hylo-lsp-linux-arm64
+        name: hylo-language-server-linux-arm64
+        path: hylo-language-server-linux-arm64
 
     - name: Download macOS x64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-macOS-X64
-        path: hylo-lsp-macos-x64
+        name: hylo-language-server-macos-x64
+        path: hylo-language-server-macos-x64
 
     - name: Download macOS ARM64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-macOS-ARM64
-        path: hylo-lsp-macos-arm64
+        name: hylo-language-server-macos-arm64
+        path: hylo-language-server-macos-arm64
 
     - name: Download Windows x64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-Windows-X64
-        path: hylo-lsp-windows-x64
+        name: hylo-language-server-windows-x64
+        path: hylo-language-server-windows-x64
 
     - name: Download Windows ARM64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-language-server-Windows-ARM64
-        path: hylo-lsp-windows-arm64
+        name: hylo-language-server-windows-arm64
+        path: hylo-language-server-windows-arm64
 
     - name: Package Hylo release artifacts
       run: |
         set -eo pipefail
-        git -C hylo-new rev-parse HEAD > ref
-        cp -Rp hylo-new/StandardLibrary/Sources hylo-stdlib
         mkdir -p release-artifacts
-        
+
         # Package stdlib
+        echo "${{ github.ref_name }}" > "hylo-stdlib/version.txt"
+
         zip -r release-artifacts/hylo-stdlib.zip hylo-stdlib ref
-        
-        # Set executable permissions for Unix-like systems
-        chmod +x hylo-lsp-linux-x64/* || true
-        chmod +x hylo-lsp-linux-arm64/* || true
-        chmod +x hylo-lsp-macos-x64/* || true
-        chmod +x hylo-lsp-macos-arm64/* || true
-        
-        # Create version reference file
-        echo ${{ github.ref_name }} > ref
-        
-        # Package language server binaries for each platform and architecture
-        # Linux x64
-        zip release-artifacts/hylo-lsp-server-linux-x64.zip hylo-lsp-linux-x64/hylo-lsp-server ref
-        
-        # Linux ARM64
-        zip release-artifacts/hylo-lsp-server-linux-arm64.zip hylo-lsp-linux-arm64/hylo-lsp-server ref
-        
-        # macOS x64
-        zip release-artifacts/hylo-lsp-server-macos-x64.zip hylo-lsp-macos-x64/hylo-lsp-server ref
-        
-        # macOS ARM64 (Apple Silicon)
-        zip release-artifacts/hylo-lsp-server-macos-arm64.zip hylo-lsp-macos-arm64/hylo-lsp-server ref
-        
-        # Windows x64
-        zip release-artifacts/hylo-lsp-server-windows-x64.zip hylo-lsp-windows-x64/hylo-lsp-server.exe hylo-lsp-windows-x64/*.dll ref
-        
-        # Windows ARM64
-        zip release-artifacts/hylo-lsp-server-windows-arm64.zip hylo-lsp-windows-arm64/hylo-lsp-server.exe hylo-lsp-windows-arm64/*.dll ref
-        
+
+        # Set executable permissions and create version files for all platforms
+        for platform in linux-x64 linux-arm64 macos-x64 macos-arm64; do
+          dir="hylo-language-server-${platform}"
+          chmod +x "$dir"/* || true
+          echo "${{ github.ref_name }}" > "$dir/version.txt"
+        done
+
+        # Package language server binaries for each platform
+        for platform in linux-x64 linux-arm64 macos-x64 macos-arm64 windows-x64 windows-arm64; do
+          dir="hylo-language-server-${platform}"
+          cd "$dir"
+          zip ../release-artifacts/hylo-language-server-${platform}.zip hylo-language-server version.txt
+          cd ..
+        done
+
         ls -l release-artifacts
 
     - name: Extract version changelog

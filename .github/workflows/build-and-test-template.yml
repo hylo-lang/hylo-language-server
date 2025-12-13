@@ -44,7 +44,6 @@ jobs:
             test-options: "--enable-code-coverage"
           }
         ]
-        # configuration: [ "debug", "release" ]
 
     runs-on: ${{ matrix.host.os }}
     steps:
@@ -65,22 +64,6 @@ jobs:
         BUILD_DIR=$(swift build -c ${{ inputs.build-type }} --show-bin-path)
         echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
 
-    # - name: Check code coverage
-    #   uses: mattpolzin/swift-codecov-action@0.7.3
-    #   with:
-    #     SORT_ORDER: +cov
-    #     MINIMUM_COVERAGE: 84
-    #     CODECOV_JSON: .build/${{ inputs.build-type }}/codecov/*.json
-
-
-    - name: Upload Hylo LSP artifacts (${{ inputs.build-type }})
-      uses: actions/upload-artifact@v4
-      with:
-        name: hylo-lsp-artifacts-linux
-        path: |
-          ${{ env.BUILD_DIR }}/hylo-lsp-client
-          ${{ env.BUILD_DIR }}/hylo-lsp-server
-
   build-native-macos:
     name: "Build and test: ${{ matrix.host.os }}/${{ inputs.build-type }}"
     strategy:
@@ -94,8 +77,6 @@ jobs:
             test-options: ""
           }
         ]
-        # configuration: [ $BUILD_TYPE ]
-        # configuration: [ "debug", "release" ]
 
     runs-on: ${{ matrix.host.os }}
     steps:
@@ -119,24 +100,6 @@ jobs:
         BUILD_DIR=$(swift build -c ${{ inputs.build-type }} --show-bin-path)
         echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
 
-    # - name: Test (${{ inputs.build-type }})
-    #   run: |
-    #     set -eo pipefail
-    #     export PKG_CONFIG_PATH=$PWD/hylo
-    #     swift test -c ${{ inputs.build-type }} ${{ matrix.host.test-options }} |
-    #       tee testoutput.txt && (
-    #         (grep -q "[.']EndToEndTests[/. ]test_" testoutput.txt && grep -q "[.']HyloTests[/. ]test_" testoutput.txt) ||
-    #         (echo "error: generated tests failed to run; see
-    #         https://github.com/apple/swift-package-manager/issues/6595" && false) )
-
-    - name: Upload Hylo LSP artifacts (${{ inputs.build-type }})
-      uses: actions/upload-artifact@v4
-      with:
-        name: hylo-lsp-artifacts-mac
-        path: |
-          ${{ env.BUILD_DIR }}/hylo-lsp-client
-          ${{ env.BUILD_DIR }}/hylo-lsp-server
-
   build-native-windows:
     name: "Build and test: windows-latest/${{ inputs.build-type }}"
     # strategy:
@@ -153,61 +116,13 @@ jobs:
       with:
         submodules: 'true'
 
-    # - name: Swift version and location
-    #   run: |
-    #     swift --version
-    #     where swift
-    #     Get-ChildItem -Recurse "C:\Program Files\Swift"
-
-    # - name: Build and copy support library
-    #   run: |
-    #     clang -c ./StandardLibrary/Sources/LibC.c -o HyloLibC.lib
-    #     xcopy HyloLibC.lib c:\program" "files\microsoft" "visual" "studio\2022\enterprise\vc\tools\msvc\${{ env.VCToolsVersion }}\lib\x64\
-    #   working-directory: hylo
-
     - name: Build (${{ inputs.build-type }})
       id: build
-      # continue-on-error: true
       run: |
         $BUILD_DIR = swift build -c ${{ inputs.build-type }} --show-bin-path
         echo BUILD_DIR=$BUILD_DIR
         echo BUILD_DIR=$BUILD_DIR >> $env:GITHUB_ENV
         swift build -c ${{ inputs.build-type }}
-
-    # # Windows build sometimes just fails
-    # - name: Retry on failure
-    #   continue-on-error: false
-    #   if: steps.build.outcome != 'success'
-    #   run: swift build -c ${{ inputs.build-type }}
-
-
-    # - name: List build artifacts
-    #   run: Get-ChildItem -Recurse $env:BUILD_DIR
-
-    # - name: Copy artifacts
-    #   run: |
-    #     $BUILD_DIR = swift build -c ${{ inputs.build-type }} --show-bin-path
-    #     xcopy $BUILD_DIR artifacts /I
-
-    - name: Upload Swift artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: hylo-lsp-artifacts-windows
-        path: |
-          C:\Program Files\Swift\runtime-development\usr\bin
-
-    - name: Upload Hylo LSP artifacts (${{ inputs.build-type }})
-      uses: actions/upload-artifact@v4
-      with:
-        name: hylo-lsp-artifacts-windows
-        path: |
-          ${{ env.BUILD_DIR }}/hylo-lsp-client.exe
-          ${{ env.BUILD_DIR }}/hylo-lsp-server.exe
-
-    # # - name: Retry on failure
-    # #   continue-on-error: false
-    # #   if: steps.build.outcome != 'success'
-    # #   run: swift build -v -c release
 
   build-distributable:
     strategy:
@@ -228,37 +143,19 @@ jobs:
         with:
           swift-version: ${{ matrix.swift }}
 
-
-      - name: Set up LLVM
-        uses: hylo-lang/get-llvm@v0.3.0
-        id: get-llvm
-        with:
-          llvmVersion: ${{ env.llvm-version }}
-          llvmBuildRelease: ${{ env.llvm-build-release }}
-          llvmBuildConfig: 'MinSizeRel'
-          addToPkgConfigPath: true
-          addToPath: true
-
-      - uses: compnerd/gha-setup-vsdevenv@main
-        if: ${{ runner.os == 'Windows' }}
-        with:
-          winsdk: "10.0.22621.0" # Workaround for this: https://forums.swift.org/t/swiftpm-plugin-doesnt-work-with-the-latest-visual-studio-version/78183/14
-          # TL;DR: The Windows SDK had a change in 10.0.26100.0 that the Swift compiler didn't account for.
-          # The Swift compiler team is aware of the issue and they are going to release a fix some time.
-
       - name: Build in release mode
-        run: swift build -c release --verbose --product hylo-lsp-server --static-swift-stdlib
+        run: swift build -c release --verbose --product hylo-language-server --static-swift-stdlib
 
       - name: Get the distributable path
         id: get-distributable-path
         run: |
-          BIN_PATH=$(swift build -c release --product hylo-lsp-server --static-swift-stdlib --show-bin-path)
-          ${BIN_PATH}/hylo-lsp-server --help
+          BIN_PATH=$(swift build -c release --product hylo-language-server --static-swift-stdlib --show-bin-path)
+          ${BIN_PATH}/hylo-language-server --help
           echo "path=${BIN_PATH}" >> $GITHUB_OUTPUT
 
         shell: bash
       - name: Upload the distributable
         uses: actions/upload-artifact@v4
         with:
-          name: hylo-language-server-${{ runner.os }}-${{ runner.arch }}
-          path: ${{ steps.get-distributable-path.outputs.path }}
+            name: hylo-language-server-${{ runner.os.toLowerCase() }}-${{ runner.arch.toLowerCase() }}
+            path: ${{ steps.get-distributable-path.outputs.path }}
