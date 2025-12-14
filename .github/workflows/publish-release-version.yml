@@ -20,43 +20,79 @@ jobs:
       with:
         submodules: 'true'
 
-    - name: Download hylo-lsp-artifacts-mac
+    # Download all architecture-specific artifacts
+    - name: Download Linux x64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-lsp-artifacts-mac
-        path: hylo-lsp-mac-x64
+        name: hylo-language-server-Linux-X64
+        path: hylo-language-server-linux-x64
 
-    - name: Download hylo-lsp-artifacts-linux
+    - name: Download Linux ARM64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-lsp-artifacts-linux
-        path: hylo-lsp-linux-x64
+        name: hylo-language-server-Linux-ARM64
+        path: hylo-language-server-linux-arm64
 
-    - name: Download hylo-lsp-artifacts-windows
+    - name: Download macOS x64 artifacts
       uses: actions/download-artifact@v4
       with:
-        name: hylo-lsp-artifacts-windows
-        path: hylo-lsp-windows-x64
+        name: hylo-language-server-macOS-X64
+        path: hylo-language-server-macos-x64
+
+    - name: Download macOS ARM64 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: hylo-language-server-macOS-ARM64
+        path: hylo-language-server-macos-arm64
+
+    - name: Download Windows x64 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: hylo-language-server-Windows-X64
+        path: hylo-language-server-windows-x64
+
+    - name: Download Windows ARM64 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: hylo-language-server-Windows-ARM64
+        path: hylo-language-server-windows-arm64
 
     - name: Package Hylo release artifacts
       run: |
-        set -eo pipefail
-        git -C hylo rev-parse HEAD > ref
-        cp -Rp hylo/StandardLibrary/Sources hylo-stdlib
+        set -exu pipefail
+        git -C hylo-new rev-parse HEAD > version.txt
         mkdir -p release-artifacts
-        # tar -zcvf release-artifacts/hylo-stdlib.tar.gz hylo-stdlib
-        zip -r release-artifacts/hylo-stdlib.zip hylo-stdlib ref
-        # Repackage with just the server binaries, for minimal size, and zip for easy unpacking in node.js
-        chmod +x hylo-lsp-mac-x64/*
-        chmod +x hylo-lsp-linux-x64/*
-        chmod +x hylo-lsp-windows-x64/*
-        echo ${{ github.ref_name }} > ref
-        zip release-artifacts/hylo-lsp-server-mac-x64.zip hylo-lsp-mac-x64/hylo-lsp-server ref
-        zip release-artifacts/hylo-lsp-client-mac-x64.zip hylo-lsp-mac-x64/hylo-lsp-client ref
-        zip release-artifacts/hylo-lsp-server-linux-x64.zip hylo-lsp-linux-x64/hylo-lsp-server ref
-        zip release-artifacts/hylo-lsp-client-linux-x64.zip hylo-lsp-linux-x64/hylo-lsp-client ref
-        zip release-artifacts/hylo-lsp-server-windows-x64.zip hylo-lsp-windows-x64/hylo-lsp-server.exe hylo-lsp-windows-x64/*.dll ref
-        # zip release-artifacts/hylo-lsp-client-windows-x64.zip hylo-lsp-windows-x64/hylo-lsp-client.exe ref
+
+        # Package stdlib
+        cp -a hylo-new/StandardLibrary/Sources hylo-standard-library
+        echo "${{ github.ref_name }}" > hylo-standard-library/version.txt
+
+        zip -r release-artifacts/hylo-standard-library.zip hylo-standard-library
+
+        # Package language server binaries for each platform
+        for platform in linux-x64 linux-arm64 macos-x64 macos-arm64 windows-x64 windows-arm64; do
+          cd "hylo-language-server-${platform}"
+          echo "${{ github.ref_name }}" > version.txt
+          
+          # Determine executable name based on platform
+          if [[ "$platform" == windows-* ]]; then
+            executable="hylo-language-server.exe"
+          else
+            executable="hylo-language-server"
+            chmod +x "$executable" # Make it executable on unix
+          fi
+
+          # The standard library bundle/resource name differs on macOS vs others
+          if [[ "$platform" == macos-* ]]; then
+            stdlib="Hylo_StandardLibrary.bundle"
+          else
+            stdlib="Hylo_StandardLibrary.resources"
+          fi
+          
+          zip -r ../release-artifacts/hylo-language-server-${platform}.zip "$executable" version.txt "$stdlib"
+          cd ..
+        done
+
         ls -l release-artifacts
 
     - name: Extract version changelog

@@ -63,7 +63,7 @@ final class hyloLspTests: XCTestCase {
     let logger = createLogger()
     let dataChannel = DataChannel.stdioPipe()
     let connection = JSONRPCClientConnection(dataChannel)
-    let documentProvider = DocumentProvider(connection: connection, logger: logger)
+    let documentProvider = DocumentProvider(connection: connection, logger: logger, stdlibPath: "/tmp/stdlib")
 
     let caps = ClientCapabilities(workspace: nil, textDocument: nil, window: nil, general: nil, experimental: nil)
 
