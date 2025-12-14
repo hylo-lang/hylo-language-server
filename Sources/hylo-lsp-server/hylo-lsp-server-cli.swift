@@ -70,6 +70,12 @@ struct HyloLspCommand: AsyncParsableCommand {
     @Option(help: "Socket transport")
     var socket: String?
 
+    @Option(help: "Path to the Hylo standard library")
+    var stdlibPath: String
+
+    @Flag(help: "Disable logging")
+    var disableLogging: Bool = false
+
     func validate() throws {
       let numTransports = stdio.intValue + (pipe != nil).intValue + (socket != nil).intValue
       guard numTransports == 1 else {
@@ -78,7 +84,7 @@ struct HyloLspCommand: AsyncParsableCommand {
     }
 
     func run(logger: Logger, channel: DataChannel) async {
-      let server = HyloServer(channel, logger: logger)
+      let server = HyloServer(channel, logger: logger, stdlibPath: stdlibPath, disableLogging: disableLogging)
       await server.run()
     }
 
@@ -96,7 +102,7 @@ struct HyloLspCommand: AsyncParsableCommand {
     }
 
     func logHandlerFactory(_ label: String, fileLogger: FileLogger) -> LogHandler {
-      if HyloServer.disableLogging {
+      if disableLogging {
         return NullLogHandler(label: label)
       }
 

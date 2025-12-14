@@ -86,12 +86,13 @@ public actor DocumentProvider {
   private var stdlibCache: [AbsoluteUrl: StandardLibraryCache] = [:]
   public let defaultStdlibFilepath: URL
 
-  public init(connection: JSONRPCClientConnection, logger: Logger) {
+  public init(connection: JSONRPCClientConnection, logger: Logger, stdlibPath: String) {
     self.logger = logger
     documents = [:]
     self.connection = connection
     self.workspaceFolders = []
-    defaultStdlibFilepath = DocumentProvider.loadDefaultStdlibFilepath(logger: logger)
+    defaultStdlibFilepath = URL(fileURLWithPath: stdlibPath)
+    logger.info("Using stdlib path: \(stdlibPath)")
   }
 
   private func getServerCapabilities() -> ServerCapabilities {
@@ -176,15 +177,6 @@ public actor DocumentProvider {
     let added = params.event.added
     workspaceFolders = workspaceFolders.filter { removed.contains($0) }
     workspaceFolders.append(contentsOf: added)
-  }
-
-  private static func loadDefaultStdlibFilepath(logger: Logger) -> URL {
-    if let path = ProcessInfo.processInfo.environment["HYLO_STDLIB_PATH"] {
-      logger.info("Hylo stdlib filepath from HYLO_STDLIB_PATH: \(path)")
-      return URL(fileURLWithPath: path)
-    } else {
-      return StandardLibrary.standardLibrarySources
-    }
   }
 
   public func isStdlibDocument(_ uri: AbsoluteUrl) -> Bool {

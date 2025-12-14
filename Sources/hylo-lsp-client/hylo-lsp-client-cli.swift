@@ -14,6 +14,7 @@ import Puppy
 import SwiftLogConsoleColors
 
 import FrontEnd
+import StandardLibrary
 
 #if !os(Windows)
 import RegexBuilder
@@ -47,6 +48,9 @@ struct Options: ParsableArguments {
 
     @Option(help: "Log level")
     var log: Logger.Level = Logger.Level.debug
+
+    @Option(help: "Path to the Hylo standard library")
+    var stdlibPath: String
 
     @Argument(help: "Hylo document filepath")
     var documents: [String]
@@ -160,7 +164,7 @@ public func cliLink(uri: String, range: LSPRange) -> String {
   "\(uri):\(range.start.line+1):\(range.start.character+1)"
 }
 
-func initServer(workspace: String? = nil, documents: [URL], openDocuments: Bool, logger: Logger) async throws -> RestartingServer<
+func initServer(workspace: String? = nil, documents: [URL], openDocuments: Bool, stdlibPath: String, logger: Logger) async throws -> RestartingServer<
   JSONRPCServerConnection
 > {
   let fm = FileManager.default
@@ -172,7 +176,7 @@ func initServer(workspace: String? = nil, documents: [URL], openDocuments: Bool,
 
   // Run the LSP Server in a background task
   Task {
-    let server = HyloServer(serverChannel, logger: logger)
+    let server = HyloServer(serverChannel, logger: logger, stdlibPath: stdlibPath, disableLogging: false)
     await server.run()
   }
 
@@ -220,7 +224,8 @@ protocol DocumentCommand : AsyncParsableCommand {
 extension DocumentCommand {
 
   func logHandlerFactory(_ label: String) -> LogHandler {
-    if HyloServer.disableLogging {
+    // Always enable logging in client CLI
+    if false {
       return NullLogHandler(label: label)
     }
 
@@ -233,11 +238,11 @@ extension DocumentCommand {
     return logger
   }
 
-  func processDocuments(_ docs: [String], openDocuments: Bool = true, logger: Logger) async throws {
+  func processDocuments(_ docs: [String], openDocuments: Bool = true, stdlibPath: String, logger: Logger) async throws {
     let docs = try docs.map { try Options.parseDocument($0) }
 
     let docUrls = docs.map { $0.url }
-    let server = try await initServer(documents: docUrls, openDocuments: false, logger: logger)
+    let server = try await initServer(documents: docUrls, openDocuments: false, stdlibPath: stdlibPath, logger: logger)
 
     for doc in docs {
       let td = try textDocument(doc.url)
@@ -283,7 +288,7 @@ extension HyloLspCommand {
 
 
     func run() async throws {
-      try await processDocuments(options.documents, logger: makeLogger(options))
+      try await processDocuments(options.documents, stdlibPath: options.stdlibPath, logger: makeLogger(options))
     }
 
     func documentSymbol(_ s: SymbolInformation) -> DocumentSymbol {
@@ -341,7 +346,7 @@ extension HyloLspCommand {
     }
 
     func run() async throws {
-      try await processDocuments(options.documents, logger: makeLogger(options))
+      try await processDocuments(options.documents, stdlibPath: options.stdlibPath, logger: makeLogger(options))
     }
 
     func locationLink(_ l: Location) -> LocationLink {
@@ -375,7 +380,7 @@ extension HyloLspCommand {
     }
 
     func run() async throws {
-      try await processDocuments(options.documents, logger: makeLogger(options))
+      try await processDocuments(options.documents, stdlibPath: options.stdlibPath, logger: makeLogger(options))
     }
 
   }
@@ -407,7 +412,7 @@ extension HyloLspCommand {
     }
 
     func run() async throws {
-      try await processDocuments(options.documents, logger: makeLogger(options))
+      try await processDocuments(options.documents, stdlibPath: options.stdlibPath, logger: makeLogger(options))
     }
   }
 
