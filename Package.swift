@@ -91,6 +91,7 @@ let package = Package(
             // .windows,
           ])
         ),
+        .product(name: "HyloStandardLibrary", package: "hylo-new"),
 
         // "JSONRPC-DataChannel-UniSocket",
         // "JSONRPC-DataChannel-Actor",

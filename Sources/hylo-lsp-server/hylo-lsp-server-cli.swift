@@ -13,6 +13,7 @@ import UniSocket
 import JSONRPC_DataChannel_UniSocket
 #endif
 
+import StandardLibrary
 
 extension Bool {
     var intValue: Int {
@@ -71,7 +72,7 @@ struct HyloLspCommand: AsyncParsableCommand {
     var socket: String?
 
     @Option(help: "Path to the Hylo standard library")
-    var stdlibPath: String
+    var stdlibPath: String = bundledStandardLibrarySources.path
 
     @Flag(help: "Disable logging")
     var disableLogging: Bool = false
