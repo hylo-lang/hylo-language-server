@@ -81,8 +81,15 @@ jobs:
             executable="hylo-language-server"
             chmod +x "$executable" # Make it executable on unix
           fi
+
+          # The standard library bundle/resource name differs on macOS vs others
+          if [[ "$platform" == macos-* ]]; then
+            stdlib="Hylo_StandardLibrary.bundle"
+          else
+            stdlib="Hylo_StandardLibrary.resources"
+          fi
           
-          zip -r ../release-artifacts/hylo-language-server-${platform}.zip "$executable" version.txt Hylo_StandardLibrary.resources
+          zip -r ../release-artifacts/hylo-language-server-${platform}.zip "$executable" version.txt "$stdlib"
           cd ..
         done
 
