@@ -67,13 +67,15 @@ jobs:
         # Package stdlib
         echo "${{ github.ref_name }}" > "hylo-stdlib/version.txt"
 
-        zip -r release-artifacts/hylo-stdlib.zip hylo-stdlib
+        zip -r release-artifacts/hylo-stdlib.zip hylo-standard-library
 
         # Package language server binaries for each platform
         for platform in linux-x64 linux-arm64 macos-x64 macos-arm64 windows-x64 windows-arm64; do
-          dir="hylo-language-server-${platform}"
-          cd "$dir"
+          cd "hylo-language-server-${platform}"
           echo "${{ github.ref_name }}" > version.txt
+          
+          # Copy StandardLibrary into the platform directory
+          cp -Rp ../hylo-new/StandardLibrary/Sources hylo-standard-library
           
           # Determine executable name based on platform
           if [[ "$platform" == windows-* ]]; then
@@ -83,7 +85,7 @@ jobs:
             chmod +x "$executable" # Make it executable on unix
           fi
           
-          zip ../release-artifacts/hylo-language-server-${platform}.zip "$executable" version.txt
+          zip -r ../release-artifacts/hylo-language-server-${platform}.zip "$executable" version.txt hylo-standard-library
           cd ..
         done
 
