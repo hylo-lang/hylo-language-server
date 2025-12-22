@@ -276,4 +276,201 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
     logger.debug("[\(params.textDocument.uri)] Return \(tokens.count) semantic tokens")
     return .success(SemanticTokens(tokens: tokens))
   }
+
+  private func getMembers(expression: [Substring], program: Program) -> [CompletionItem] {
+
+    var res: [CompletionItem] = []
+
+    if expression.count == 0 {
+      res.append(CompletionItem(label: "No expressions"))
+      return res
+    }
+    // As this is the first, we do not have a list of member to search from, so we need to get all the members manually.
+    let varName = Name(identifier: String(expression.first!))
+    let selection = program.select(.name(varName))
+    if selection.count == 0 {
+      // If we can't find the variable declaration
+      print("Error : Can't find the variable declaration (for variable \(varName.identifier))")
+      return []
+    }
+    let identity = selection.first!
+    let declaration = program.castToDeclaration(identity)!
+    var currTypeIdentity: AnyTypeIdentity = program.type(assignedTo: declaration)
+
+    var variableDeclarations: [VariableDeclaration.ID] = []
+
+    var currDecl: VariableDeclaration.ID? = nil
+
+    for element: Substring in expression {
+      if element != expression.first {
+        for v in variableDeclarations {
+          let name = program[v].identifier.value
+          if name == element {
+            currDecl = v
+            break
+          }
+        }
+        guard let currDecl = currDecl else {
+          // We did not find a member with this name :(
+          // TODO: We may want to add a warning here ?
+          break
+        }
+        // We found a member with this name :)
+
+        // We reset the declarations to fill them with the current one
+        currTypeIdentity = program.type(assignedTo: currDecl)
+      }
+      variableDeclarations = []
+
+      let underlyingType = (program.types[currTypeIdentity] as! RemoteType).projectee
+      let isStructType = program.types[underlyingType] as? Struct
+      guard let structType = isStructType else {
+        // This is not a struct
+        // TODO: We need to fullfill the request even for other types (for example GenericParameter)
+        return res
+      }
+      let structDeclId = structType.declaration
+      let structDecl = program[structDeclId]
+      variableDeclarations = program.storedProperties(of: structDeclId)
+
+      if element == expression.last {
+        for member in structDecl.members {
+          let tag = program.tag(of: member)
+          if tag == .init(FunctionDeclaration.self) {
+            let funcDecl = program[program.cast(member, to: FunctionDeclaration.self)!]
+            if funcDecl.introducer.value == FunctionDeclaration.Introducer.`init`
+              || funcDecl.introducer.value == FunctionDeclaration.Introducer.memberwiseinit
+            {
+              // We ignore all the constructor declarations in the struct (as we do not want to show them as members of the instance of the struct)
+              continue
+            }
+          }
+          let completionItems = CompletionItem.fromDeclaration(
+            declaration: member, program: program)
+          res.append(contentsOf: completionItems)
+        }
+      }
+    }
+    return res
+  }
+
+  public func completion(id: JSONId, params: CompletionParams) async -> Response<
+    CompletionResponse
+  > {
+    do {
+
+      enum CompletionType {
+        case scopeMembers
+        case variableMembers
+      }
+
+      // TODO: I think this method can be replaced by finding the node in the AST directly.
+      // I've created it before finding that, so for now it is there but it needs to be replaced as
+      // we want to have exactly the same parsing as the compiler, not two versions that lives side by side
+      func getCurrentExpression(text: String, position: Position) -> (
+        [String.SubSequence], CompletionType
+      ) {
+        // This methods takes as parameters the current document text and the user position
+        // It returns the expression at the cursor position, splitted on each dot as an array
+        // Ex: foo.bar. -> (["foo", "bar"], true)
+        // foo.bar -> (["foo"], ) // As the expression does not end with a dot -> we want to return completions items for the members of foo
+        let lines = doc.text.split(separator: "\n", omittingEmptySubsequences: false)
+        let currLine = lines[params.position.line]
+        // Getting the position of the cursor to split the current line from start to cursor
+        let endIndex = currLine.index(currLine.startIndex, offsetBy: position.character)
+        // Getting the line from start to cursor position
+        let startToPosition = currLine[currLine.startIndex..<endIndex]
+        // Splitting on space to separate mutliple expression -> !! THIS IS NO GOOD, and is why we need to replace this method by getting the node from the AST directly
+        // Splitting on space does not suffice, but it will for now...
+        let splitted = startToPosition.split(separator: " ")
+        // If line is empty -> return an empty expression
+        if splitted.count == 0 {
+          return ([], CompletionType.scopeMembers)
+        }
+        // Get the last expression of the line
+        let currExpression = splitted.last!
+        if !currExpression.contains(".") {
+          // If the expression does not contains a dot -> we want to get the scope members
+          return ([currExpression], CompletionType.scopeMembers)
+        }
+        // Else -> we want to get the members of a variable
+        // Get all parts of this expression
+        var dotSplitted = currExpression.split(separator: ".")
+        // If the current expression ends with a dot -> we don't do anything
+        if !currExpression.hasSuffix(".") {
+          // As the current expression does not end with a dot -> we want to ignore the last part (after the last dot), as the IDE will filter the completion results itself, we want to provide everything available
+          dotSplitted.popLast()
+        }
+        return (
+          dotSplitted,
+          CompletionType.variableMembers
+        )
+      }
+
+      guard let url = DocumentProvider.validateDocumentUrl(params.textDocument.uri) else {
+        throw AnyJSONRPCResponseError(
+          code: ErrorCodes.InvalidParams,
+          message: "Invalid document uri: \(params.textDocument.uri)")
+      }
+
+      let sourcePos = makeSourcePosition(url: url, position: params.position)
+
+      let analyzedDoc = try await documentProvider.getAnalyzedDocument(params.textDocument)
+
+      let doc = try await documentProvider.getDocumentContext(uri: params.textDocument.uri).doc
+
+      if params.context == nil {
+        return .failure(
+          AnyJSONRPCResponseError(
+            code: 500, message: "No context given for this completion request"))
+      }
+
+      let (currentExpr, completionType) = getCurrentExpression(
+        text: doc.text, position: params.position)
+      if completionType == CompletionType.variableMembers {
+        let members: [CompletionItem] = getMembers(
+          expression: currentExpr, program: analyzedDoc.program)
+        return Response.success(
+          TwoTypeOption.optionA(members))
+      } else if completionType == CompletionType.scopeMembers {
+        // We do not have a '.' for now in our expr -> we need to find all variable availabe in this scope !
+        var response: [CompletionItem] = []
+        // TODO: Is it necessary to pass a logger to this method ? Does this make sense ? And if so, which logger do we pass ?
+        guard let res: AnySyntaxIdentity = analyzedDoc.program.findNode(
+          sourcePos!, logger: Logger(label: "eheehe")) else {
+            return .failure(AnyJSONRPCResponseError(
+              code: 500, message: "Could not find an AST node for this position"
+            ))
+        }
+        // We try to cast the AST node to a scope -> If it succeed, we know that we can directly get the members of this scope (and the parents)
+        var targetScope = analyzedDoc.program.castToScope(res)
+        if targetScope == nil {
+          // If it fails -> we get the containing scope instead
+          targetScope = analyzedDoc.program.parent(containing: res)
+        }
+        // Here, we have the smallest scope containing res, or res directly if it is a scope
+        for parentScope in analyzedDoc.program.scopes(from: targetScope!) {
+          let decls = analyzedDoc.program.declarations(lexicallyIn: parentScope)
+          for decl in decls {
+            let name = analyzedDoc.program.name(of: decl)
+            if name == nil {
+              // If declaration has no name -> binding declaration -> we ignore it
+              continue
+            }
+            let completionItems = CompletionItem.fromDeclaration(
+              declaration: decl, program: analyzedDoc.program)
+            response.append(contentsOf: completionItems)
+          }
+        }
+        return .success(TwoTypeOption.optionA(response))
+      } else {
+        return .failure(
+          AnyJSONRPCResponseError(
+            code: 500, message: "Could not find a completion type for this request"))
+      }
+    } catch {
+      return .failure(
+        AnyJSONRPCResponseError.init(code: 500, message: String("Server error")))
+    }
+  }
 }

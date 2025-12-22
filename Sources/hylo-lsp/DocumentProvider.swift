@@ -120,6 +120,11 @@ public actor DocumentProvider {
     serverCapabilities.diagnosticProvider = .optionA(
       DiagnosticOptions(interFileDependencies: false, workspaceDiagnostics: false))
 
+    serverCapabilities.completionProvider = CompletionOptions(
+      workDoneProgress: true, triggerCharacters: ["."], allCommitCharacters: [],
+      resolveProvider: false,
+      completionItem: CompletionOptions.CompletionItem(labelDetailsSupport: true))
+
     return serverCapabilities
   }
 
