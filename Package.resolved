@@ -1,5 +1,5 @@
 {
-  "originHash" : "1f47a14ede3db3bdc3cb8d0da03f383bddb07c303d2411a9b2fac4fa4269572b",
+  "originHash" : "33087da4760330cde6767503d301487b6ffb2e1359a4d3dbf280495ed86fed27",
   "pins" : [
     {
       "identity" : "archivist",
@@ -20,15 +20,6 @@
       }
     },
     {
-      "identity" : "globpattern",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ChimeHQ/GlobPattern",
-      "state" : {
-        "revision" : "4ebb9e89e07cc475efa74f87dc6d21f4a9e060f8",
-        "version" : "0.1.1"
-      }
-    },
-    {
       "identity" : "jsonrpc",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ChimeHQ/JSONRPC",
@@ -42,17 +33,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ChimeHQ/LanguageClient",
       "state" : {
-        "revision" : "f8fdeaed850fbc3e542cd038e952758887f6be5d",
-        "version" : "0.8.0"
+        "revision" : "4f28cc3cad7512470275f65ca2048359553a86f5",
+        "version" : "0.8.2"
       }
     },
     {
       "identity" : "languageserver",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/MartTave/LanguageServer.git",
+      "location" : "https://github.com/MartTave/LanguageServer",
       "state" : {
-        "revision" : "18a15b9228fc00e658413f616b8024c28c411a69",
-        "version" : "0.0.1"
+        "branch" : "fix/request_handler",
+        "revision" : "06a8fda1256f7ac29ec8994ceb1bbb9de4171083"
       }
     },
     {
@@ -60,8 +51,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ChimeHQ/LanguageServerProtocol",
       "state" : {
-        "revision" : "ac76fccf0e981c8e30c5ee4de1b15adc1decd697",
-        "version" : "0.13.2"
+        "revision" : "f7879c782c0845af9c576de7b8baedd946237286",
+        "version" : "0.14.0"
       }
     },
     {
@@ -114,8 +105,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser.git",
       "state" : {
-        "revision" : "cdd0ef3755280949551dc26dee5de9ddeda89f54",
-        "version" : "1.6.2"
+        "revision" : "c5d11a805e765f52ba34ec7284bd4fcd6ba68615",
+        "version" : "1.7.0"
       }
     },
     {
@@ -125,6 +116,15 @@
       "state" : {
         "revision" : "7b847a3b7008b2dc2f47ca3110d8c782fb2e5c7e",
         "version" : "1.3.0"
+      }
+    },
+    {
+      "identity" : "swift-glob",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/davbeck/swift-glob",
+      "state" : {
+        "revision" : "07ba6f47d903a0b1b59f12ca70d6de9949b975d6",
+        "version" : "0.2.0"
       }
     },
     {

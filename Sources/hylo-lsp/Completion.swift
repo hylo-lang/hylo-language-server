@@ -10,14 +10,14 @@ extension CompletionItem {
       let varDecl = program.cast(declaration, to: VariableDeclaration.self)!
       return [CompletionItem.fromVariableDeclaration(decl: varDecl, program: program)]
     case .init(FunctionDeclaration.self):
-      let funcDecl = program[program.cast(declaration, to: FunctionDeclaration.self)!]
+      let concretFunc = program.cast(declaration, to: FunctionDeclaration.self)!
       return [
         CompletionItem.fromFunctionDeclaration(
-          functionDecl: funcDecl, program: program)
+          concreteSynth: concretFunc, program: program)
       ]
     case .init(StructDeclaration.self):
-      let structDecl = program[program.cast(declaration, to: StructDeclaration.self)!]
-      return CompletionItem.fromStructDeclaration(structDecl: structDecl, program: program)
+      let structDecl = program.cast(declaration, to: StructDeclaration.self)!
+      return CompletionItem.fromStructDeclaration(structDeclId: structDecl, program: program)
     case .init(EnumDeclaration.self):
       let enumDecl = program[program.cast(declaration, to: EnumDeclaration.self)!]
       return [CompletionItem.fromEnumDeclaration(enumDecl: enumDecl, program: program)]
@@ -35,10 +35,11 @@ extension CompletionItem {
   }
 
   static public func fromFunctionDeclaration(
-    functionDecl: FunctionDeclaration, program: Program
+    concreteSynth: ConcreteSyntaxIdentity<FunctionDeclaration>, program: Program
   ) -> CompletionItem {
     var currentString = ""
     var snippetString = ""
+    let functionDecl = program[concreteSynth]
     for mod in functionDecl.modifiers {
       currentString += mod.description + " "
     }
@@ -46,30 +47,37 @@ extension CompletionItem {
     snippetString += functionDecl.identifier.value.description + "("
     var index = 1
     var first = true
-    for paramID in functionDecl.parameters {
-      let paramDecl = program[paramID]
-      let temp_string = program.show(paramDecl)
-      // TODO: This is not a good way to do this -> there must be a better way, do not leave it like that
-      let splitted = temp_string.split(separator: ": ")
-      // If first arg is self -> we ignore this argument as it should not be filled on method call
-      if splitted.first! == "self" {
-        continue
-      }
-      if first {
-        first = false
-      } else {
-        currentString += ", "
-        snippetString += ", "
-      }
-      snippetString +=
-        "\(splitted.first!): ${\(index):\(splitted.last!.split(separator:" ").last!)}"
-      index += 1
-      currentString += temp_string
-    }
-    currentString += ")"
-    snippetString += ")"
-    if functionDecl.output != nil {
-      currentString += " -> " + program.show(functionDecl.output!)
+    let type = program.type(assignedTo: concreteSynth)
+    switch program.types[type] {
+      case let t as Arrow:
+        for parameter in t.inputs {
+          guard let label = parameter.label else {
+            print("Found a parameter without a label !")
+            continue
+          }
+          if label == "self" {
+            continue
+          }
+
+          if !first {
+            currentString += ", "
+            snippetString += ", "
+          }
+          first = false
+          currentString += "\(label): \(program.show(parameter.type))"
+          snippetString += "\(label): ${\(index):\(program.show(parameter.type))"
+          index += 1
+          if let defaultValue = parameter.defaultValue {
+            currentString += " = \(program.show(defaultValue))"
+            snippetString += " = \(program.show(defaultValue))"
+          }
+          snippetString += "}"
+        }
+        let type = program.types[t.output]
+        currentString += ") -> \(program.show(type))"
+        snippetString += ")"
+      default:
+        print("You should not be here !")
     }
     return CompletionItem(
       label: functionDecl.identifier.value.description, kind: CompletionItemKind.function,
@@ -94,43 +102,58 @@ extension CompletionItem {
   }
 
   static public func fromStructDeclaration(
-    structDecl: StructDeclaration, program: Program
+    structDeclId: StructDeclaration.ID, program: Program
   ) -> [CompletionItem] {
     var initItems: [CompletionItem] = []
+    let structDecl = program[structDeclId]
     for member in structDecl.members {
-      if program.tag(of: member) == .init(FunctionDeclaration.self)
-        && program.name(of: member)!.identifier == "init"
-      {
-        // We found the init function
-        let funcDecl = program[program.cast(member, to: FunctionDeclaration.self)!]
-        var snippet = structDecl.identifier.value + "("
-        var details = structDecl.identifier.value + "("
-        var first = true
-        var index = 0
-        for p in funcDecl.parameters {
-          let paramDecl = program[p]
-          if paramDecl.identifier.value == "self" {
+      guard let concreteSynth = program.cast(member, to: FunctionDeclaration.self) else {
+        continue
+      }
+      if  program[concreteSynth].introducer.value == FunctionDeclaration.Introducer.`init` || program[concreteSynth].introducer.value == FunctionDeclaration.Introducer.memberwiseinit {
+        let type = program.type(assignedTo: concreteSynth)
+        switch program.types[type] {
+          case let t as Arrow:
+            var detail = "\(structDecl.identifier.description)("
+            var snippet = detail
+            var first = true
+            var index = 1
+            for parameter in t.inputs {
+              guard let label = parameter.label else {
+                print("Found parameter without any label !")
+                continue
+              }
+              if label == "self" {
+                continue
+              }
+              if !first {
+                snippet += ", "
+                detail += ", "
+              }
+              first = false
+              detail += "\(label): \(program.show(parameter.type))"
+              snippet += "\(label): ${\(index):\(program.show(parameter.type))"
+              if let defaultValue = parameter.defaultValue {
+                detail += " = \(program.show(defaultValue))"
+                snippet += " = \(program.show(defaultValue))"
+              }
+              snippet += "}"
+              index += 1
+            }
+            let type = program.types[t.output]
+            detail += ")"
+            snippet += ")"
+
+
+            initItems.append(CompletionItem(
+              label: structDecl.identifier.description,
+              detail: detail,
+              insertText: snippet,
+              insertTextFormat: InsertTextFormat.snippet,
+            ))
+          default:
             continue
-          }
-          if first {
-            first = false
-          } else {
-            details += ", "
-            snippet += ", "
-          }
-          details += program.show(paramDecl)
-          index += 1
-          snippet +=
-            paramDecl.identifier.value + ": ${\(index):\(program.show(paramDecl.ascription!))}"
         }
-        snippet += ")"
-        details += ")"
-        initItems.append(
-          CompletionItem(
-            label: structDecl.identifier.description, kind: CompletionItemKind.struct,
-            detail: details, insertText: snippet,
-            insertTextFormat: InsertTextFormat.snippet)
-        )
       }
     }
     return initItems

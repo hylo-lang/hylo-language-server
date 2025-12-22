@@ -133,7 +133,7 @@ let package = Package(
     .testTarget(
       name: "hylo-language-server-tests",
       dependencies: [
-        "hylo-lsp", 
+        "hylo-lsp",
         .product(name: "HyloStandardLibrary", package: "hylo-new"),
         .product(name: "HyloFrontEnd", package: "hylo-new"),
         .product(name: "Logging", package: "swift-log")
