@@ -51,11 +51,7 @@ extension CompletionItem {
     switch program.types[type] {
       case let t as Arrow:
         for parameter in t.inputs {
-          guard let label = parameter.label else {
-            print("Found a parameter without a label !")
-            continue
-          }
-          if label == "self" {
+          if parameter.label != nil && parameter.label! == "self" {
             continue
           }
 
@@ -64,8 +60,12 @@ extension CompletionItem {
             snippetString += ", "
           }
           first = false
-          currentString += "\(label): \(program.show(parameter.type))"
-          snippetString += "\(label): ${\(index):\(program.show(parameter.type))"
+          if let label = parameter.label {
+            currentString += "\(label): "
+            snippetString += "\(label): "
+          }
+          currentString += "\(program.show(parameter.type))"
+          snippetString += "${\(index):\(program.show(parameter.type))"
           index += 1
           if let defaultValue = parameter.defaultValue {
             currentString += " = \(program.show(defaultValue))"
@@ -119,11 +119,7 @@ extension CompletionItem {
             var first = true
             var index = 1
             for parameter in t.inputs {
-              guard let label = parameter.label else {
-                print("Found parameter without any label !")
-                continue
-              }
-              if label == "self" {
+              if parameter.label != nil && parameter.label! == "self" {
                 continue
               }
               if !first {
@@ -131,8 +127,12 @@ extension CompletionItem {
                 detail += ", "
               }
               first = false
-              detail += "\(label): \(program.show(parameter.type))"
-              snippet += "\(label): ${\(index):\(program.show(parameter.type))"
+              if let label = parameter.label {
+                detail += "\(label): "
+                snippet += "\(label): "
+              }
+              detail += "\(program.show(parameter.type))"
+              snippet += "${\(index):\(program.show(parameter.type))"
               if let defaultValue = parameter.defaultValue {
                 detail += " = \(program.show(defaultValue))"
                 snippet += " = \(program.show(defaultValue))"
