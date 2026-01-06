@@ -17,16 +17,18 @@ public struct HyloErrorHandler : ErrorHandler {
 public actor HyloServer {
   let connection: JSONRPCClientConnection
   private let logger: Logger
+  private let stdlibPath: String
+  public let disableLogging: Bool
 
-  public static let disableLogging = if let disableLogging = ProcessInfo.processInfo.environment["HYLO_LSP_DISABLE_LOGGING"] { !disableLogging.isEmpty } else { false }
-
-  public init(_ dataChannel: DataChannel, logger: Logger) {
+  public init(_ dataChannel: DataChannel, logger: Logger, stdlibPath: String, disableLogging: Bool = false) {
     self.logger = logger
+    self.stdlibPath = stdlibPath
+    self.disableLogging = disableLogging
     self.connection = JSONRPCClientConnection(dataChannel)
   }
 
   nonisolated private func createDispatcher(exitSemaphore: AsyncSemaphore) -> EventDispatcher {
-    let documentProvider = DocumentProvider(connection: connection, logger: logger)
+    let documentProvider = DocumentProvider(connection: connection, logger: logger, stdlibPath: stdlibPath)
     let requestHandler = HyloRequestHandler(connection: connection, logger: logger, documentProvider: documentProvider)
     let notificationHandler = HyloNotificationHandler(connection: connection, logger: logger, documentProvider: documentProvider, exitSemaphore: exitSemaphore)
     let errorHandler = HyloErrorHandler(logger: logger)

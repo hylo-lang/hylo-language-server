@@ -38,5 +38,5 @@ There is also a command line tool for interacting with the LSP backend. The comm
 Example usage:
 
 ```sh
-swift run hylo-lsp-client semantic-token hylo/Examples/factorial.hylo
+swift run hylo-language-client semantic-token hylo/Examples/factorial.hylo
 ```

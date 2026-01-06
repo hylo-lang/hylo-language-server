@@ -75,6 +75,106 @@
       "preLaunchTask": "swift: Build Release hylo-lsp-client",
       "target": "hylo-lsp-client",
       "configuration": "release"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Debug hylo-la-server",
+      "target": "hylo-la-server",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug hylo-la-server"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Release hylo-la-server",
+      "target": "hylo-la-server",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release hylo-la-server"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Debug hylo-language-server",
+      "target": "hylo-language-server",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug hylo-language-server"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Release hylo-language-server",
+      "target": "hylo-language-server",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release hylo-language-server"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Debug hylo-lsp==-client",
+      "target": "hylo-lsp==-client",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug hylo-lsp==-client"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Release hylo-lsp==-client",
+      "target": "hylo-lsp==-client",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release hylo-lsp==-client"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Debug hylo-l-client",
+      "target": "hylo-l-client",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug hylo-l-client"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Release hylo-l-client",
+      "target": "hylo-l-client",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release hylo-l-client"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Debug hylo-language-client",
+      "target": "hylo-language-client",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug hylo-language-client"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:hylo-language-server}",
+      "name": "Release hylo-language-client",
+      "target": "hylo-language-client",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release hylo-language-client"
     }
   ]
 }
