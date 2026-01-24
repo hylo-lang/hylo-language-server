@@ -1206,7 +1206,7 @@ extension Program {
   {
     logger.debug("List semantic tokens in document: \(document)")
 
-    if let source = findTranslationUnit(AbsoluteUrl(URL(string: document)!), logger: logger) {
+    if let source = findSourceContainer(AbsoluteUrl(URL(string: document)!), logger: logger) {
       logger.debug("Translation unit found with \(source.topLevelDeclarations.count) top-level declarations")
       
       var walker = SemanticTokensWalker(

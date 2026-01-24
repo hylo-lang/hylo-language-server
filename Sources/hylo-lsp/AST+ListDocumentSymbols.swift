@@ -206,7 +206,7 @@ extension Program {
   public func listDocumentSymbols(_ document: AbsoluteUrl, logger: Logger) -> [DocumentSymbol] {
     logger.debug("List symbols in document: \(document)")
 
-    guard let sourceContainer = findTranslationUnit(document, logger: logger) else {
+    guard let sourceContainer = findSourceContainer(document, logger: logger) else {
       logger.error("Failed to locate translation unit: \(document)")
       return []
     }

@@ -120,6 +120,14 @@ public actor DocumentProvider {
         full: .optionA(true)))
     serverCapabilities.diagnosticProvider = .optionA(
       DiagnosticOptions(interFileDependencies: false, workspaceDiagnostics: false))
+    
+    serverCapabilities.hoverProvider = .optionA(true)
+
+    serverCapabilities.executeCommandProvider = .init(commands: ["listGivens"])
+
+    serverCapabilities.referencesProvider = .optionA(true)
+
+    serverCapabilities.renameProvider = .optionB(RenameOptions(prepareProvider: true))
 
     return serverCapabilities
   }
