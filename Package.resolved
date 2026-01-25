@@ -1,5 +1,5 @@
 {
-  "originHash" : "3b63c1232d23ef2806365cbe1c46531030a3b1937a863c82441193865db6fc53",
+  "originHash" : "3b4a1e3db396bd2a89ec9f55c4afe9045bf6deb08996789f19f5caa695c2642b",
   "pins" : [
     {
       "identity" : "archivist",
@@ -131,14 +131,6 @@
       "state" : {
         "revision" : "ce592ae52f982c847a4efc0dd881cc9eb32d29f2",
         "version" : "1.6.4"
-      }
-    },
-    {
-      "identity" : "swift-log-console-colors",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tothambrus11/swift-log-console-colors",
-      "state" : {
-        "revision" : "fb255585da64432748c04fbc77703dc68a991158"
       }
     },
     {

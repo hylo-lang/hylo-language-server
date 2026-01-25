@@ -1,9 +1,3 @@
-[submodule "swift-unisocket"]
-	path = swift-unisocket
-	url = https://github.com/koliyo/swift-unisocket.git
-[submodule "JSONRPC-DataChannel-UniSocket"]
-	path = JSONRPC-DataChannel-UniSocket
-	url = https://github.com/koliyo/JSONRPC-DataChannel-UniSocket.git
 [submodule "hylo-new"]
 	path = hylo-new
 	url = https://github.com/hylo-lang/hylo-new
