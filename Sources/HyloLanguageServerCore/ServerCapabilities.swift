@@ -32,6 +32,7 @@ func getServerCapabilities() -> ServerCapabilities {
   serverCapabilities.hoverProvider = .optionA(true)
   serverCapabilities.executeCommandProvider = .init(commands: ["listGivens"])
   serverCapabilities.referencesProvider = .optionA(true)
+  serverCapabilities.documentHighlightProvider = .optionA(true)
   serverCapabilities.renameProvider = .optionB(RenameOptions(prepareProvider: true))
 
   return serverCapabilities
