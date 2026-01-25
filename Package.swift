@@ -27,8 +27,7 @@ let package = Package(
 
   products: [
     .library(name: "HyloLanguageServerCore", targets: ["HyloLanguageServerCore"]),
-    .executable(name: "hylo-language-server", targets: ["HyloLanguageServerDriver"]),
-    .executable(name: "hylo-language-client", targets: ["HyloLanguageClient"]),
+    .executable(name: "hylo-language-server", targets: ["HyloLanguageServerDriver"])
   ],
   dependencies: [
     .package(url: "https://github.com/groue/Semaphore", from: "0.0.8"),
@@ -39,9 +38,6 @@ let package = Package(
     .package(
       url: "https://github.com/ChimeHQ/LanguageServer",
       revision: "2bbf9508fdf6f7a17b2c34776b7485af73de338a"),
-    .package(
-      url: "https://github.com/ChimeHQ/LanguageClient",
-      revision: "4f28cc3cad7512470275f65ca2048359553a86f5"),
     .package(path: "./hylo-new"),
   ],
   targets: [
@@ -68,16 +64,6 @@ let package = Package(
         .product(name: "HyloStandardLibrary", package: "hylo-new"),
       ],
       path: "Sources/HyloLanguageServerDriver",
-      swiftSettings: toolCompileSettings
-    ),
-
-    .executableTarget(
-      name: "HyloLanguageClient",
-      dependencies: [
-        "HyloLanguageServerCore",
-        "LanguageClient",
-      ],
-      path: "Sources/HyloLanguageClient",
       swiftSettings: toolCompileSettings
     ),
 

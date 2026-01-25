@@ -8,7 +8,7 @@ final class LanguageServerTests: XCTestCase {
   func testListDocumentSymbols() throws {
     let exampleFileUri = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .appendingPathComponent("example.hylo")
-    let source = try SourceFile(contentsOf: exampleFileUri)
+    _ = try SourceFile(contentsOf: exampleFileUri)
 
     // var uriMapping: [String: TranslationUnit.ID] = [:]
     // var ast = AST()
