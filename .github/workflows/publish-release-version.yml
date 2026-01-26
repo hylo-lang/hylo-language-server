@@ -3,6 +3,12 @@ name: Publish release version
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v1.0.0)'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -10,6 +16,7 @@ jobs:
     uses: ./.github/workflows/build-and-test-template.yml
     with:
       build-type: release
+      git-ref: ${{ inputs.tag || github.ref }}
   publish-release:
     name: Publish release
     needs: [build]
@@ -19,6 +26,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         submodules: 'true'
+        ref: ${{ inputs.tag || github.ref }}
 
     # Download all architecture-specific artifacts
     - name: Download Linux x64 artifacts
@@ -65,14 +73,14 @@ jobs:
 
         # Package stdlib
         cp -a hylo-new/StandardLibrary/Sources hylo-standard-library
-        echo "${{ github.ref_name }}" > hylo-standard-library/version.txt
+        echo "${{ inputs.tag || github.ref_name }}" > hylo-standard-library/version.txt
 
         zip -r release-artifacts/hylo-standard-library.zip hylo-standard-library
 
         # Package language server binaries for each platform
         for platform in linux-x64 linux-arm64 macos-x64 macos-arm64 windows-x64 windows-arm64; do
           cd "hylo-language-server-${platform}"
-          echo "${{ github.ref_name }}" > version.txt
+          echo "${{ inputs.tag || github.ref_name }}" > version.txt
           
           # Determine executable name based on platform
           if [[ "$platform" == windows-* ]]; then
@@ -96,11 +104,12 @@ jobs:
         ls -l release-artifacts
 
     - name: Extract version changelog
-      run: ./extract_version_changelog.sh ${{ github.ref_name }} >> version_changelog.txt
+      run: ./extract_version_changelog.sh ${{ inputs.tag || github.ref_name }} >> version_changelog.txt
 
     - name: Release
       uses: softprops/action-gh-release@v1
       with:
+        tag_name: ${{ inputs.tag || github.ref_name }}
         files: |
           LICENSE
           release-artifacts/*
