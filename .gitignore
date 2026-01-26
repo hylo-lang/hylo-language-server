@@ -10,3 +10,4 @@ DerivedData/
 .swiftpm
 hylo-lsp.log
 .hylo-lsp
+.idea
