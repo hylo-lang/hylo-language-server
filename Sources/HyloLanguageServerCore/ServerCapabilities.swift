@@ -35,5 +35,7 @@ func getServerCapabilities() -> ServerCapabilities {
   serverCapabilities.documentHighlightProvider = .optionA(true)
   serverCapabilities.renameProvider = .optionB(RenameOptions(prepareProvider: true))
 
+  serverCapabilities.completionProvider = CompletionOptions(workDoneProgress: false, triggerCharacters: ["."], allCommitCharacters: nil, resolveProvider: false, completionItem: nil)
+
   return serverCapabilities
 }
