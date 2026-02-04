@@ -12,8 +12,12 @@ func XCTUnwrapAsync<T>(_ expression: @autoclosure () async throws -> T?, _ messa
   return try XCTUnwrap(val, message(), file: file, line: line)
 }
 
-
-final class hyloLspTests: XCTestCase {
+/// Tests for document management functionality.
+///
+/// These tests verify:
+/// - Document change application
+/// - Workspace path resolution
+final class DocumentManagementTests: XCTestCase {
   func createLogger() -> Logger {
     var logger = Logger(label: loggerLabel) { label in
       StreamLogHandler.standardOutput(label: label)

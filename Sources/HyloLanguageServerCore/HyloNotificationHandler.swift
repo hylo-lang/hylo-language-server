@@ -13,6 +13,18 @@ public struct HyloNotificationHandler : NotificationHandler {
   var documentProvider: DocumentProvider
   var exitSemaphore: AsyncSemaphore
 
+  public init(
+    connection: JSONRPCClientConnection, 
+    logger: Logger, 
+    documentProvider: DocumentProvider,
+    exitSemaphore: AsyncSemaphore
+  ) {
+    self.connection = connection
+    self.logger = logger
+    self.documentProvider = documentProvider
+    self.exitSemaphore = exitSemaphore
+  }
+
 	public func internalError(_ error: Error) async {
     logger.debug("LSP stream error: \(error)")
   }
