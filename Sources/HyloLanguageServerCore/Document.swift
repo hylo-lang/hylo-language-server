@@ -2,7 +2,7 @@ import Foundation
 import FrontEnd
 import LanguageServerProtocol
 
-public struct Document {
+public struct Document: Sendable {
   public let uri: AbsoluteUrl
   public var version: Int?
   public var text: String
