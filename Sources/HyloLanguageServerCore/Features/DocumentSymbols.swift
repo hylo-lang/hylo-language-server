@@ -13,13 +13,10 @@ extension HyloRequestHandler {
     let symbols = listDocumentSymbols(
       AbsoluteUrl(fromUrlString: params.textDocument.uri)!, in: program, logger: logger)
 
-    if symbols.isEmpty {
-      return .success(nil)
+    for symbol in symbols {
+      precondition(validateRange(symbol))
     }
-
-    // Validate ranges
-    let validatedSymbols = symbols.filter(validateRange)
-    return .success(.optionA(validatedSymbols))
+    return .success(.optionA(symbols))
   }
 
   public func documentSymbol(id: JSONId, params: DocumentSymbolParams) async -> Response<

@@ -3,162 +3,26 @@ import Logging
 @testable import HyloLanguageServerCore
 import LanguageServerProtocol
 
-/// Integration tests for LSP features using the testing framework.
+/// General integration tests for LSP functionality.
 ///
-/// These tests demonstrate end-to-end LSP functionality including:
-/// - Go to definition
-/// - Hover information
-/// - Document symbols
-/// - Document updates
-/// - References (placeholder)
+/// These tests focus on cross-cutting concerns and general LSP behavior:
+/// - Multi-range testing
+/// - Document updates and lifecycle
+/// - Error handling
+/// - Complex code scenarios
+///
+/// Feature-specific tests are organized in the Features/ directory.
 final class LSPIntegrationTests: XCTestCase {
   
   var context: LSPTestContext!
   
   override func setUp() async throws {
-    // Create a logger for test debugging
-    var logger = Logger(label: "LSPFeatureTests")
+    var logger = Logger(label: "LSPIntegrationTests")
     logger.logLevel = .debug
     
-    // Initialize the test context with the standard library path
-    // Adjust this path to match your environment
     let stdlibPath = "/workspaces/hylo-language-server/hylo-new/StandardLibrary"
     context = LSPTestContext(stdlibPath: stdlibPath, logger: logger)
-    
-    // Initialize the LSP server
     try await context.initialize(rootUri: "file:///test")
-  }
-  
-  // MARK: - Go to Definition Tests
-  
-  func testGoToDefinition() async throws {
-    // Test "go to definition" on a function call
-    let source: MarkedHyloSource = """
-    <RANGE>fun factorial(_ n: Int) -> Int {
-      if n < 2 { 1 } else { n * factorial(n - 1) }
-    }</RANGE>
-    
-    public fun main() {
-      let _ = <CURSOR/>factorial(6)
-    }
-    """
-    
-    let doc = await context.openDocument(source)
-    
-    // Perform definition lookup
-    let definition = try await doc.definition()
-    
-    // Assert it points to the function declaration (whole function, not just identifier)
-    try assertDefinitionAt(
-      definition,
-      expectedRange: source.firstRange()
-    )
-  }
-  
-  func testDefinitionOfRecursiveCall() async throws {
-    // Test definition on a recursive call
-    let source: MarkedHyloSource = """
-    <RANGE>fun factorial(_ n: Int) -> Int {
-      if n < 2 { 1 } else { n * <CURSOR/>factorial(n - 1) }
-    }</RANGE>
-    
-    public fun main() {
-      let _ = factorial(6)
-    }
-    """
-    
-    let doc = await context.openDocument(source)
-    let definition = try await doc.definition()
-    
-    try assertDefinitionAt(
-      definition,
-      expectedRange: source.firstRange()
-    )
-  }
-  
-  // MARK: - Hover Tests
-  
-  func testHoverOnFunctionName() async throws {
-    // Test hover information on a function
-    let source: MarkedHyloSource = """
-    fun factorial(_ n: Int) -> Int {
-      if n < 2 { 1 } else { n * factorial(n - 1) }
-    }
-    
-    public fun main() {
-      let _ = <CURSOR/>factorial(6)
-    }
-    """
-    
-    let doc = await context.openDocument(source)
-    let hover = try await doc.hover()
-    
-    // Verify hover contains type information
-    try assertHoverContains(hover, "Int")
-  }
-  
-  func testHoverOnVariable() async throws {
-    // Test hover on a variable
-    let source: MarkedHyloSource = """
-    public fun main() {
-      let x = 42
-      let y = <CURSOR/>x + 1
-    }
-    """
-    
-    let doc = await context.openDocument(source)
-    let hover = try await doc.hover()
-    
-    // The hover should contain type information
-    XCTAssertNotNil(hover)
-  }
-  
-  // MARK: - Document Symbols Tests
-  
-  func testDocumentSymbols() async throws {
-    // Test document symbol extraction
-    let source: MarkedHyloSource = """
-    fun factorial(_ n: Int) -> Int {
-      if n < 2 { 1 } else { n * factorial(n - 1) }
-    }
-    
-    public fun main() {
-      let _ = factorial(6)
-    }
-    """
-    
-    let doc = await context.openDocument(source)
-    let symbols = try await doc.documentSymbols()
-    
-    // Verify that function symbols are present
-    try assertSymbolExists(symbols, named: "factorial", kind: .function)
-    try assertSymbolExists(symbols, named: "main", kind: .function)
-  }
-  
-  // MARK: - References Tests
-  
-  func testFindReferences() async throws {
-    // Test finding all references to a function
-    // Commented out: references feature requires cursor on a declaration node,
-    // which is complex to target correctly. Property-based test covers this.
-    /*
-    let source: MarkedHyloSource = """
-    fun fac<CURSOR/>torial(_ n: Int) -> Int {
-      if n < 2 { 1 } else { n * factorial(n - 1) }
-    }
-    
-    public fun main() {
-      let _ = factorial(6)
-    }
-    """
-    
-    let doc = await context.openDocument(source)
-    let references = try await doc.references(includeDeclaration: false)
-    
-    // Should find references (not including the declaration itself)
-    // There are 2 calls to factorial: one recursive, one in main
-    try assertReferenceCount(references, expectedCount: 2)
-    */
   }
   
   // MARK: - Multi-Range Tests
@@ -270,46 +134,56 @@ final class LSPIntegrationTests: XCTestCase {
     }
   }
   
-  // MARK: - Complex Code Tests
+  // MARK: - Document Lifecycle Tests
   
-  func testNestedFunctions() async throws {
-    // Test with more complex nested code
-    let source: MarkedHyloSource = """
-    fun outer(_ x: Int) -> Int {
-      <RANGE>fun inner(_ y: Int) -> Int {
-        y * 2
-      }</RANGE>
-      return <CURSOR/>inner(x + 1)
-    }
-    
-    public fun main() {
-      let _ = outer(5)
-    }
-    """
-    
-    let doc = await context.openDocument(source)
-    let definition = try await doc.definition()
-    
-    try assertDefinitionAt(
-      definition,
-      expectedRange: source.firstRange()
-    )
-  }
-  
-  func testMethodChaining() async throws {
-    // Test with a more complex expression
+  func testDocumentClosingIsClean() async throws {
+    // Property: Opening and closing documents should not leave artifacts
     let source: MarkedHyloSource = """
     public fun main() {
       let x = 42
-      let y = 10
-      let result = x + <CURSOR/>y
     }
     """
     
-    let doc = await context.openDocument(source)
-    let hover = try await doc.hover()
+    let doc1 = await context.openDocument(source, uri: "file:///test/doc1.hylo")
+    let doc2 = await context.openDocument(source, uri: "file:///test/doc2.hylo")
     
-    // Should get hover information for the variable
-    XCTAssertNotNil(hover)
+    // Both documents should be accessible
+    _ = try await doc1.documentSymbols()
+    _ = try await doc2.documentSymbols()
+    
+    // Close one document
+    await doc1.close()
+    
+    // Other document should still work
+    _ = try await doc2.documentSymbols()
+    
+    await doc2.close()
+  }
+  
+  // MARK: - Position Conversion Tests
+  
+  func testPositionConversionConsistency() throws {
+    // Property: Different ways of constructing ranges should produce equivalent results
+    let range1 = LSPRange(
+      start: Position(line: 1, character: 2),
+      end: Position(line: 3, character: 4)
+    )
+    
+    let range2 = LSPRange(
+      start: Position(line: 1, character: 2),
+      end: Position(line: 3, character: 4)
+    )
+    
+    XCTAssertEqual(range1.start.line, range2.start.line)
+    XCTAssertEqual(range1.start.character, range2.start.character)
+    XCTAssertEqual(range1.end.line, range2.end.line)
+    XCTAssertEqual(range1.end.character, range2.end.character)
+    
+    // Single-line range
+    let range3 = LSPRange(line: 5, startChar: 10, endChar: 20)
+    XCTAssertEqual(range3.start.line, 5)
+    XCTAssertEqual(range3.start.character, 10)
+    XCTAssertEqual(range3.end.line, 5)
+    XCTAssertEqual(range3.end.character, 20)
   }
 }
