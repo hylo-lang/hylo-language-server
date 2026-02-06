@@ -164,7 +164,7 @@ struct SemanticTokensWalker {
       addStaticCall(e)
     case let e as StringLiteral:
       addStringLiteral(e)
-    case let e as SynthethicExpression:
+    case let e as SyntheticExpression:
       addSyntheticExpression(e)
     case let e as TupleLiteral:
       addTupleLiteral(e)
@@ -913,7 +913,7 @@ struct SemanticTokensWalker {
     addToken(range: e.site, type: .string)
   }
 
-  mutating func addSyntheticExpression(_ e: SynthethicExpression) {
+  mutating func addSyntheticExpression(_ e: SyntheticExpression) {
     // Synthetic expressions are compiler-generated, may not need tokenization
     // or the structure may vary
   }
