@@ -8,7 +8,7 @@ private let dummyNode = "code_completion_node"
 
 /// Returns the primary members of a type
 private func primaryMembers(of t: AnyTypeIdentity, in p: Program) -> [DeclarationIdentity] {
-  // TODO: They may be a nicer way to do this way to do this
+  // TODO: They may be a nicer way to do this
 
   if let t = p.types[t] as? Struct {
     p[t.declaration].members
