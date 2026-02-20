@@ -8,8 +8,7 @@ private let dummyNode = "code_completion_node"
 
 /// Returns the primary members of a type
 private func primaryMembers(of t: AnyTypeIdentity, in p: Program) -> [DeclarationIdentity] {
-    // TODO: They may be a nicer way to do this
-
+    // We may want to move (and complete) this function to Program
     if let t = p.types[t] as? Struct {
         p[t.declaration].members
     } else if let t = p.types[t] as? Enum {
@@ -162,6 +161,7 @@ extension HyloRequestHandler {
         }
 
         // Try to insert a dummy node if needed, default to base program and source if errors
+
         // TODO: Here, if the hc succeeded the first time to compile the source file, and fails when we add a dummy token, this means
         // that this is our fault. For now, we default on the base program and source, do we want to throw ? (or do something else ?)
         let (program, source) =
@@ -176,8 +176,8 @@ extension HyloRequestHandler {
         )
 
         guard let node = program.findNode(sourcePosition, logger: logger) else {
-            // TODO: Here, we have no node on the autocompletion request
-            // Do we want to return keywords/global symbols ?
+            // Here, we have no node on the autocompletion request
+            // TODO: Do we want to return keywords/global symbols ?
             return jsonFailure(message: "Could not find any AST node at cursor position")
         }
 
