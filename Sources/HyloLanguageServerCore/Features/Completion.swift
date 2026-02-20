@@ -62,34 +62,6 @@ public struct DocumentPosition {
 
 extension HyloRequestHandler {
 
-    /// Insert a dummy node in the source file, and build a program from this modified source. Return the new Program and the modified SourceFile
-    private func insertDummyNode(in s: SourceFile, at i: SourceFile.Index, url: AbsoluteUrl) async
-        -> (Program, SourceFile)?
-    {
-        var finalContent = s.text
-        finalContent.insert(contentsOf: dummyNode, at: s.index(after: i))
-
-        return try? await documentProvider.buildProgramFromModifiedString(
-            url: url, newText: finalContent)
-    }
-
-    /// Return true iff the string in SourceFile at position ends with a '.'.
-    private func dummyNodeNeeded(in source: SourceFile, at position: SourceFile.Index) -> Bool {
-        source[source.index(before: position)] == "."
-    }
-
-    /// Insert a dummy node in the source file if needed. Return the new Program and the modified SourceFile
-    private func insertDummyNodeIfNeeded(
-        in source: SourceFile, at position: DocumentPosition, program: Program, url: AbsoluteUrl
-    ) async -> (Program, SourceFile)? {
-        let i = source.index(p: position)
-        return if dummyNodeNeeded(in: source, at: i) {
-            await insertDummyNode(in: source, at: i, url: url)
-        } else {
-            (program, source)
-        }
-    }
-
     /// Return a Response containing a AnyJSONRPCResponseError
     private func jsonFailure(message: String, code: Int = ErrorCodes.InternalError) -> Response<
         CompletionResponse
@@ -100,49 +72,12 @@ extension HyloRequestHandler {
         return .failure(AnyJSONRPCResponseError(code: code, message: message))
     }
 
-    /// Build a CompletionResponse from a NameExpression in a Program
-    private func buildCompletion(from n: NameExpression, in program: Program) -> Response<
+    /// Entry point for LSP completion request
+    public func completion(id: JSONId, params: CompletionParams) async -> Response<
         CompletionResponse
     > {
-        if n.name.value.identifier == dummyNode {
-            // Here, we have detected the dummy token
-            logger.debug("Dummy token detected")
-            if let q: ExpressionIdentity = n.qualification {
-                return .success(
-                    TwoTypeOption.optionB(
-                        CompletionList(from: q, in: program, log: logger))
-                )
-            } else {
-                logger.error("No qualification for expression with dot")
-                return .success(TwoTypeOption.optionA([]))
-            }
-        } else {
-            return jsonFailure(message: "Did not find dummy token for NameExpression")
-        }
-    }
-
-    /// Build the completion response from an AST node in a Program
-    private func buildCompletion(from node: AnySyntaxIdentity, in program: Program) -> Response<
-        CompletionResponse
-    > {
-        if program.isExpression(node) {
-            switch program[program.castToExpression(node)!] {
-            case let n as NameExpression:
-                buildCompletion(from: n, in: program)
-            case let c as Call:
-                .success(TwoTypeOption.optionB(CompletionList(from: c, in: program)))
-            default:
-                jsonFailure(message: "Could not find the expression type of this node")
-            }
-        } else if program.isScope(node) {
-            .success(
-                TwoTypeOption.optionB(
-                    CompletionList(from: program.castToScope(node)!, in: program)
-                )
-            )
-        } else {
-            jsonFailure(message: "Did not find a completion type for this")
-        }
+        return await withAnalyzedDocument(
+            params.textDocument, fn: { await completionResponse(from: $0, with: params) })
     }
 
     /// Build a completion response from a document and a position in said document
@@ -184,12 +119,77 @@ extension HyloRequestHandler {
         return buildCompletion(from: node, in: program)
     }
 
-    /// Entry point for LSP completion request
-    public func completion(id: JSONId, params: CompletionParams) async -> Response<
+    /// Build the completion response from an AST node in a Program
+    private func buildCompletion(from node: AnySyntaxIdentity, in program: Program) -> Response<
         CompletionResponse
     > {
-        return await withAnalyzedDocument(
-            params.textDocument, fn: { await completionResponse(from: $0, with: params) })
+        if program.isExpression(node) {
+            switch program[program.castToExpression(node)!] {
+            case let n as NameExpression:
+                buildCompletion(from: n, in: program)
+            case let c as Call:
+                .success(TwoTypeOption.optionB(CompletionList(from: c, in: program)))
+            default:
+                jsonFailure(message: "Could not find the expression type of this node")
+            }
+        } else if program.isScope(node) {
+            .success(
+                TwoTypeOption.optionB(
+                    CompletionList(from: program.castToScope(node)!, in: program)
+                )
+            )
+        } else {
+            jsonFailure(message: "Did not find a completion type for this")
+        }
+    }
+
+    /// Build a CompletionResponse from a NameExpression in a Program
+    private func buildCompletion(from n: NameExpression, in program: Program) -> Response<
+        CompletionResponse
+    > {
+        if n.name.value.identifier == dummyNode {
+            // Here, we have detected the dummy token
+            logger.debug("Dummy token detected")
+            if let q: ExpressionIdentity = n.qualification {
+                return .success(
+                    TwoTypeOption.optionB(
+                        CompletionList(from: q, in: program, log: logger))
+                )
+            } else {
+                logger.error("No qualification for expression with dot")
+                return .success(TwoTypeOption.optionA([]))
+            }
+        } else {
+            return jsonFailure(message: "Did not find dummy token for NameExpression")
+        }
+    }
+
+    /// Insert a dummy node in the source file if needed. Return the new Program and the modified SourceFile
+    private func insertDummyNodeIfNeeded(
+        in source: SourceFile, at position: DocumentPosition, program: Program, url: AbsoluteUrl
+    ) async -> (Program, SourceFile)? {
+        let i = source.index(p: position)
+        return if dummyNodeNeeded(in: source, at: i) {
+            await insertDummyNode(in: source, at: i, url: url)
+        } else {
+            (program, source)
+        }
+    }
+
+    /// Insert a dummy node in the source file, and build a program from this modified source. Return the new Program and the modified SourceFile
+    private func insertDummyNode(in s: SourceFile, at i: SourceFile.Index, url: AbsoluteUrl) async
+        -> (Program, SourceFile)?
+    {
+        var finalContent = s.text
+        finalContent.insert(contentsOf: dummyNode, at: s.index(after: i))
+
+        return try? await documentProvider.buildProgramFromModifiedString(
+            url: url, newText: finalContent)
+    }
+
+    /// Return true iff the string in SourceFile at position ends with a '.'.
+    private func dummyNodeNeeded(in source: SourceFile, at position: SourceFile.Index) -> Bool {
+        source[source.index(before: position)] == "."
     }
 }
 
@@ -221,7 +221,7 @@ private func buildLabelAndSnippets(from a: Arrow, in p: Program, includeParenthe
         i += 1
     }
     if includeParenthesis {
-        snippet += ")"
+        snippet += ")$0"
     }
     label += ")"
     return (label, snippet)
@@ -370,9 +370,18 @@ extension CompletionItem {
         let b = p[p[c].pattern]
         let label = p.show(b.pattern)
         var detail = "\(b.introducer.description) \(label)"
-        b.ascription.map { detail += ": \($0)" }
+        let type = p.type(assignedTo: b.pattern)
+        let typeName =
+            if let remoteTypeID = p.types.cast(type, to: RemoteType.self) {
+                p.types[remoteTypeID].projectee
+            } else {
+                type
+            }
+        detail += ": \(p.show(typeName))"
         detail = p[c].modifiers.reduce(detail, { "\($1) \($0)" })
-        self.init(label: label, detail: detail)
+        self.init(
+            label: label, detail: detail
+        )
     }
 
     /// Build a CompletionItem representing a ParameterDeclaration by its identifier, ascription and default value
