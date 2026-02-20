@@ -33,8 +33,6 @@ on:
 
 env:
   swift-version: '6.2'
-  llvm-version: '20.1.6'
-  llvm-build-release: '20251207-115516'
 
 jobs:
   build-linux:
