@@ -4,6 +4,7 @@ import LanguageServer
 import LanguageServerProtocol
 import Logging
 
+/// The dummy node to insert in the AST when needed
 private let dummyNode = "code_completion_node"
 
 /// Returns the primary members of a type
@@ -30,6 +31,8 @@ private func isInit(_ e: DeclarationIdentity, in p: Program) -> Bool {
 }
 
 extension SourceFile {
+
+    /// Create an index in a source file from a DocumentPosition
     public func index(p: DocumentPosition) -> SourceFile.Index {
         self.index(line: p.hylo.0, column: p.hylo.1)
     }
