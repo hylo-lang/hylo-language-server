@@ -141,9 +141,8 @@ struct DefinitionResolver {
 
 
   public func resolve(_ p: SourcePosition, in program: Program) -> DefinitionResponse? {
-    logger.debug("Look for symbol definition at position: \(p)")
-
-    guard let id = program.findNode(p, in: uriMapping) else {
+      logger.debug("Look for symbol definition at position: \(p)")
+      guard let id = program.findInnermostTree(containing: p, reportingDiagnosticsTo: logger) else {
       logger.warning("Did not find node @ \(p)")
       return nil
     }

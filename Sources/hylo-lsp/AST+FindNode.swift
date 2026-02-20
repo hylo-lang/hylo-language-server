@@ -39,13 +39,17 @@ extension Program {
     }
   }
 
-  public func findNode(_ position: SourcePosition, logger: Logger) -> AnySyntaxIdentity? {
+  public func findInnermostTree(
+    containing position: SourcePosition, reportingDiagnosticsTo logger: Logger
+  )
+    -> AnySyntaxIdentity?
+  {
     guard let absoluteUrl = position.source.name.absoluteUrl else {
-      print("Could not get absolute URL for file: \(position.source.name)")
+      logger.warning("Could not get absolute URL for file: \(position.source.name)")
       return nil
     }
     guard let sourceContainer = findTranslationUnit(absoluteUrl, logger: logger)?.identity else {
-      print("Could not find translation unit for file: \(absoluteUrl)")
+      logger.warning("Could not find translation unit for file: \(absoluteUrl)")
       return nil
     }
 
