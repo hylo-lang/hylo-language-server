@@ -28,8 +28,10 @@ struct HyloLspCommand: AsyncParsableCommand {
   var stdlibPath: String = bundledStandardLibrarySources.path
 
   func run() async throws {
-    var logger = Logger(label: "s")
-    logger.handler=NullLogHandler(label: "s")
+    var logger = Logger(label: "hylo-lsp") { label in
+      StreamLogHandler.standardError(label: label)
+    }
+    logger.logLevel = logLevel
 
     let server = HyloLanguageServer(dataChannel: .stdioPipe(), logger: logger, stdlibPath: stdlibPath)
     await server.run()
