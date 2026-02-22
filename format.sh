@@ -1,0 +1,1 @@
+swift format Sources Tests Package.swift --recursive --in-place

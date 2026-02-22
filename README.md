@@ -1,42 +1,54 @@
-# Hylo LSP
+# Hylo Language Server
 
-Proof of concept LSP server for the [Hylo](https://github.com/hylo-lang/hylo) programming language, including VS Code extension.
+Language server for the [Hylo](https://github.com/hylo-lang/hylo) programming language.
 
-The [Hylo VSCode extension](https://github.com/koliyo/hylo-vscode-extension) dynamically downloads the LSP binaries for the current machine OS/architecture.
+The [Hylo VSCode extension](https://github.com/hylo-lang/vscode-hylo) dynamically downloads the LSP binaries for the current OS and architecture. Currently, we support Linux, macOS, and Windows, amd64 (x64) and aarch64 (arm64).
 
-This is currently very early in development, and the project is being transitioned from the old frontend to the new one.
+## Supported IDEs
+We currently support Neovim and VSCode, but eventually we plan to add support for many more. If you'd like to add support for another IDE, please open an issue or join our [Slack](https://hylo-lang.slack.com/).
 
 ## Features
 
-The Hylo LSP currently support the following LSP features:
+The Hylo language server currently supports the following LSP features:
 
-- Semantic token
-  - Syntax highlighting (works with new frontend)
-- Document symbols
-  - Document outline and navigate to local symbol (works with new frontend)
+- Go to definition
 - Diagnostics
-  - Errors and warnings reported by the compiler (works with new frontend)
-- Definition
-  - Jump to definition (worked with old frontend, now broken)
+- Document highlight (for highlighting names referring to the same entity as the cursor)
+- Document symbols (for showing the outline of the document)
+- Hover (currently only shows the type, needs to be improved)
+- Find references
+- Rename
+- Semantic tokens (used for semantic syntax highlighting)
 
-The LSP distribution currently includes a copy of the Hylo stdlib, until we have a reliable way of locating the local Hylo installation.
+### Custom commands
+Custom commands are available through the `executeCommand` LSP request.
 
-## Developer
+#### `givens`
+Lists the givens (the available implicit context) at the cursor position.
 
-You can use the development container to set up a development environment easily, but as of now, the project only requires Swift 6.2 and NodeJs.
+Arguments:
+- `0`: `LSP.Location` - the location of the cursor
 
-To build and install a local dev version of the LSP + VSCode extension:
+Returns:
+- `string[]` - the list of stringified givens at the cursor position
+
+## Developing
+
+The project only requires Swift 6.2 and NodeJS for the VSCode extension. You can use the development container to set up a development environment easily.
+
+To build and install a local dev version of the LSP + VSCode extension that has the LSP executables bundled:
 
 ```sh
-./build-and-install-vscode-extension.sh
+./dev-build-and-install-vscode-extension.sh
 ```
 
-### Command line tool
-
-There is also a command line tool for interacting with the LSP backend. The command line tool is useful for debugging and testing new functionality. The LSP server is embedded in the client, which simplify debug launching and breakpoints.
-
-Example usage:
+To test out a released version of the LSP together with your latest local changes to the VSCode extension, you can use the following script:
 
 ```sh
-swift run hylo-language-client semantic-token hylo/Examples/factorial.hylo
+./release-build-and-install-vscode-extension.sh
 ```
+### Code formatting
+The project uses `swift-format` bundled by the Swift toolchain to enforce a consistent code style.
+
+- Use `./format.sh` to format the code.
+- Use `./lint.sh` to check the code.
