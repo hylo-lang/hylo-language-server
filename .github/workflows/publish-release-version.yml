@@ -103,9 +103,6 @@ jobs:
 
         ls -l release-artifacts
 
-    - name: Extract version changelog
-      run: ./extract_version_changelog.sh ${{ inputs.tag || github.ref_name }} >> version_changelog.txt
-
     - name: Release
       uses: softprops/action-gh-release@v1
       with:
@@ -113,4 +110,3 @@ jobs:
         files: |
           LICENSE
           release-artifacts/*
-        body_path: version_changelog.txt

@@ -1,30 +1,22 @@
 {
-  "originHash" : "94ca76358771b857f52acbb2419cfe3707dca46bc78bf397ecd046d2b8ec2432",
+  "originHash" : "8932895a712c769bde2194f2599f85cdeb5484c6e62f98f750c73639d376114d",
   "pins" : [
     {
       "identity" : "archivist",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/kyouko-taiga/Archivist.git",
+      "location" : "https://github.com/kyouko-taiga/archivist.git",
       "state" : {
+        "branch" : "main",
         "revision" : "086c16e150ae2ea11bbdbe4546c3a6de6bd22a31"
       }
     },
     {
-      "identity" : "fseventswrapper",
+      "identity" : "bigint",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Frizlab/FSEventsWrapper",
+      "location" : "https://github.com/attaswift/BigInt.git",
       "state" : {
-        "revision" : "70bbea4b108221fcabfce8dbced8502831c0ae04",
-        "version" : "2.1.0"
-      }
-    },
-    {
-      "identity" : "globpattern",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ChimeHQ/GlobPattern",
-      "state" : {
-        "revision" : "4ebb9e89e07cc475efa74f87dc6d21f4a9e060f8",
-        "version" : "0.1.1"
+        "revision" : "e07e00fa1fd435143a2dcf8b7eec9a7710b2fdfe",
+        "version" : "5.7.0"
       }
     },
     {
@@ -37,21 +29,11 @@
       }
     },
     {
-      "identity" : "languageclient",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ChimeHQ/LanguageClient",
-      "state" : {
-        "revision" : "f8fdeaed850fbc3e542cd038e952758887f6be5d",
-        "version" : "0.8.0"
-      }
-    },
-    {
       "identity" : "languageserver",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/koliyo/LanguageServer",
+      "location" : "https://github.com/ChimeHQ/LanguageServer",
       "state" : {
-        "branch" : "main",
-        "revision" : "015069b51153138b66432fa7bb7cd1830a2dcb65"
+        "revision" : "2bbf9508fdf6f7a17b2c34776b7485af73de338a"
       }
     },
     {
@@ -59,17 +41,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ChimeHQ/LanguageServerProtocol",
       "state" : {
-        "revision" : "ac76fccf0e981c8e30c5ee4de1b15adc1decd697",
-        "version" : "0.13.2"
-      }
-    },
-    {
-      "identity" : "processenv",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ChimeHQ/ProcessEnv",
-      "state" : {
-        "revision" : "83f1ebc9dd6fb1db0bd89a3fcae00488a0f3fdd9",
-        "version" : "1.0.0"
+        "revision" : "f7879c782c0845af9c576de7b8baedd946237286",
+        "version" : "0.14.0"
       }
     },
     {
@@ -79,15 +52,6 @@
       "state" : {
         "revision" : "80ebe6ab25fb7050904647cb96f6ad7bee77bad6",
         "version" : "0.9.0"
-      }
-    },
-    {
-      "identity" : "queue",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mattmassicotte/Queue",
-      "state" : {
-        "revision" : "8d6f936097888f97011610ced40313655dc5948d",
-        "version" : "0.1.4"
       }
     },
     {
@@ -133,14 +97,6 @@
       "state" : {
         "revision" : "ce592ae52f982c847a4efc0dd881cc9eb32d29f2",
         "version" : "1.6.4"
-      }
-    },
-    {
-      "identity" : "swift-log-console-colors",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tothambrus11/swift-log-console-colors",
-      "state" : {
-        "revision" : "fb255585da64432748c04fbc77703dc68a991158"
       }
     },
     {
