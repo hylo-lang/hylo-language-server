@@ -24,24 +24,34 @@ final class ReferencesTests: XCTestCase {
   // MARK: - Basic References Tests
 
   func testFindReferencesOfRecursiveFunction() async throws {
-    // TODO figure out why this doesn't work
+    let source = try MarkedSource(
+      """
+      fun 0️⃣factorial(_ n: Int) -> Int {
+        if n < 2 { 1 } else { n * 1️⃣factorial2️⃣(n - 1) }
+      }
 
-    // let source: MarkedHyloSource = """
-    // fun fac<CURSOR/>torial(_ n: Int) -> Int {
-    //   if n < 2 { 1 } else { n * factorial(n - 1) }
-    // }
+      public fun main() {
+        let _ = 3️⃣factorial4️⃣(6)
+      }
+      """)
 
-    // public fun main() {
-    //   let _ = factorial(6)
-    // }
-    // """
+    let uri = try await context.openDocument(source)
+    let references = try await context.references(
+      uri: uri, at: source.markers[0], includeDeclaration: false)
 
-    // let doc = await context.openDocument(source)
-    // let references = try await doc.references(includeDeclaration: false)
+    guard let references else {
+      XCTFail("Expected non-nil references response")
+      return
+    }
 
-    // // Should find references (not including the declaration itself)
-    // // There are 2 calls to factorial: one recursive, one in main
-    // try assertReferenceCount(references, expectedCount: 2)
+    XCTAssertEqual(references.count, 2)
+
+    let expectedRanges = Set([
+      LSPRange(start: source.markers[1], end: source.markers[2]),
+      LSPRange(start: source.markers[3], end: source.markers[4]),
+    ])
+    let actualRanges = Set(references.map(\.range))
+    XCTAssertEqual(actualRanges, expectedRanges)
   }
 
   // MARK: - Invariant Tests
@@ -49,18 +59,20 @@ final class ReferencesTests: XCTestCase {
   func testReferencesSelfConsistency() async throws {
     // Property: If we find N references, each should be a valid location
     // Cursor must be on the declaration, not on a usage
-    let source: MarkedHyloSource = """
-      fun <CURSOR/>used() {
+    let source = try MarkedSource(
+      """
+      fun 0️⃣used() {
       }
 
       public fun main() {
-        used()
-        used()
+        1️⃣used()
+        2️⃣used()
       }
-      """
+      """)
 
-    let doc = try await context.openDocument(source)
-    let references = try await doc.references(includeDeclaration: false)
+    let uri = try await context.openDocument(source)
+    let references = try await context.references(
+      uri: uri, at: source.markers[0], includeDeclaration: false)
 
     guard let references = references else {
       return  // No references is valid

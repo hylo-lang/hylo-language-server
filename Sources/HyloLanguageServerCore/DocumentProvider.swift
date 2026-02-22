@@ -296,74 +296,69 @@ public actor DocumentProvider {
     if isStdlibDocument {
       // Document is part of standard library - just return the stdlib program
       return try await getStandardLibraryProgram(from: standardLibrary).program
-    } else {
-      // Create a copy of the standard library program
-      var program = try await getStandardLibraryProgram(from: standardLibrary).program
-
-      // Add the main module for user code
-      let mainModuleId = program.demandModule(.init("MainModule"))
-
-      program[mainModuleId].addDependency(.standardLibrary)
-
-      let sourceFile = SourceFile(representing: url.url, inMemoryContents: text)
-
-      var helper = CompilationHelper()
-      helper.program = program
-
-      // Parse the main file
-      let (parseTime, parseError) = await helper.parse([sourceFile], into: mainModuleId)
-      logger.debug("Main module parsing took: \(parseTime)")
-      if parseError {
-        logger.error("Main module parsing failed")
-        // Continue anyway for LSP features
-      }
-
-      // Assign scopes
-      let (scopeTime, scopeError) = await helper.assignScopes(of: mainModuleId)
-      logger.debug("Main module scope assignment took: \(scopeTime)")
-      if scopeError {
-        logger.error("Main module scope assignment failed")
-        // Continue anyway for LSP features
-      }
-
-      // Type check
-      let (typeTime, typeError) = await helper.assignTypes(of: mainModuleId)
-      logger.debug("Main module type checking took: \(typeTime)")
-      if typeError {
-        logger.error("Main module type checking failed")
-        // Continue anyway for LSP features
-      }
-
-      return helper.program
     }
+
+    // Create a copy of the standard library program
+    var program = try await getStandardLibraryProgram(from: standardLibrary).program
+
+    // Add the main module for user code
+    let mainModuleId = program.demandModule(.init("MainModule"))
+
+    program[mainModuleId].addDependency(.standardLibrary)
+
+    let sourceFile = SourceFile(representing: url.url, inMemoryContents: text)
+
+    var helper = CompilationHelper()
+    helper.program = program
+
+    // Parse the main file
+    let (parseTime, parseError) = await helper.parse([sourceFile], into: mainModuleId)
+    logger.debug("Main module parsing took: \(parseTime)")
+    if parseError {
+      logger.error("Main module parsing failed")
+      // Continue anyway for LSP features
+    }
+
+    // Assign scopes
+    let (scopeTime, scopeError) = await helper.assignScopes(of: mainModuleId)
+    logger.debug("Main module scope assignment took: \(scopeTime)")
+    if scopeError {
+      logger.error("Main module scope assignment failed")
+      // Continue anyway for LSP features
+    }
+
+    // Type check
+    let (typeTime, typeError) = await helper.assignTypes(of: mainModuleId)
+    logger.debug("Main module type checking took: \(typeTime)")
+    if typeError {
+      logger.error("Main module type checking failed")
+      // Continue anyway for LSP features
+    }
+
+    return helper.program
   }
 
-  public func updateDocument(_ params: DidChangeTextDocumentParams) async {
+  public func updateDocument(_ params: DidChangeTextDocumentParams) async throws {
     let uri = AbsoluteUrl(fromUrlString: params.textDocument.uri)!
 
     guard var context = documents[uri] else {
-      logger.error("Could not find opened document: \(uri)")
-      return
+      throw DocumentProviderError("Could not find opened document: \(uri)")
     }
 
-    do {
-      try context.applyChanges(params.contentChanges, version: params.textDocument.version)
+    try context.applyChanges(params.contentChanges, version: params.textDocument.version)
 
-      // Rebuild program with updated content
-      let program = try await buildProgramForDocument(url: uri, text: context.doc.text)
-      context = DocumentContext(context.doc, program: program)
+    // Rebuild program with updated content
+    let program = try await buildProgramForDocument(url: uri, text: context.doc.text)
+    context = DocumentContext(context.doc, program: program)
 
-      documents[uri] = context
+    documents[uri] = context
 
-      logger.debug("Updated changed document: \(uri), version: \(context.doc.version ?? -1)")
+    logger.debug("Updated changed document: \(uri), version: \(context.doc.version ?? -1)")
 
-      // Invalidate cached stdlib AST if the edited document is part of the stdlib
-      let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
-      if isStdlibDocument {
-        invalidateStandardLibraryCache(for: stdlibPath)
-      }
-    } catch {
-      logger.error("Failed to update document: \(error)")
+    // Invalidate cached stdlib AST if the edited document is part of the stdlib
+    let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
+    if isStdlibDocument {
+      invalidateStandardLibraryCache(for: stdlibPath)
     }
   }
 
@@ -386,9 +381,13 @@ public actor DocumentProvider {
   /// Signals that the client no longer manages the document.
   ///
   /// When further queries are invoked on this document, the server must read the contents from disk.
-  public func unregisterDocument(_ params: DidCloseTextDocumentParams) {
-    if let validUrl = URL(string: params.textDocument.uri) {
-      documents.removeValue(forKey: AbsoluteUrl(validUrl))
+  public func unregisterDocument(_ params: DidCloseTextDocumentParams) throws {
+    guard let validUrl = URL(string: params.textDocument.uri) else {
+      throw DocumentProviderError(
+        "Could not find opened document to remove at: \(params.textDocument.uri)")
+    }
+    guard let _ = documents.removeValue(forKey: AbsoluteUrl(validUrl)) else {
+      throw DocumentProviderError("Could not find opened document to remove at: \(validUrl)")
     }
   }
 
@@ -444,5 +443,13 @@ public actor DocumentProvider {
     return AnalyzedDocument(
       url: context.url,
       program: context.program)
+  }
+}
+
+public struct DocumentProviderError: Error {
+  public let message: String
+
+  public init(_ message: String) {
+    self.message = message
   }
 }

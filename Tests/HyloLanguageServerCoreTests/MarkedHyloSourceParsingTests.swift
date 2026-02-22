@@ -3,320 +3,164 @@ import XCTest
 
 @testable import HyloLanguageServerCore
 
-/// Tests for MarkedHyloSource parsing functionality.
-///
-/// These tests verify the core parsing logic:
-/// - Basic text parsing and tag extraction
-/// - Cursor position parsing
-/// - Range parsing
-/// - Combined cursor and range handling
-/// - Edge cases
 final class MarkedHyloSourceParsingTests: XCTestCase {
 
-  // MARK: - Basic Parsing Tests
-
-  func testEmptySource() {
-    let source: MarkedHyloSource = ""
-    XCTAssertEqual(source.cleanSource, "")
-    XCTAssertNil(source.cursorLocation)
-    XCTAssertEqual(source.referenceRanges.count, 0)
-  }
-
-  func testPlainTextWithoutTags() {
-    let source: MarkedHyloSource = "fun main() {}"
-    XCTAssertEqual(source.cleanSource, "fun main() {}")
-    XCTAssertNil(source.cursorLocation)
-    XCTAssertEqual(source.referenceRanges.count, 0)
-  }
-
-  func testMultilineTextWithoutTags() {
-    let source: MarkedHyloSource = """
-      fun factorial(_ n: Int) -> Int {
-        if n < 2 { 1 } else { n * factorial(n - 1) }
-      }
-      """
-    XCTAssertEqual(
-      source.cleanSource,
+  func testMultilineTextWithoutMarkers() throws {
+    let source = try MarkedSource(
       """
       fun factorial(_ n: Int) -> Int {
         if n < 2 { 1 } else { n * factorial(n - 1) }
       }
       """)
-    XCTAssertNil(source.cursorLocation)
-    XCTAssertEqual(source.referenceRanges.count, 0)
-  }
-
-  // MARK: - Cursor Position Tests
-
-  func testCursorAtStart() {
-    let source: MarkedHyloSource = "<CURSOR/>fun main() {}"
-    XCTAssertEqual(source.cleanSource, "fun main() {}")
-    XCTAssertEqual(source.cursorLocation?.line, 0, "LSP Position.line is 0-based")
-    XCTAssertEqual(source.cursorLocation?.character, 0, "LSP Position.character is 0-based")
-  }
-
-  func testCursorInMiddle() {
-    let source: MarkedHyloSource = "fun <CURSOR/>main() {}"
-    XCTAssertEqual(source.cleanSource, "fun main() {}")
-    XCTAssertEqual(source.cursorLocation?.line, 0)
-    XCTAssertEqual(source.cursorLocation?.character, 4, "Cursor after 'fun '")
-  }
-
-  func testCursorAtEnd() {
-    let source: MarkedHyloSource = "fun main() {}<CURSOR/>"
-    XCTAssertEqual(source.cleanSource, "fun main() {}")
-    XCTAssertEqual(source.cursorLocation?.line, 0)
-    XCTAssertEqual(source.cursorLocation?.character, 13, "Cursor at end of line")
-  }
-
-  func testCursorOnSecondLine() {
-    let source: MarkedHyloSource = """
-      fun main() {
-        <CURSOR/>let x = 42
-      }
-      """
     XCTAssertEqual(
-      source.cleanSource,
-      """
-      fun main() {
-        let x = 42
-      }
-      """)
-    XCTAssertEqual(source.cursorLocation?.line, 1, "Second line (0-based)")
-    XCTAssertEqual(source.cursorLocation?.character, 2, "After two spaces indent")
-  }
-
-  func testCursorAtStartOfLine() {
-    let source: MarkedHyloSource = """
-      fun main() {
-      <CURSOR/>  let x = 42
-      }
-      """
-    XCTAssertEqual(
-      source.cleanSource,
-      """
-      fun main() {
-        let x = 42
-      }
-      """)
-    XCTAssertEqual(source.cursorLocation?.line, 1)
-    XCTAssertEqual(source.cursorLocation?.character, 0, "Start of line (0-based)")
-  }
-
-  func testRequireCursorThrowsWhenMissing() {
-    let source: MarkedHyloSource = "fun main() {}"
-    XCTAssertThrowsError(try source.requireCursor()) { error in
-      XCTAssertTrue(error is TestError)
-      if case .missingCursor = error as? TestError {
-        // Expected
-      } else {
-        XCTFail("Expected TestError.missingCursor")
-      }
-    }
-  }
-
-  func testRequireCursorSucceedsWhenPresent() throws {
-    let source: MarkedHyloSource = "fun <CURSOR/>main() {}"
-    let cursor = try source.requireCursor()
-    XCTAssertEqual(cursor.line, 0)
-    XCTAssertEqual(cursor.character, 4)
-  }
-
-  // MARK: - Range Tests
-
-  func testSingleRange() {
-    let source: MarkedHyloSource = "fun <RANGE>main</RANGE>() {}"
-    XCTAssertEqual(source.cleanSource, "fun main() {}")
-    XCTAssertEqual(source.referenceRanges.count, 1)
-
-    let range = source.referenceRanges[0]
-    XCTAssertEqual(range.start.line, 0)
-    XCTAssertEqual(range.start.character, 4, "Start after 'fun '")
-    XCTAssertEqual(range.end.line, 0)
-    XCTAssertEqual(range.end.character, 8, "End after 'main'")
-  }
-
-  func testRangeSpanningWholeWord() {
-    let source: MarkedHyloSource = "<RANGE>factorial</RANGE>"
-    XCTAssertEqual(source.cleanSource, "factorial")
-    XCTAssertEqual(source.referenceRanges.count, 1)
-
-    let range = source.referenceRanges[0]
-    XCTAssertEqual(range.start.line, 0)
-    XCTAssertEqual(range.start.character, 0)
-    XCTAssertEqual(range.end.line, 0)
-    XCTAssertEqual(range.end.character, 9)
-  }
-
-  func testMultipleRangesOnSameLine() {
-    let source: MarkedHyloSource = "let <RANGE>x</RANGE> = <RANGE>y</RANGE>"
-    XCTAssertEqual(source.cleanSource, "let x = y")
-    XCTAssertEqual(source.referenceRanges.count, 2)
-
-    let range1 = source.referenceRanges[0]
-    XCTAssertEqual(range1.start.character, 4)
-    XCTAssertEqual(range1.end.character, 5)
-
-    let range2 = source.referenceRanges[1]
-    XCTAssertEqual(range2.start.character, 8)
-    XCTAssertEqual(range2.end.character, 9)
-  }
-
-  func testRangeSpanningMultipleLines() {
-    let source: MarkedHyloSource = """
-      fun <RANGE>factorial(_ n: Int) -> Int {
-        if n < 2 { 1 } else { n * factorial(n - 1) }
-      }</RANGE>
-      """
-    XCTAssertEqual(
-      source.cleanSource,
+      source.source,
       """
       fun factorial(_ n: Int) -> Int {
         if n < 2 { 1 } else { n * factorial(n - 1) }
       }
       """)
-    XCTAssertEqual(source.referenceRanges.count, 1)
-
-    let range = source.referenceRanges[0]
-    XCTAssertEqual(range.start.line, 0, "Range starts on first line")
-    XCTAssertEqual(range.start.character, 4)
-    XCTAssertEqual(range.end.line, 2, "Range ends on third line (0-based)")
-    XCTAssertEqual(range.end.character, 1, "After closing brace")
+    XCTAssertTrue(source.markers.isEmpty)
   }
 
-  func testRangeOnDifferentLines() {
-    let source: MarkedHyloSource = """
-      fun main() {
-        let <RANGE>x</RANGE> = 42
-        let <RANGE>y</RANGE> = 10
-      }
-      """
-    XCTAssertEqual(
-      source.cleanSource,
-      """
-      fun main() {
-        let x = 42
-        let y = 10
-      }
-      """)
-    XCTAssertEqual(source.referenceRanges.count, 2)
+  func testExtractsSingleLineMarkersAndStripsMarkerCharacters() throws {
+    let source = try MarkedSource("a0️⃣bc1️⃣d🔟e")
 
-    let range1 = source.referenceRanges[0]
-    XCTAssertEqual(range1.start.line, 1)
-    XCTAssertEqual(range1.start.character, 6)
-
-    let range2 = source.referenceRanges[1]
-    XCTAssertEqual(range2.start.line, 2)
-    XCTAssertEqual(range2.start.character, 6)
+    XCTAssertEqual(source.source, "abcde")
+    XCTAssertEqual(source.markers[0].line, 0)
+    XCTAssertEqual(source.markers[0].character, 1)
+    XCTAssertEqual(source.markers[1].line, 0)
+    XCTAssertEqual(source.markers[1].character, 3)
+    XCTAssertEqual(source.markers[10].line, 0)
+    XCTAssertEqual(source.markers[10].character, 4)
   }
 
-  func testFirstRangeAccessor() throws {
-    let source: MarkedHyloSource = "let <RANGE>x</RANGE> = <RANGE>y</RANGE>"
-    let firstRange = try source.firstRange()
-    XCTAssertEqual(firstRange.start.character, 4)
-    XCTAssertEqual(firstRange.end.character, 5)
+  func testMarkersAtStartAndEndOfSource() throws {
+    let source = try MarkedSource("0️⃣abc1️⃣")
+
+    XCTAssertEqual(source.source, "abc")
+    XCTAssertEqual(source.markers[0].line, 0)
+    XCTAssertEqual(source.markers[0].character, 0)
+    XCTAssertEqual(source.markers[1].line, 0)
+    XCTAssertEqual(source.markers[1].character, 3)
   }
 
-  func testRangeAtIndexAccessor() throws {
-    let source: MarkedHyloSource = "let <RANGE>x</RANGE> = <RANGE>y</RANGE>"
-    let secondRange = try source.range(at: 1)
-    XCTAssertEqual(secondRange.start.character, 8)
-    XCTAssertEqual(secondRange.end.character, 9)
+  func testAdjacentMarkersResolveToSamePosition() throws {
+    let source = try MarkedSource("ab0️⃣1️⃣cd")
+
+    XCTAssertEqual(source.source, "abcd")
+    XCTAssertEqual(source.markers[0].line, 0)
+    XCTAssertEqual(source.markers[0].character, 2)
+    XCTAssertEqual(source.markers[1].line, 0)
+    XCTAssertEqual(source.markers[1].character, 2)
   }
 
-  func testRangeAtIndexThrowsWhenOutOfBounds() {
-    let source: MarkedHyloSource = "let <RANGE>x</RANGE> = y"
-    XCTAssertThrowsError(try source.range(at: 1)) { error in
-      XCTAssertTrue(error is TestError)
-      if case .rangeNotFound(let index, let available, _, _) = error as? TestError {
-        XCTAssertEqual(index, 1)
-        XCTAssertEqual(available, 1)
-      } else {
-        XCTFail("Expected TestError.rangeNotFound")
-      }
+  func testMultilineMarkerPositions() throws {
+    let source = try MarkedSource("line0\nab0️⃣cd\nx🔟")
+
+    XCTAssertEqual(source.source, "line0\nabcd\nx")
+    XCTAssertEqual(source.markers[0].line, 1)
+    XCTAssertEqual(source.markers[0].character, 2)
+    XCTAssertEqual(source.markers[10].line, 2)
+    XCTAssertEqual(source.markers[10].character, 1)
+  }
+
+  func testMultilineMarkerPositionsWithCRLF() throws {
+    let source = try MarkedSource("line0\r\nab0️⃣cd\r\nx🔟")
+
+    XCTAssertEqual(source.source, "line0\r\nabcd\r\nx")
+    XCTAssertEqual(source.markers[0].line, 1)
+    XCTAssertEqual(source.markers[0].character, 2)
+    XCTAssertEqual(source.markers[10].line, 2)
+    XCTAssertEqual(source.markers[10].character, 1)
+  }
+
+  func testMultilineMarkerPositionsWithCR() throws {
+    let source = try MarkedSource("line0\rab0️⃣cd\rx🔟")
+
+    XCTAssertEqual(source.source, "line0\rabcd\rx")
+    XCTAssertEqual(source.markers[0].line, 1)
+    XCTAssertEqual(source.markers[0].character, 2)
+    XCTAssertEqual(source.markers[10].line, 2)
+    XCTAssertEqual(source.markers[10].character, 1)
+  }
+
+  func testEmptySourceProducesNoMarkers() throws {
+    let source = try MarkedSource("")
+
+    XCTAssertEqual(source.source, "")
+    XCTAssertTrue(source.markers.isEmpty)
+  }
+
+  func testNonMarkerCharactersArePreserved() throws {
+    let source = try MarkedSource("value 1 and 😀 stay")
+
+    XCTAssertEqual(source.source, "value 1 and 😀 stay")
+    XCTAssertTrue(source.markers.isEmpty)
+  }
+
+  func testDuplicateMarkersThrow() {
+    let input = String("a0️⃣b0️⃣c")
+    XCTAssertThrowsError(try MarkedSource(input)) { error in
+      XCTAssertEqual(error as? MarkedSource.ParseError, .duplicateMarker(0))
     }
   }
 
-  func testFirstRangeThrowsWhenNoRanges() {
-    let source: MarkedHyloSource = "let x = y"
-    XCTAssertThrowsError(try source.firstRange()) { error in
-      XCTAssertTrue(error is TestError)
-      if case .rangeNotFound(let index, let available, _, _) = error as? TestError {
-        XCTAssertEqual(index, 0)
-        XCTAssertEqual(available, 0)
-      } else {
-        XCTFail("Expected TestError.rangeNotFound")
-      }
-    }
+  func testMarkersCollectionIsDeterministicAndIterable() throws {
+    let source = try MarkedSource("x3️⃣y1️⃣z0️⃣")
+
+    let iterated = Array(source.markers)
+    XCTAssertEqual(iterated.count, 3)
+    XCTAssertEqual(iterated[0], source.markers[0])
+    XCTAssertEqual(iterated[1], source.markers[1])
+    XCTAssertEqual(iterated[2], source.markers[3])
   }
 
-  // MARK: - Combined Cursor and Range Tests
+  func testMarkerRangeSubscript() throws {
+    let source = try MarkedSource("a0️⃣b1️⃣c2️⃣d3️⃣e")
 
-  func testCursorAndRangeTogether() {
-    let source: MarkedHyloSource = "let <RANGE>x</RANGE> = <CURSOR/>42"
-    XCTAssertEqual(source.cleanSource, "let x = 42")
-    XCTAssertEqual(source.cursorLocation?.character, 8)
-    XCTAssertEqual(source.referenceRanges.count, 1)
-    XCTAssertEqual(source.referenceRanges[0].start.character, 4)
+    let positions = source.markers[1 ..< 3]
+    XCTAssertEqual(positions.count, 2)
+    XCTAssertEqual(positions[0], source.markers[1])
+    XCTAssertEqual(positions[1], source.markers[2])
   }
 
-  func testCursorInsideRange() {
-    let source: MarkedHyloSource = "<RANGE>fac<CURSOR/>torial</RANGE>"
-    XCTAssertEqual(source.cleanSource, "factorial")
-    XCTAssertEqual(source.cursorLocation?.character, 3, "Cursor in middle of word")
-    XCTAssertEqual(source.referenceRanges[0].start.character, 0)
-    XCTAssertEqual(source.referenceRanges[0].end.character, 9)
+  func testMarkerListSubscriptPreservesInputOrder() throws {
+    let source = try MarkedSource("a0️⃣b1️⃣c2️⃣d3️⃣")
+
+    let positions = source.markers[[3, 1, 2]]
+    XCTAssertEqual(positions.count, 3)
+    XCTAssertEqual(positions[0], source.markers[3])
+    XCTAssertEqual(positions[1], source.markers[1])
+    XCTAssertEqual(positions[2], source.markers[2])
   }
 
-  func testMultipleRangesWithCursor() {
-    let source: MarkedHyloSource = """
-      fun <RANGE>factorial</RANGE>(_ n: Int) -> Int {
-        <CURSOR/>if n < 2 { 1 } else { n * <RANGE>factorial</RANGE>(n - 1) }
-      }
-      """
-    XCTAssertEqual(source.referenceRanges.count, 2)
-    XCTAssertEqual(source.cursorLocation?.line, 1)
-    XCTAssertEqual(source.cursorLocation?.character, 2)
+  func testPositionsBetweenMarkersIncludesStartAndExcludesEnd() throws {
+    let source = try MarkedSource("a0️⃣b1️⃣c2️⃣d3️⃣")
+
+    let positions = source.positionsBetweenMarkers(1, 3)
+    XCTAssertEqual(positions.count, 2)
+    XCTAssertEqual(positions[0], source.markers[1])
+    XCTAssertEqual(positions[1], source.markers[2])
   }
 
-  // MARK: - Edge Cases
+  func testPositionsBetweenMarkersAcrossCRLF() throws {
+    let source = try MarkedSource("a0️⃣b\r\nc1️⃣d")
 
-  func testTagsWithNoContent() {
-    let source: MarkedHyloSource = "<RANGE></RANGE>"
-    XCTAssertEqual(source.cleanSource, "")
-    XCTAssertEqual(source.referenceRanges.count, 1)
-    XCTAssertEqual(source.referenceRanges[0].start, source.referenceRanges[0].end)
+    let positions = source.positionsBetweenMarkers(0, 1)
+    XCTAssertEqual(positions.count, 3)
+    XCTAssertEqual(positions[0], Position(line: 0, character: 1))
+    XCTAssertEqual(positions[1], Position(line: 0, character: 2))
+    XCTAssertEqual(positions[2], Position(line: 1, character: 0))
   }
 
-  func testConsecutiveTags() {
-    let source: MarkedHyloSource = "<CURSOR/><RANGE>x</RANGE>"
-    XCTAssertEqual(source.cleanSource, "x")
-    XCTAssertEqual(source.cursorLocation?.character, 0)
-    XCTAssertEqual(source.referenceRanges[0].start.character, 0)
+  func testPositionsBetweenMarkersAcrossCR() throws {
+    let source = try MarkedSource("a0️⃣b\rc1️⃣d")
+
+    let positions = source.positionsBetweenMarkers(0, 1)
+    XCTAssertEqual(positions.count, 3)
+    XCTAssertEqual(positions[0], Position(line: 0, character: 1))
+    XCTAssertEqual(positions[1], Position(line: 0, character: 2))
+    XCTAssertEqual(positions[2], Position(line: 1, character: 0))
   }
 
-  func testTagsAtLineBreaks() {
-    let source: MarkedHyloSource = "line1<CURSOR/>\nline2"
-    XCTAssertEqual(source.cleanSource, "line1\nline2")
-    XCTAssertEqual(source.cursorLocation?.line, 0)
-    XCTAssertEqual(source.cursorLocation?.character, 5)
-  }
-
-  func testRangeAcrossNewlines() {
-    let source: MarkedHyloSource = "a<RANGE>bc\nde</RANGE>f"
-    XCTAssertEqual(source.cleanSource, "abc\ndef")
-    let range = source.referenceRanges[0]
-    XCTAssertEqual(range.start.line, 0)
-    XCTAssertEqual(range.start.character, 1)
-    XCTAssertEqual(range.end.line, 1)
-    XCTAssertEqual(range.end.character, 2)
-  }
-
-  func testNestedTagsNotSupported() {
-    // Nested ranges are not supported - the parser will process them sequentially
-    let source: MarkedHyloSource = "<RANGE>outer <RANGE>inner</RANGE> outer</RANGE>"
-    // This creates two ranges, not nested ones
-    XCTAssertEqual(source.cleanSource, "outer inner outer")
-    XCTAssertEqual(source.referenceRanges.count, 2)
-  }
 }

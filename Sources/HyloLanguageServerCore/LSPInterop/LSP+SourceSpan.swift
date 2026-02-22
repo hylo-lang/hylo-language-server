@@ -24,7 +24,6 @@ extension LanguageServerProtocol.LSPRange {
     self.init(start: Position(range.start), end: Position(range.end))
   }
 }
-
 extension LanguageServerProtocol.Position {
   public init(_ pos: SourcePosition) {
     let (line, column) = pos.lineAndColumn

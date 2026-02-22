@@ -7,6 +7,7 @@ import LanguageServerProtocol
 import Logging
 import Semaphore
 import StandardLibrary
+import XCTest
 
 /// A test context that manages documents and provides direct access to LSP handlers
 /// for testing without needing a full client-server connection.
@@ -15,8 +16,6 @@ public actor LSPTestContext {
   public let requestHandler: HyloRequestHandler
   let notificationHandler: HyloNotificationHandler
   public let logger: Logger
-
-  private var documentCounter: Int = 0
 
   /// Creates a new test context
   /// - Parameters:
@@ -88,242 +87,125 @@ public actor LSPTestContext {
   /// - Parameters:
   ///   - source: The marked source code to open
   ///   - uri: Optional URI for the document (auto-generated if not provided)
-  /// - Returns: A test document handle
+  /// - Returns: the URL of the opened document.
   @discardableResult
   public func openDocument(
-    _ source: MarkedHyloSource,
+    _ source: MarkedSource,
     uri: String? = nil
-  ) async throws -> TestDocument {
-    let documentUri = uri ?? generateUri()
+  ) async throws -> URL {
+    let documentUri = uri ?? "file://hylo-test/\(UUID()).hylo"
 
     let params = DidOpenTextDocumentParams(
       textDocument: TextDocumentItem(
         uri: documentUri,
         languageId: "hylo",
         version: 0,
-        text: source.cleanSource
+        text: source.source
       )
     )
 
     try await documentProvider.registerDocument(params)
-
-    return TestDocument(uri: documentUri, source: source, context: self)
-  }
-
-  /// Opens a plain document without any special markers
-  @discardableResult
-  public func openDocument(
-    _ plainSource: String,
-    uri: String? = nil
-  ) async throws -> TestDocument {
-    return try await openDocument(MarkedHyloSource(plainSource), uri: uri)
+    return URL(string: documentUri)!
   }
 
   /// Closes a document
-  public func closeDocument(_ uri: String) async {
+  public func closeDocument(_ uri: String) async throws {
     let params = DidCloseTextDocumentParams(
       textDocument: TextDocumentIdentifier(uri: uri)
     )
-    await documentProvider.unregisterDocument(params)
+    try await documentProvider.unregisterDocument(params)
   }
 
-  /// Updates a document with new content
+  public func closeDocument(_ uri: URL) async throws {
+    try await closeDocument(uri.absoluteString)
+  }
+
+  /// Updates a document with new content.
   public func updateDocument(
     _ uri: String,
-    newSource: MarkedHyloSource,
+    newSource: MarkedSource,
     version: Int
-  ) async {
+  ) async throws {
     let params = DidChangeTextDocumentParams(
       textDocument: VersionedTextDocumentIdentifier(uri: uri, version: version),
       contentChanges: [
         TextDocumentContentChangeEvent(
           range: nil,
           rangeLength: nil,
-          text: newSource.cleanSource
+          text: newSource.source
         )
       ]
     )
-    await documentProvider.updateDocument(params)
+    try await documentProvider.updateDocument(params)
   }
 
-  private func generateUri() -> String {
-    documentCounter += 1
-    return "file:///test/document\(documentCounter).hylo"
+  public func definition(uri: URL, at position: Position) async throws -> DefinitionResponse {
+    let params = TextDocumentPositionParams(
+      textDocument: TextDocumentIdentifier(uri: uri.absoluteString),
+      position: position
+    )
+
+    let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
+    switch await requestHandler.definition(id: .numericId(1), params: params, doc: doc) {
+    case .success(let value):
+      return value
+    case .failure(let error):
+      throw TestFailure(error.message)
+    }
+  }
+
+  public func references(
+    uri: URL,
+    at position: Position,
+    includeDeclaration: Bool = false
+  ) async throws -> ReferenceResponse {
+    let params = ReferenceParams(
+      textDocument: TextDocumentIdentifier(uri: uri.absoluteString),
+      position: position,
+      context: ReferenceContext(includeDeclaration: includeDeclaration)
+    )
+    switch await requestHandler.references(id: .numericId(1), params: params) {
+    case .success(let value):
+      return value
+    case .failure(let error):
+      throw TestFailure(error.message)
+    }
+  }
+
+  public func documentSymbols(at: URL) async throws -> DocumentSymbolResponse {
+    let params = DocumentSymbolParams(
+      textDocument: TextDocumentIdentifier(uri: at.absoluteString)
+    )
+    switch await requestHandler.documentSymbol(id: .numericId(1), params: params) {
+    case .success(let value):
+      return value
+    case .failure(let error):
+      throw TestFailure(error.message)
+    }
   }
 }
 
 /// Represents a test document with convenient access to LSP operations
 public struct TestDocument: Sendable {
   public let uri: String
-  public let source: MarkedHyloSource
-  private let context: LSPTestContext
+  public let source: MarkedSource
 
-  init(uri: String, source: MarkedHyloSource, context: LSPTestContext) {
+  init(uri: String, source: MarkedSource) {
     self.uri = uri
     self.source = source
-    self.context = context
   }
 
-  /// Gets the text document identifier for this document
-  public var textDocument: TextDocumentIdentifier {
+  /// The LSP text document identifier of this document.
+  public var identifier: TextDocumentIdentifier {
     TextDocumentIdentifier(uri: uri)
   }
+}
 
-  /// Creates a position params object at the cursor location
-  public func positionParams(
-    file: StaticString = #file,
-    line: UInt = #line
-  ) throws -> TextDocumentPositionParams {
-    let cursor = try source.requireCursor(file: file, line: line)
-    return TextDocumentPositionParams(
-      textDocument: textDocument,
-      position: cursor
-    )
-  }
+/// Error type used for propagating test failures.
+struct TestFailure: Error {
+  let message: String
 
-  /// Creates a position params object at a specific position
-  public func positionParams(
-    at position: Position
-  ) -> TextDocumentPositionParams {
-    TextDocumentPositionParams(
-      textDocument: textDocument,
-      position: position
-    )
-  }
-
-  // MARK: - LSP Request Methods
-
-  /// Performs a "go to definition" request at the cursor location
-  public func definition(
-    file: StaticString = #file,
-    line: UInt = #line
-  ) async throws -> DefinitionResponse {
-    let params = try positionParams(file: file, line: line)
-    let doc = try await context.documentProvider.getAnalyzedDocument(textDocument)
-    let result = await context.requestHandler.definition(
-      id: .numericId(1),
-      params: params,
-      doc: doc
-    )
-
-    switch result {
-    case .success(let response):
-      return response
-    case .failure(let error):
-      throw TestError.assertionFailed(
-        message: "Definition request failed: \(error.message)",
-        file: file,
-        line: line
-      )
-    }
-  }
-
-  /// Performs a hover request at the cursor location
-  public func hover(
-    file: StaticString = #file,
-    line: UInt = #line
-  ) async throws -> HoverResponse {
-    let params = try positionParams(file: file, line: line)
-    let result = await context.requestHandler.hover(
-      id: .numericId(1),
-      params: params
-    )
-
-    switch result {
-    case .success(let response):
-      return response
-    case .failure(let error):
-      throw TestError.assertionFailed(
-        message: "Hover request failed: \(error.message)",
-        file: file,
-        line: line
-      )
-    }
-  }
-
-  /// Performs a hover request at a specific position
-  public func hover(
-    at position: Position,
-    file: StaticString = #file,
-    line: UInt = #line
-  ) async throws -> HoverResponse {
-    let params = positionParams(at: position)
-    let result = await context.requestHandler.hover(
-      id: .numericId(1),
-      params: params
-    )
-
-    switch result {
-    case .success(let response):
-      return response
-    case .failure(let error):
-      throw TestError.assertionFailed(
-        message: "Hover request failed: \(error.message)",
-        file: file,
-        line: line
-      )
-    }
-  }
-
-  /// Gets document symbols
-  public func documentSymbols(
-    file: StaticString = #file,
-    line: UInt = #line
-  ) async throws -> DocumentSymbolResponse {
-    let params = DocumentSymbolParams(textDocument: textDocument)
-    let result = await context.requestHandler.documentSymbol(
-      id: .numericId(1),
-      params: params
-    )
-
-    switch result {
-    case .success(let response):
-      return response
-    case .failure(let error):
-      throw TestError.assertionFailed(
-        message: "Document symbols request failed: \(error.message)",
-        file: file,
-        line: line
-      )
-    }
-  }
-
-  /// Finds references at the cursor location
-  public func references(
-    includeDeclaration: Bool = false,
-    file: StaticString = #file,
-    line: UInt = #line
-  ) async throws -> ReferenceResponse {
-    let cursor = try source.requireCursor(file: file, line: line)
-    let params = ReferenceParams(
-      textDocument: textDocument,
-      position: cursor,
-      context: ReferenceContext(includeDeclaration: includeDeclaration)
-    )
-    let result = await context.requestHandler.references(
-      id: .numericId(1),
-      params: params
-    )
-
-    switch result {
-    case .success(let response):
-      return response
-    case .failure(let error):
-      throw TestError.assertionFailed(
-        message: "References request failed: \(error.message)",
-        file: file,
-        line: line
-      )
-    }
-  }
-
-  /// Gets the analyzed document for direct access to the program
-  public func getAnalyzedDocument() async throws -> AnalyzedDocument {
-    return try await context.documentProvider.getAnalyzedDocument(textDocument)
-  }
-
-  /// Closes this document
-  public func close() async {
-    await context.closeDocument(uri)
+  init(_ message: String) {
+    self.message = message
   }
 }
