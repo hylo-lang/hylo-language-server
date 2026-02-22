@@ -25,7 +25,7 @@ final class HoverTests: XCTestCase {
 
   func testHoverOnFunctionName() async throws {
     // Test hover information on a function
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       fun factorial(_ n: Int) -> Int {
         if n < 2 { 1 } else { n * factorial(n - 1) }
       }
@@ -44,7 +44,7 @@ final class HoverTests: XCTestCase {
 
   func testHoverOnVariable() async throws {
     // Test hover on a variable
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       public fun main() {
         let x = 42
         let y = <CURSOR/>x + 1
@@ -60,7 +60,7 @@ final class HoverTests: XCTestCase {
 
   func testHoverOnExpression() async throws {
     // Test with a more complex expression
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       public fun main() {
         let x = 42
         let y = 10
@@ -79,7 +79,7 @@ final class HoverTests: XCTestCase {
 
   func testHoverIsIdempotent() async throws {
     // Property: Hovering at the same position multiple times should give the same result
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       public fun main() {
         let x = <CURSOR/>42
       }

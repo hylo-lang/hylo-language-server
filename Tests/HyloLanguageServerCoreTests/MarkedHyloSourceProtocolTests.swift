@@ -22,7 +22,7 @@ final class MarkedHyloSourceProtocolTests: XCTestCase {
 
   func testPositionIsZeroBased() {
     // LSP specification: Position.line and Position.character are 0-based
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       line 0
       line 1
       line 2<CURSOR/>
@@ -34,7 +34,7 @@ final class MarkedHyloSourceProtocolTests: XCTestCase {
 
   func testRangePositionsAreZeroBased() {
     // LSP specification: Range.start and Range.end use 0-based Position
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       <RANGE>first line
       second line</RANGE>
       """
@@ -46,13 +46,13 @@ final class MarkedHyloSourceProtocolTests: XCTestCase {
 
   func testRangeEndIsExclusive() {
     // LSP Range end position is exclusive (does not include the character at end.character)
-    let source: MarkedHyloSource = "<RANGE>abc</RANGE>def"
+    let source: MarkedSource = "<RANGE>abc</RANGE>def"
     let range = source.referenceRanges[0]
     XCTAssertEqual(range.start.character, 0)
     XCTAssertEqual(range.end.character, 3, "End at position 3 means characters 0,1,2 are included")
 
     // Verify by checking the actual text
-    let text = source.cleanSource
+    let text = source.source
     let startIdx = text.startIndex
     let endIdx = text.index(startIdx, offsetBy: 3)
     XCTAssertEqual(String(text[startIdx ..< endIdx]), "abc")
@@ -60,8 +60,8 @@ final class MarkedHyloSourceProtocolTests: XCTestCase {
 
   func testEmptyRangeAtPosition() {
     // LSP allows zero-width ranges (start == end) representing a position
-    let source: MarkedHyloSource = "abc<RANGE></RANGE>def"
-    XCTAssertEqual(source.cleanSource, "abcdef")
+    let source: MarkedSource = "abc<RANGE></RANGE>def"
+    XCTAssertEqual(source.source, "abcdef")
     let range = source.referenceRanges[0]
     XCTAssertEqual(range.start.character, 3)
     XCTAssertEqual(range.end.character, 3, "Zero-width range")
@@ -70,8 +70,8 @@ final class MarkedHyloSourceProtocolTests: XCTestCase {
   // MARK: - Position to String Index Conversion Tests
 
   func testPositionCorrespondsToCorrectCharacter() {
-    let source: MarkedHyloSource = "012<CURSOR/>3456789"
-    let cleanText = source.cleanSource
+    let source: MarkedSource = "012<CURSOR/>3456789"
+    let cleanText = source.source
     XCTAssertEqual(cleanText, "0123456789")
 
     let cursor = source.cursorLocation!
@@ -83,8 +83,8 @@ final class MarkedHyloSourceProtocolTests: XCTestCase {
   }
 
   func testRangeCorrespondsToCorrectSubstring() {
-    let source: MarkedHyloSource = "abc<RANGE>def</RANGE>ghi"
-    let cleanText = source.cleanSource
+    let source: MarkedSource = "abc<RANGE>def</RANGE>ghi"
+    let cleanText = source.source
     let range = source.referenceRanges[0]
 
     let startIdx = cleanText.index(cleanText.startIndex, offsetBy: Int(range.start.character))
@@ -99,7 +99,7 @@ final class MarkedHyloSourceProtocolTests: XCTestCase {
     // This test serves as documentation of LSP Position semantics
     // From LSP specification: Position in a text document expressed as zero-based line and character offset.
 
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       line 0 character 0<CURSOR/>
       line 1 character 0
       """
@@ -114,14 +114,14 @@ final class MarkedHyloSourceProtocolTests: XCTestCase {
     // From LSP specification: A range in a text document expressed as (zero-based) start and end positions.
     // Note: The end position is exclusive.
 
-    let source: MarkedHyloSource = "abc<RANGE>defgh</RANGE>ijk"
+    let source: MarkedSource = "abc<RANGE>defgh</RANGE>ijk"
     let range = source.referenceRanges[0]
 
     XCTAssertEqual(range.start.character, 3, "Range.start: 0-based, inclusive start position")
     XCTAssertEqual(range.end.character, 8, "Range.end: 0-based, exclusive end position")
 
     // Verify: characters at indices 3,4,5,6,7 are included (d,e,f,g,h)
-    let text = source.cleanSource
+    let text = source.source
     let startIdx = text.index(text.startIndex, offsetBy: 3)
     let endIdx = text.index(text.startIndex, offsetBy: 8)
     XCTAssertEqual(String(text[startIdx ..< endIdx]), "defgh")

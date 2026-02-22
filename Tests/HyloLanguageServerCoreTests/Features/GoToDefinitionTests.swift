@@ -22,7 +22,7 @@ final class GoToDefinitionTests: XCTestCase {
 
   func testCallFromOutside() async throws {
     // Test "go to definition" on a function call
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       <RANGE>fun factorial(_ n: Int) -> Int {
         if n < 2 { 1 } else { n * factorial(n - 1) }
       }</RANGE>
@@ -46,7 +46,7 @@ final class GoToDefinitionTests: XCTestCase {
 
   func testDefinitionOfRecursiveCall() async throws {
     // Test definition on a recursive call
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       <RANGE>fun factorial(_ n: Int) -> Int {
         if n < 2 { 1 } else { n * <CURSOR/>factorial(n - 1) }
       }</RANGE>

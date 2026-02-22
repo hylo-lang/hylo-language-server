@@ -49,7 +49,7 @@ final class ReferencesTests: XCTestCase {
   func testReferencesSelfConsistency() async throws {
     // Property: If we find N references, each should be a valid location
     // Cursor must be on the declaration, not on a usage
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       fun <CURSOR/>used() {
       }
 

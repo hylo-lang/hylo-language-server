@@ -91,7 +91,7 @@ public actor LSPTestContext {
   /// - Returns: A test document handle
   @discardableResult
   public func openDocument(
-    _ source: MarkedHyloSource,
+    _ source: MarkedSource,
     uri: String? = nil
   ) async throws -> TestDocument {
     let documentUri = uri ?? generateUri()
@@ -101,7 +101,7 @@ public actor LSPTestContext {
         uri: documentUri,
         languageId: "hylo",
         version: 0,
-        text: source.cleanSource
+        text: source.source
       )
     )
 
@@ -116,7 +116,7 @@ public actor LSPTestContext {
     _ plainSource: String,
     uri: String? = nil
   ) async throws -> TestDocument {
-    return try await openDocument(MarkedHyloSource(plainSource), uri: uri)
+    return try await openDocument(MarkedSource(plainSource), uri: uri)
   }
 
   /// Closes a document
@@ -130,7 +130,7 @@ public actor LSPTestContext {
   /// Updates a document with new content
   public func updateDocument(
     _ uri: String,
-    newSource: MarkedHyloSource,
+    newSource: MarkedSource,
     version: Int
   ) async {
     let params = DidChangeTextDocumentParams(
@@ -139,7 +139,7 @@ public actor LSPTestContext {
         TextDocumentContentChangeEvent(
           range: nil,
           rangeLength: nil,
-          text: newSource.cleanSource
+          text: newSource.source
         )
       ]
     )
@@ -155,10 +155,10 @@ public actor LSPTestContext {
 /// Represents a test document with convenient access to LSP operations
 public struct TestDocument: Sendable {
   public let uri: String
-  public let source: MarkedHyloSource
+  public let source: MarkedSource
   private let context: LSPTestContext
 
-  init(uri: String, source: MarkedHyloSource, context: LSPTestContext) {
+  init(uri: String, source: MarkedSource, context: LSPTestContext) {
     self.uri = uri
     self.source = source
     self.context = context

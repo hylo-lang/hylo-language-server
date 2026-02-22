@@ -27,7 +27,7 @@ final class LSPIntegrationTests: XCTestCase {
 
   func testMultipleRanges() async throws {
     // Test with multiple marked ranges
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       fun <RANGE>add</RANGE>(_ a: Int, _ b: Int) -> Int {
         a + b
       }
@@ -65,7 +65,7 @@ final class LSPIntegrationTests: XCTestCase {
 
   func testDocumentUpdate() async throws {
     // Test that we can update a document and see changes
-    let initialSource: MarkedHyloSource = """
+    let initialSource: MarkedSource = """
       public fun main() {
         let x = 42
       }
@@ -74,7 +74,7 @@ final class LSPIntegrationTests: XCTestCase {
     let doc = try await context.openDocument(initialSource)
 
     // Update the document
-    let updatedSource: MarkedHyloSource = """
+    let updatedSource: MarkedSource = """
       public fun main() {
         let x = 100
         let y = <CURSOR/>x + 1
@@ -95,7 +95,7 @@ final class LSPIntegrationTests: XCTestCase {
 
   func testMissingCursor() async throws {
     // Test that missing cursor throws appropriate error
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       public fun main() {
         let x = 42
       }
@@ -116,7 +116,7 @@ final class LSPIntegrationTests: XCTestCase {
 
   func testInvalidRangeIndex() async throws {
     // Test that invalid range index throws
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       fun <RANGE>foo</RANGE>() {
       }
       """
@@ -136,7 +136,7 @@ final class LSPIntegrationTests: XCTestCase {
 
   func testDocumentClosingIsClean() async throws {
     // Property: Opening and closing documents should not leave artifacts
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       public fun main() {
         let x = 42
       }

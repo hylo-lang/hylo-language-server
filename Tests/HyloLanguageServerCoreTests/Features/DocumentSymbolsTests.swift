@@ -20,7 +20,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - Empty File Test
 
   func testEmptyFile() async throws {
-    let source: MarkedHyloSource = ""
+    let source: MarkedSource = ""
     let doc = try await context.openDocument(source)
     let response = try await doc.documentSymbols()
 
@@ -37,7 +37,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - FunctionDeclaration Tests
 
   func testFunctionDeclaration() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       fun factorial(_ n: Int) -> Int {
         if n < 2 { 1 } else { n * factorial(n - 1) }
       }
@@ -73,7 +73,7 @@ final class DocumentSymbolsTests: XCTestCase {
   }
 
   func testOperatorFunction() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       infix fun infix+ (x: Int, y: Int) -> Int {
         x.add(y)
       }
@@ -96,7 +96,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - StructDeclaration Tests
 
   func testStructDeclaration() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       public struct Point {
         public var x: Int
         public var y: Int
@@ -137,7 +137,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - TraitDeclaration Tests
 
   func testTraitDeclaration() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       trait Peekable {
         fun peek() -> Int
       }
@@ -177,7 +177,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - TypeAliasDeclaration Tests
 
   func testTypeAliasDeclaration() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       type IntPair = (Int, Int)
       """
 
@@ -205,7 +205,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - ExtensionDeclaration Tests
 
   func testExtensionDeclaration() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       extension Int {
         fun peek() -> Int {
           return self
@@ -242,7 +242,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - ConformanceDeclaration Tests
 
   func testConformanceDeclaration() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       trait Peekable {
         fun peek() -> Int
       }
@@ -271,7 +271,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - BindingDeclaration Tests
 
   func testBindingDeclaration() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       let x: Int = 42
       var y: Int = 100
       """
@@ -320,7 +320,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - FunctionBundleDeclaration Tests
 
   func testFunctionBundleDeclaration() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       fun foo() {}
       fun foo(x: Int) {}
       """
@@ -347,7 +347,7 @@ final class DocumentSymbolsTests: XCTestCase {
   // MARK: - Complex Integration Tests
 
   func testMixedDeclarations() async throws {
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       trait Peekable {
         fun peek() -> Int
       }

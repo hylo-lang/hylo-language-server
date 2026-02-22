@@ -24,9 +24,9 @@ final class LSPInvariantTests: XCTestCase {
     ]
 
     for (input, expected) in testCases {
-      let source = MarkedHyloSource(input)
+      let source = MarkedSource(input)
       XCTAssertEqual(
-        source.cleanSource,
+        source.source,
         expected,
         "Failed for input: \(input)"
       )
@@ -45,7 +45,7 @@ final class LSPInvariantTests: XCTestCase {
     ]
 
     for (input, expectedLine, expectedChar) in testCases {
-      let source = MarkedHyloSource(input)
+      let source = MarkedSource(input)
       guard let cursor = source.cursorLocation else {
         XCTFail("No cursor found in: \(input)")
         continue
@@ -75,7 +75,7 @@ final class LSPInvariantTests: XCTestCase {
     ]
 
     for (input, expectedRanges) in testCases {
-      let source = MarkedHyloSource(input)
+      let source = MarkedSource(input)
 
       XCTAssertEqual(
         source.referenceRanges.count,
@@ -111,11 +111,11 @@ final class LSPInvariantTests: XCTestCase {
 
   func testMultipleTagsIndependence() throws {
     // Property: Multiple tags should not interfere with each other
-    let source: MarkedHyloSource = """
+    let source: MarkedSource = """
       <RANGE>first</RANGE> middle <CURSOR/> <RANGE>second</RANGE>
       """
 
-    XCTAssertEqual(source.cleanSource, "first middle  second")
+    XCTAssertEqual(source.source, "first middle  second")
     XCTAssertNotNil(source.cursorLocation)
     XCTAssertEqual(source.referenceRanges.count, 2)
 
