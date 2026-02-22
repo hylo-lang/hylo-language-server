@@ -54,11 +54,21 @@ public struct HyloNotificationHandler: NotificationHandler {
   }
 
   public func textDocumentDidChange(_ params: DidChangeTextDocumentParams) async {
-    await documentProvider.updateDocument(params)
+    do {
+      try await documentProvider.updateDocument(params)
+    } catch {
+      logger.error("textDocumentDidChange resulted in a failure: \(error)")
+      // todo send failure to client
+    }
   }
 
   public func textDocumentDidClose(_ params: DidCloseTextDocumentParams) async {
-    await documentProvider.unregisterDocument(params)  // FIXME: handle multi-file projects
+    do {
+      try await documentProvider.unregisterDocument(params)
+    } catch {
+      logger.error("textDocumentDidClose resulted in a failure: \(error)")
+      // todo send failure to client
+    }
   }
 
   public func textDocumentWillSave(_ params: WillSaveTextDocumentParams) async {

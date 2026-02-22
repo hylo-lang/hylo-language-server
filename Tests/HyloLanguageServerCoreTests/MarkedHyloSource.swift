@@ -1,178 +1,223 @@
 import Foundation
+import HyloLanguageServerCore
 import LanguageServerProtocol
 
-/// A marked Hylo source code string that supports special tags for testing LSP features.
+/// Source code with marker annotations for easily accessing text positions.
 ///
-/// Supports the following tags:
-/// - `<CURSOR/>` - marks the cursor position for requests
-/// - `<RANGE>...</RANGE>` - marks a range/span to verify in assertions
-///
-/// ## LSP Protocol Compliance
-/// All positions and ranges follow the LSP specification:
-/// - **Position**: Zero-based line and character offsets
-///   - `line`: 0-based line number (first line is 0)
-///   - `character`: 0-based character offset within the line (first character is 0)
-/// - **Range**: Zero-based start and end positions
-///   - `start`: Inclusive start position
-///   - `end`: Exclusive end position (character at end is NOT included)
+/// Supports the following markers: 0️⃣1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣🔟
 ///
 /// Example:
-/// ```swift
-/// let source: MarkedHyloSource = """
-/// fun factorial(_ n: Int) -> Int {
-///   if n < 2 { 1 } else { n * <CURSOR/>factorial(n - 1) }
-/// }
 ///
-/// public fun main() {
-///   let _ = <RANGE>factorial</RANGE>(6)
-/// }
-/// """
+/// ```swift
+///     let source: MarkedHyloSource = """
+///     fun factorial(_ n: Int) -> Int {
+///       if n < 2 { 1 } else { n * 0️⃣factorial1️⃣(n - 1) }
+///     }
+///
+///     public fun main() {
+///       let _ = 2️⃣factorial3️⃣(6)
+///     }
+///     """
+///
+///     source.markers[1]        // position of marker 1
+///     source.markers[1 ..< 3]  // positions of markers 1, 2
+///     source.markers[[0,3]]    // positions of markers 0, 3
+///     source.markers           // collection of all marker poisitons
 /// ```
-public struct MarkedHyloSource: ExpressibleByStringLiteral, Sendable {
-  /// The cursor location (if present).
-  ///
-  /// LSP Position: 0-based line and character offset.
-  /// - `line`: Line number (0-based, first line is 0)
-  /// - `character`: Character position in line (0-based, first character is 0)
-  public let cursorLocation: Position?
-
-  /// The list of marked ranges.
-  ///
-  /// LSP Range: Contains start and end Position (both 0-based).
-  /// - `start`: Inclusive start position
-  /// - `end`: Exclusive end position (does not include character at end.character)
-  public let referenceRanges: [LSPRange]
-
-  /// The source code without any special tags.
-  public let cleanSource: String
-
-  public init(stringLiteral value: String) {
-    let result = MarkedHyloSource.parse(value)
-    self.cursorLocation = result.cursor
-    self.referenceRanges = result.ranges
-    self.cleanSource = result.text
+public struct MarkedSource: Sendable {
+  /// Parsing errors produced while interpreting test markers.
+  public enum ParseError: Error, Equatable {
+    case duplicateMarker(Int)
   }
 
-  /// Creates a MarkedHyloSource from a plain string
-  public init(_ source: String) {
-    let result = MarkedHyloSource.parse(source)
-    self.cursorLocation = result.cursor
-    self.referenceRanges = result.ranges
-    self.cleanSource = result.text
+  /// Positions keyed by marker number.
+  public let markerPositions: [Int: Position]
+
+  /// The source code stripped from all tags.
+  public let source: String
+
+  /// Marker access view supporting collection iteration and overloaded marker subscripts.
+  public let markers: Markers
+
+  /// Creates a MarkedHyloSource from a string.
+  public init(_ source: String) throws {
+    (self.source, self.markerPositions) = try MarkedSource.markers(source)
+    self.markers = Markers(markerPositions: markerPositions)
   }
 
-  /// Parse the marked source and extract tags
-  private static func parse(_ source: String) -> (
-    cursor: Position?, ranges: [LSPRange], text: String
-  ) {
-    var text = ""
-    var cursor: Position? = nil
-    var ranges: [LSPRange] = []
-    var rangeStarts: [Position] = []
+  /// Ordered marker access over parsed marker positions.
+  public struct Markers: Collection, Sendable {
+    /// Index type used to traverse sorted marker positions.
+    public struct Index: Comparable, Sendable {
+      fileprivate let offset: Int
 
-    var line = 0
-    var column = 0
-
-    var index = source.startIndex
-
-    while index < source.endIndex {
-      let char = source[index]
-
-      // Check for tags
-      if char == "<" {
-        // Look ahead to see what tag this is
-        let remainingText = source[index...]
-
-        if remainingText.hasPrefix("<CURSOR/>") {
-          // Found cursor tag
-          cursor = Position(line: line, character: column)
-          index = source.index(index, offsetBy: "<CURSOR/>".count)
-          continue
-        } else if remainingText.hasPrefix("<RANGE>") {
-          // Found start of range
-          rangeStarts.append(Position(line: line, character: column))
-          index = source.index(index, offsetBy: "<RANGE>".count)
-          continue
-        } else if remainingText.hasPrefix("</RANGE>") {
-          // Found end of range
-          if let start = rangeStarts.popLast() {
-            let end = Position(line: line, character: column)
-            ranges.append(LSPRange(start: start, end: end))
-          }
-          index = source.index(index, offsetBy: "</RANGE>".count)
-          continue
-        }
+      public static func < (lhs: Index, rhs: Index) -> Bool {
+        lhs.offset < rhs.offset
       }
+    }
 
-      // Regular character - add to output
-      text.append(char)
+    fileprivate let markerPositions: [Int: Position]
 
-      if char == "\n" {
-        line += 1
-        column = 0
+    fileprivate let sortedMarkerNumbers: [Int]
+
+    fileprivate init(markerPositions: [Int: Position]) {
+      self.markerPositions = markerPositions
+      self.sortedMarkerNumbers = markerPositions.keys.sorted()
+    }
+
+    public var startIndex: Index { Index(offset: 0) }
+
+    public var endIndex: Index { Index(offset: sortedMarkerNumbers.count) }
+
+    public func index(after i: Index) -> Index {
+      Index(offset: i.offset + 1)
+    }
+
+    public subscript(position: Index) -> Position {
+      let markerNumber = sortedMarkerNumbers[position.offset]
+      return markerPositions[markerNumber]!
+    }
+
+    public subscript(_ marker: Int) -> Position {
+      markerPositions[marker]
+        ?? fatalError("Marker \(marker) not found in source.")
+    }
+
+    public subscript(_ markerRange: Range<Int>) -> [Position] {
+      markerRange.map { self[$0] }
+    }
+
+    public subscript(_ markerNumbers: [Int]) -> [Position] {
+      markerNumbers.map { self[$0] }
+    }
+  }
+
+  /// Returns all LSP positions from marker `a` (inclusive) up to marker `b` (exclusive).
+  public func positionsBetweenMarkers(_ a: Int, _ b: Int) -> [Position] {
+    let start = markers[a]
+    let end = markers[b]
+    let isAscending =
+      start.line < end.line || (start.line == end.line && start.character < end.character)
+    precondition(isAscending, "Expected marker \(a) to appear before marker \(b)")
+
+    guard
+      let startIndex = start.stringIndex(in: source),
+      let endIndex = end.stringIndex(in: source)
+    else {
+      return []
+    }
+
+    var result: [Position] = []
+    var current = start
+    var i = startIndex
+    while i < endIndex {
+      result.append(current)
+
+      let character = source[i]
+      if character.isNewline {
+        current = Position(line: current.line + 1, character: 0)
       } else {
-        column += 1
+        current = Position(line: current.line, character: current.character + 1)
+      }
+      i = source.index(after: i)
+    }
+
+    return result
+  }
+
+  /// Returns the LSPRange between the given markers.
+  ///
+  /// `start` is inclusive, `end` is exclusive.
+  public func markerRange(start: Int, end: Int) throws -> LSPRange {
+    return LSPRange(
+      start: try markerPositions[start].unwrapOrThrow(TestFailure("Marker \(start) not found")),
+      end: try markerPositions[end].unwrapOrThrow(TestFailure("Marker \(end) not found")))
+  }
+
+  /// Extracts the markers from the source string.
+  ///
+  /// `markers` is a dictionary mapping marker values to their corresponding positions in the stripped string.
+  static func markers(_ source: String) throws -> (text: String, markers: [Int: Position]) {
+    let (text, markers) = try markerIndices(source)
+    return (text: text, markers: markers.mapValues { Position(in: text, at: $0) })
+  }
+
+  /// Extracts the marker indices from the source string.
+  ///
+  /// `markers` is a dictionary mapping marker values to their corresponding string indices in the stripped string.
+  static func markerIndices(_ source: String) throws -> (
+    text: String, markers: [Int: String.Index]
+  ) {
+    var strippedText = ""
+    var markers = [Int: String.Index]()
+
+    var afterLastMarker = source.startIndex
+    while let (markerValue, i) = source.firstIndexMappedNonNil(
+      \.testMarkerValue, startingAt: afterLastMarker)
+    {
+      guard !markers.keys.contains(markerValue) else {
+        throw ParseError.duplicateMarker(markerValue)
       }
 
-      index = source.index(after: index)
+      strippedText += source[afterLastMarker ..< i]
+      markers[markerValue] = strippedText.endIndex
+      afterLastMarker = source.index(after: i)
     }
 
-    return (cursor, ranges, text)
+    strippedText += source[afterLastMarker...]
+
+    return (text: strippedText, markers: markers)
   }
 
-  /// Returns the cursor position, throwing an error if not present.
-  ///
-  /// - Returns: A 0-based Position (LSP protocol compliant)
-  /// - Throws: `TestError.missingCursor` if no `<CURSOR/>` tag was present in the source
-  public func requireCursor(file: StaticString = #file, line: UInt = #line) throws -> Position {
-    guard let cursor = cursorLocation else {
-      throw TestError.missingCursor(file: file, line: line)
-    }
-    return cursor
-  }
-
-  /// Returns a specific reference range by index.
-  ///
-  /// - Parameter index: The 0-based index of the range to retrieve
-  /// - Returns: An LSP Range with 0-based start and end positions (end is exclusive)
-  /// - Throws: `TestError.rangeNotFound` if the index is out of bounds
-  public func range(at index: Int, file: StaticString = #file, line: UInt = #line) throws
-    -> LSPRange
-  {
-    guard referenceRanges.indices.contains(index) else {
-      throw TestError.rangeNotFound(
-        index: index, available: referenceRanges.count, file: file, line: line)
-    }
-    return referenceRanges[index]
-  }
-
-  /// Returns the first reference range, throwing an error if none exist.
-  ///
-  /// - Returns: The first LSP Range (0-based positions, exclusive end)
-  /// - Throws: `TestError.rangeNotFound` if no `<RANGE>` tags were present
-  public func firstRange(file: StaticString = #file, line: UInt = #line) throws -> LSPRange {
-    return try range(at: 0, file: file, line: line)
+  /// The position of the marker with the given tag.
+  public subscript(marker markerValue: Int) -> Position {
+    markerPositions[markerValue] ?? fatalError("Marker \(markerValue) not found in source.")
   }
 }
 
-/// Errors that can occur during test execution
-public enum TestError: Error, CustomStringConvertible {
-  case missingCursor(file: StaticString, line: UInt)
-  case rangeNotFound(index: Int, available: Int, file: StaticString, line: UInt)
-  case unexpectedNil(message: String, file: StaticString, line: UInt)
-  case assertionFailed(message: String, file: StaticString, line: UInt)
+extension Collection {
 
-  public var description: String {
+  /// Returns the first index and mapped value where the element is mapped to a non-nil value.
+  func firstIndexMappedNonNil<R>(_ f: (Element) throws -> R?) rethrows -> (R, Index)? {
+    for i in indices {
+      if let r = try f(self[i]) {
+        return (r, i)
+      }
+    }
+    return nil
+  }
+
+  /// Returns the first index and mapped value where the element is mapped to a non-nil value, including or after `start`.
+  func firstIndexMappedNonNil<R>(_ f: (Element) throws -> R?, startingAt start: Index)  //
+    rethrows -> (R, Index)?
+  {
+    var i = start
+    while i < endIndex {
+      if let r = try f(self[i]) {
+        return (r, i)
+      }
+      i = index(after: i)
+    }
+    return nil
+  }
+}
+
+extension Character {
+  /// Maps special marker characters to their corresponding integer values.
+  fileprivate var testMarkerValue: Int? {
     switch self {
-    case .missingCursor(let file, let line):
-      return "No <CURSOR/> tag found in marked source (\(file):\(line))"
-    case .rangeNotFound(let index, let available, let file, let line):
-      return
-        "Range at index \(index) not found (only \(available) ranges available) (\(file):\(line))"
-    case .unexpectedNil(let message, let file, let line):
-      return "Unexpected nil: \(message) (\(file):\(line))"
-    case .assertionFailed(let message, let file, let line):
-      return "Assertion failed: \(message) (\(file):\(line))"
+    case "0️⃣": 0
+    case "1️⃣": 1
+    case "2️⃣": 2
+    case "3️⃣": 3
+    case "4️⃣": 4
+    case "5️⃣": 5
+    case "6️⃣": 6
+    case "7️⃣": 7
+    case "8️⃣": 8
+    case "9️⃣": 9
+    case "🔟": 10
+    default: nil
     }
   }
 }

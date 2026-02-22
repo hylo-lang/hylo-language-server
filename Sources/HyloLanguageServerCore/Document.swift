@@ -139,8 +139,6 @@ struct DocumentContext {
   {
     try doc.applyChanges(changes, version: version)
     doc.version = version
-
-    // todo re-typecheck here
   }
 
 }

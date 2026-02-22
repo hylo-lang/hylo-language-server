@@ -23,139 +23,86 @@ final class LSPIntegrationTests: XCTestCase {
     try await context.initialize(rootUri: "file:///test")
   }
 
-  // MARK: - Multi-Range Tests
+  // MARK: - Marker-Driven Integration Tests
 
-  func testMultipleRanges() async throws {
-    // Test with multiple marked ranges
-    let source: MarkedHyloSource = """
-      fun <RANGE>add</RANGE>(_ a: Int, _ b: Int) -> Int {
+  func testDefinitionAndHoverAtMultipleMarkers() async throws {
+    let source = try MarkedSource(
+      """
+      1️⃣fun add(_ a: Int, _ b: Int) -> Int {
         a + b
-      }
+      }2️⃣
 
-      fun <RANGE>multiply</RANGE>(_ a: Int, _ b: Int) -> Int {
+      3️⃣fun multiply(_ a: Int, _ b: Int) -> Int {
         a * b
-      }
+      }4️⃣
 
       public fun main() {
-        let _ = add(2, 3)
-        let _ = multiply(4, 5)
+        let _ = 0️⃣add(2, 3)
+        let _ = 5️⃣multiply(4, 5)
       }
-      """
+      """)
 
-    let doc = try await context.openDocument(source)
+    let uri = try await context.openDocument(source)
 
-    // Verify we can access both ranges
-    let addRange = try source.range(at: 0)
-    let multiplyRange = try source.range(at: 1)
+    let addDefinition = try await context.definition(uri: uri, at: source.markers[0])
+    let multiplyDefinition = try await context.definition(uri: uri, at: source.markers[5])
 
-    XCTAssertEqual(addRange.start.line, 0)
-    XCTAssertEqual(multiplyRange.start.line, 4)
+    XCTAssertNotNil(addDefinition)
+    XCTAssertNotNil(multiplyDefinition)
 
-    // Test definition at different positions
-    let addDefPos = Position(line: 9, character: 12)  // "add" in main
-    let addDef = try await doc.hover(at: addDefPos)
-    XCTAssertNotNil(addDef)
-
-    let multDefPos = Position(line: 10, character: 12)  // "multiply" in main
-    let multDef = try await doc.hover(at: multDefPos)
-    XCTAssertNotNil(multDef)
+    let hoverAtAdd = try await context.hover(uri: uri, at: source.markers[0])
+    let hoverAtMultiply = try await context.hover(uri: uri, at: source.markers[5])
+    XCTAssertNotNil(hoverAtAdd)
+    XCTAssertNotNil(hoverAtMultiply)
   }
 
   // MARK: - Document Update Tests
 
   func testDocumentUpdate() async throws {
-    // Test that we can update a document and see changes
-    let initialSource: MarkedHyloSource = """
+    let initialSource = try MarkedSource(
+      """
       public fun main() {
         let x = 42
       }
+      """)
+
+    let uri = try await context.openDocument(initialSource)
+
+    let updatedSource = try MarkedSource(
       """
-
-    let doc = try await context.openDocument(initialSource)
-
-    // Update the document
-    let updatedSource: MarkedHyloSource = """
       public fun main() {
         let x = 100
-        let y = <CURSOR/>x + 1
+        let y = 0️⃣x + 1
       }
-      """
+      """)
 
-    await context.updateDocument(doc.uri, newSource: updatedSource, version: 1)
+    try await context.updateDocument(uri.absoluteString, newSource: updatedSource, version: 1)
 
-    // Create a new TestDocument with the updated source
-    let updatedDoc = TestDocument(uri: doc.uri, source: updatedSource, context: context)
-
-    // Hover should work on the updated document
-    let hover = try await updatedDoc.hover()
+    let hover = try await context.hover(uri: uri, at: updatedSource.markers[0])
     XCTAssertNotNil(hover)
-  }
-
-  // MARK: - Error Handling Tests
-
-  func testMissingCursor() async throws {
-    // Test that missing cursor throws appropriate error
-    let source: MarkedHyloSource = """
-      public fun main() {
-        let x = 42
-      }
-      """
-
-    let doc = try await context.openDocument(source)
-
-    // Should throw when trying to use cursor
-    do {
-      _ = try await doc.definition()
-      XCTFail("Expected to throw TestError.missingCursor")
-    } catch TestError.missingCursor {
-      // Expected
-    } catch {
-      XCTFail("Unexpected error: \(error)")
-    }
-  }
-
-  func testInvalidRangeIndex() async throws {
-    // Test that invalid range index throws
-    let source: MarkedHyloSource = """
-      fun <RANGE>foo</RANGE>() {
-      }
-      """
-
-    // Should throw when accessing non-existent range
-    do {
-      _ = try source.range(at: 5)
-      XCTFail("Expected to throw TestError.rangeNotFound")
-    } catch TestError.rangeNotFound {
-      // Expected
-    } catch {
-      XCTFail("Unexpected error: \(error)")
-    }
   }
 
   // MARK: - Document Lifecycle Tests
 
   func testDocumentClosingIsClean() async throws {
-    // Property: Opening and closing documents should not leave artifacts
-    let source: MarkedHyloSource = """
+    let source = try MarkedSource(
+      """
       public fun main() {
         let x = 42
       }
-      """
+      """)
 
-    let doc1 = try await context.openDocument(source, uri: "file:///test/doc1.hylo")
-    let doc2 = try await context.openDocument(source, uri: "file:///test/doc2.hylo")
+    let uri1 = try await context.openDocument(source, uri: "file:///test/doc1.hylo")
+    let uri2 = try await context.openDocument(source, uri: "file:///test/doc2.hylo")
 
-    // Both documents should be accessible
-    _ = try await doc1.documentSymbols()
-    _ = try await doc2.documentSymbols()
+    _ = try await context.documentSymbols(at: uri1)
+    _ = try await context.documentSymbols(at: uri2)
 
-    // Close one document
-    await doc1.close()
+    try await context.closeDocument(uri1)
 
-    // Other document should still work
-    _ = try await doc2.documentSymbols()
+    _ = try await context.documentSymbols(at: uri2)
 
-    await doc2.close()
+    try await context.closeDocument(uri2)
   }
 
   // MARK: - Position Conversion Tests
