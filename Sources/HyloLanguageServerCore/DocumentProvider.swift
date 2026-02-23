@@ -289,6 +289,53 @@ public actor DocumentProvider {
 
   // MARK: - Program Building
 
+  /// Build a complete `Program` and a `Source` from a `String`
+  public func buildProgramFromModifiedString(url: AbsoluteUrl, newText: String) async throws -> (Program, SourceFile) {
+    let (stdlibPath, isStdlibDocument) = getStdlibPath(url)
+    // Document is separate from standard library
+    let stdlibCache = try await getStandardLibraryProgram(from: stdlibPath)
+
+    // Create a copy of the standard library program
+    var program = stdlibCache.program
+
+    // Add the main module for user code
+    let mainModuleId = program.demandModule(.init("MainModule"))
+
+
+    program[mainModuleId].addDependency(.standardLibrary)
+
+    let sourceFile = SourceFile(representing: url.url, inMemoryContents: newText)
+
+    var helper = CompilationHelper()
+    helper.program = program
+
+    // Parse the main file
+    let (parseTime, parseError) = await helper.parse([sourceFile], into: mainModuleId)
+    logger.debug("Main module parsing took: \(parseTime)")
+    if parseError {
+      logger.error("Main module parsing failed")
+      // Continue anyway for LSP features
+    }
+
+    // Assign scopes
+    let (scopeTime, scopeError) = await helper.assignScopes(of: mainModuleId)
+    logger.debug("Main module scope assignment took: \(scopeTime)")
+    if scopeError {
+      logger.error("Main module scope assignment failed")
+      // Continue anyway for LSP features
+    }
+
+    // Type check
+    let (typeTime, typeError) = await helper.assignTypes(of: mainModuleId)
+    logger.debug("Main module type checking took: \(typeTime)")
+    if typeError {
+      logger.error("Main module type checking failed")
+      // Continue anyway for LSP features
+    }
+
+    return (helper.program, sourceFile)
+  }
+
   /// Builds a complete program for a document
   private func buildProgramForDocument(url: AbsoluteUrl, text: String) async throws -> Program {
     let (standardLibrary, isStdlibDocument) = getStdlibPath(url)
@@ -336,6 +383,7 @@ public actor DocumentProvider {
 
       return helper.program
     }
+    return try await self.buildProgramFromModifiedString(url: url, newText: text).0
   }
 
   public func updateDocument(_ params: DidChangeTextDocumentParams) async {
