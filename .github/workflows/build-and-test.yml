@@ -20,7 +20,7 @@ name: Build and test
 
 on:
   push:
-    branches: [ '*' ]
+    branches: ["*"]
     paths-ignore:
       - "Docs/**"
       - "**.md"
@@ -31,6 +31,20 @@ env:
   BUILD_TYPE: ${{ inputs.build-type || 'debug' }}
 
 jobs:
+  lint:
+    name: Check formatting & linting
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Swift
+        uses: SwiftyLab/setup-swift@latest
+        with:
+          swift-version: "6.2"
+
+      - name: "Check formatting & linting"
+        run: ./lint.sh
+
   build:
     name: Build and test
     uses: ./.github/workflows/build-and-test-template.yml
