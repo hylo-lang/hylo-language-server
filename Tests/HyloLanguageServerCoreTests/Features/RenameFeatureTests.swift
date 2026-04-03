@@ -8,8 +8,7 @@ final class RenameFeatureTests: XCTestCase {
   var context: LSPTestContext!
 
   override func setUp() async throws {
-    context = LSPTestContext(tag: "RenameFeatureTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(tag: "RenameFeatureTests", rootUri: "file:///test")
   }
 
   func testRenameProducesExpectedEditsAndUpdatedSource() async throws {

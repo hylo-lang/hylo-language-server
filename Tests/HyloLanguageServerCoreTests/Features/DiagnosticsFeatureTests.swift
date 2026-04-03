@@ -8,8 +8,7 @@ final class DiagnosticsFeatureTests: XCTestCase {
   var context: LSPTestContext!
 
   override func setUp() async throws {
-    context = LSPTestContext(tag: "DiagnosticsFeatureTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(tag: "DiagnosticsFeatureTests", rootUri: "file:///test")
   }
 
   func testDiagnosticsContainUndefinedNameRange() async throws {

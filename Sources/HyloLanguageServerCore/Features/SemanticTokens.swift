@@ -76,114 +76,115 @@ struct SemanticTokensWalker {
   }
 
   mutating func addSyntax(syntaxId: AnySyntaxIdentity) {
-    addSyntax(program[syntaxId])
-  }
+    let tag = program.tag(of: syntaxId)
+    logger.debug("Processing syntax: \(tag)")
 
-  mutating func addSyntax(_ syntax: any Syntax) {
-    let syntaxType = type(of: syntax)
-    logger.debug("Processing syntax: \(syntaxType)")
-
-    switch syntax {
     // Declarations:
-    case let d as AssociatedTypeDeclaration:
-      addAssociatedType(d)
-    case let d as BindingDeclaration:
-      addBinding(d)
-    case let d as ConformanceDeclaration:
-      addConformance(d)
-    case let d as EnumCaseDeclaration:
-      addEnumCase(d)
-    case let d as EnumDeclaration:
-      addEnum(d)
-    case let d as ExtensionDeclaration:
-      addExtension(d)
-    case let d as FunctionBundleDeclaration:
-      addFunctionBundle(d)
-    case let d as FunctionDeclaration:
-      addFunction(d)
-    case let d as GenericParameterDeclaration:
-      addGenericParameter(d)
-    case let d as ImportDeclaration:
-      addImport(d)
-    case let d as StructDeclaration:
-      addStruct(d)
-    case let d as TraitDeclaration:
-      addTrait(d)
-    case let d as TypeAliasDeclaration:
-      addTypeAlias(d)
-    case _ as VariableDeclaration:
+    switch program.tag(of: syntaxId) {
+    case AssociatedTypeDeclaration.self:
+      addAssociatedType(
+        program[program.castUnchecked(syntaxId, to: AssociatedTypeDeclaration.self)])
+    case BindingDeclaration.self:
+      addBinding(program[program.castUnchecked(syntaxId, to: BindingDeclaration.self)])
+    case ConformanceDeclaration.self:
+      addConformance(program[program.castUnchecked(syntaxId, to: ConformanceDeclaration.self)])
+    case EnumCaseDeclaration.self:
+      addEnumCase(program[program.castUnchecked(syntaxId, to: EnumCaseDeclaration.self)])
+    case EnumDeclaration.self:
+      addEnum(program[program.castUnchecked(syntaxId, to: EnumDeclaration.self)])
+    case ExtensionDeclaration.self:
+      addExtension(program[program.castUnchecked(syntaxId, to: ExtensionDeclaration.self)])
+    case FunctionBundleDeclaration.self:
+      addFunctionBundle(
+        program[program.castUnchecked(syntaxId, to: FunctionBundleDeclaration.self)])
+    case FunctionDeclaration.self:
+      addFunction(program[program.castUnchecked(syntaxId, to: FunctionDeclaration.self)])
+    case GenericParameterDeclaration.self:
+      addGenericParameter(
+        program[program.castUnchecked(syntaxId, to: GenericParameterDeclaration.self)])
+    case ImportDeclaration.self:
+      addImport(program[program.castUnchecked(syntaxId, to: ImportDeclaration.self)])
+    case StructDeclaration.self:
+      addStruct(program[program.castUnchecked(syntaxId, to: StructDeclaration.self)])
+    case TraitDeclaration.self:
+      addTrait(program[program.castUnchecked(syntaxId, to: TraitDeclaration.self)])
+    case TypeAliasDeclaration.self:
+      addTypeAlias(program[program.castUnchecked(syntaxId, to: TypeAliasDeclaration.self)])
+    case VariableDeclaration.self:
       // NOTE: VariableDeclaration is handled by BindingDeclaration, which allows binding one or more variables
       break
-    case let d as VariantDeclaration:
-      addVariant(d)
+    case VariantDeclaration.self:
+      addVariant(program[program.castUnchecked(syntaxId, to: VariantDeclaration.self)])
 
     // Statements:
-    case let s as Assignment:
-      addAssignment(s)
-    case let s as Block:
-      addBlock(s)
-    case let s as Discard:
-      addDiscard(s)
-    case let s as Return:
-      addReturn(s)
+    case Assignment.self:
+      addAssignment(program[program.castUnchecked(syntaxId, to: Assignment.self)])
+    case Block.self:
+      addBlock(program[program.castUnchecked(syntaxId, to: Block.self)])
+    case Discard.self:
+      addDiscard(program[program.castUnchecked(syntaxId, to: Discard.self)])
+    case Return.self:
+      addReturn(program[program.castUnchecked(syntaxId, to: Return.self)])
 
     // Expressions:
-    case let e as ArrowExpression:
-      addArrowExpression(e)
-    case let e as BooleanLiteral:
-      addBooleanLiteral(e)
-    case let e as Call:
-      addCall(e)
-    case let e as Conversion:
-      addConversion(e)
-    case let e as EqualityWitnessExpression:
-      addEqualityWitnessExpression(e)
-    case let e as If:
-      addIf(e)
-    case let e as ImplicitQualification:
-      addImplicitQualification(e)
-    case let e as InoutExpression:
-      addInoutExpression(e)
-    case let e as IntegerLiteral:
-      addIntegerLiteral(e)
-    case let e as KindExpression:
-      addKindExpression(e)
-    case let e as Lambda:
-      addLambda(e)
-    case let e as NameExpression:
-      addNameExpression(e)
-    case let e as New:
-      addNew(e)
-    case let e as PatternMatch:
-      addPatternMatch(e)
-    case let e as PatternMatchCase:
-      addPatternMatchCase(e)
-    case let e as RemoteTypeExpression:
-      addRemoteTypeExpression(e)
-    case let e as StaticCall:
-      addStaticCall(e)
-    case let e as StringLiteral:
-      addStringLiteral(e)
-    case let e as SyntheticExpression:
-      addSyntheticExpression(e)
-    case let e as TupleLiteral:
-      addTupleLiteral(e)
-    case let e as TupleTypeExpression:
-      addTupleTypeExpression(e)
-    case let e as WildcardLiteral:
-      addWildcardLiteral(e)
+    case ArrowExpression.self:
+      addArrowExpression(program[program.castUnchecked(syntaxId, to: ArrowExpression.self)])
+    case BooleanLiteral.self:
+      addBooleanLiteral(program[program.castUnchecked(syntaxId, to: BooleanLiteral.self)])
+    case Call.self:
+      addCall(program[program.castUnchecked(syntaxId, to: Call.self)])
+    case Conversion.self:
+      addConversion(program[program.castUnchecked(syntaxId, to: Conversion.self)])
+    case EqualityWitnessExpression.self:
+      addEqualityWitnessExpression(
+        program[program.castUnchecked(syntaxId, to: EqualityWitnessExpression.self)])
+    case If.self:
+      addIf(program[program.castUnchecked(syntaxId, to: If.self)])
+    case ImplicitQualification.self:
+      addImplicitQualification(
+        program[program.castUnchecked(syntaxId, to: ImplicitQualification.self)])
+    case InoutExpression.self:
+      addInoutExpression(program[program.castUnchecked(syntaxId, to: InoutExpression.self)])
+    case IntegerLiteral.self:
+      addIntegerLiteral(program[program.castUnchecked(syntaxId, to: IntegerLiteral.self)])
+    case KindExpression.self:
+      addKindExpression(program[program.castUnchecked(syntaxId, to: KindExpression.self)])
+    case Lambda.self:
+      addLambda(program[program.castUnchecked(syntaxId, to: Lambda.self)])
+    case NameExpression.self:
+      addNameExpression(program[program.castUnchecked(syntaxId, to: NameExpression.self)])
+    case New.self:
+      addNew(program[program.castUnchecked(syntaxId, to: New.self)])
+    case PatternMatch.self:
+      addPatternMatch(program[program.castUnchecked(syntaxId, to: PatternMatch.self)])
+    case PatternMatchCase.self:
+      addPatternMatchCase(program[program.castUnchecked(syntaxId, to: PatternMatchCase.self)])
+    case RemoteTypeExpression.self:
+      addRemoteTypeExpression(
+        program[program.castUnchecked(syntaxId, to: RemoteTypeExpression.self)])
+    case StaticCall.self:
+      addStaticCall(program[program.castUnchecked(syntaxId, to: StaticCall.self)])
+    case StringLiteral.self:
+      addStringLiteral(program[program.castUnchecked(syntaxId, to: StringLiteral.self)])
+    case SyntheticExpression.self:
+      addSyntheticExpression(program[program.castUnchecked(syntaxId, to: SyntheticExpression.self)])
+    case TupleLiteral.self:
+      addTupleLiteral(program[program.castUnchecked(syntaxId, to: TupleLiteral.self)])
+    case TupleTypeExpression.self:
+      addTupleTypeExpression(program[program.castUnchecked(syntaxId, to: TupleTypeExpression.self)])
+    case WildcardLiteral.self:
+      addWildcardLiteral(program[program.castUnchecked(syntaxId, to: WildcardLiteral.self)])
 
     // Patterns:
-    case let p as BindingPattern:
-      addBindingPattern(p)
-    case let p as ExtractorPattern:
-      addExtractorPattern(p)
-    case let p as TuplePattern:
-      addTuplePattern(p)
+    case BindingPattern.self:
+      addBindingPattern(program[program.castUnchecked(syntaxId, to: BindingPattern.self)])
+    case ExtractorPattern.self:
+      addExtractorPattern(program[program.castUnchecked(syntaxId, to: ExtractorPattern.self)])
+    case TuplePattern.self:
+      addTuplePattern(program[program.castUnchecked(syntaxId, to: TuplePattern.self)])
 
     default:
-      logger.warning("Unknown syntax node type: \(type(of: syntax)) - \(syntax)")
-    // printStackTrace()
+      logger.warning("Unknown syntax node type: \(tag)")
     }
   }
 

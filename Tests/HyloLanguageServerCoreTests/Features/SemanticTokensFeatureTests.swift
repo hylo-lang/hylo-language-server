@@ -8,8 +8,8 @@ final class SemanticTokensFeatureTests: XCTestCase {
   var context: LSPTestContext!
 
   override func setUp() async throws {
-    context = LSPTestContext(tag: "SemanticTokensFeatureTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(
+      tag: "SemanticTokensFeatureTests", rootUri: "file:///test")
   }
 
   func testSemanticTokensContainFunctionIdentifierToken() async throws {

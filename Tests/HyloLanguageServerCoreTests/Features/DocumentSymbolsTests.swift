@@ -13,8 +13,7 @@ final class DocumentSymbolsTests: XCTestCase {
   var context: LSPTestContext!
 
   override func setUp() async throws {
-    context = LSPTestContext(tag: "DocumentSymbolsTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(tag: "DocumentSymbolsTests", rootUri: "file:///test")
   }
 
   // MARK: - Empty File Test

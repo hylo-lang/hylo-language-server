@@ -19,8 +19,7 @@ final class LSPIntegrationTests: XCTestCase {
   var context: LSPTestContext!
 
   override func setUp() async throws {
-    context = LSPTestContext(tag: "LSPIntegrationTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(tag: "LSPIntegrationTests", rootUri: "file:///test")
   }
 
   // MARK: - Marker-Driven Integration Tests

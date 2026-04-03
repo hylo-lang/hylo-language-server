@@ -75,6 +75,21 @@ private struct CompilationHelper {
   }
 }
 
+/// Manages open documents and their lazily analyzed program.
+///
+/// ## Initialization
+/// `DocumentProvider` follows a two-phase setup required by the LSP protocol:
+///
+/// 1. Create an instance via `init(connection:logger:standardLibrary:)` before the
+///    client handshake (or via `make(connection:logger:standardLibrary:params:)` when
+///    `InitializeParams` are already available, e.g. in tests).
+/// 2. Call `initialize(_:)` exactly once when the LSP `initialize` request arrives to
+///    record the workspace root and folders.  All workspace-relative queries assume
+///    this step has been completed.
+///
+/// This separation exists because the server must begin listening for messages before
+/// the client sends `initialize`; the params are therefore not available at construction
+/// time in the live-server path.
 public actor DocumentProvider {
   private var documents: [AbsoluteUrl: DocumentContext]
   public let logger: Logger
@@ -86,6 +101,9 @@ public actor DocumentProvider {
   private var stdlibCache: [AbsoluteUrl: StandardLibraryCache] = [:]
   public let defaultStdlibRoot: URL
 
+  /// Creates an instance ready for the pre-handshake phase of the LSP lifecycle.
+  ///
+  /// Call `initialize(_:)` once the LSP `initialize` request is received.
   public init(connection: JSONRPCClientConnection, logger: Logger, standardLibrary: URL) {
     self.logger = logger
     documents = [:]
@@ -95,6 +113,22 @@ public actor DocumentProvider {
     logger.info("Using stdlib path: \(standardLibrary)")
   }
 
+  /// Creates a fully initialized instance from `params` and returns the corresponding
+  /// `InitializationResponse`.  Use this factory when `InitializeParams` are available
+  /// at construction time (e.g. in tests or when replaying a recorded session).
+  public static func make(
+    connection: JSONRPCClientConnection,
+    logger: Logger,
+    standardLibrary: URL,
+    parameters: InitializeParams
+  ) async throws(AnyJSONRPCResponseError) -> (DocumentProvider, InitializationResponse) {
+    let provider = DocumentProvider(
+      connection: connection, logger: logger, standardLibrary: standardLibrary)
+    let response = try await provider.initialize(parameters)
+    return (provider, response)
+  }
+
+  /// Applies the LSP `initialize` handshake parameters to this instance and returns the available server capabilities.
   public func initialize(_ params: InitializeParams) async throws(AnyJSONRPCResponseError)
     -> InitializationResponse
   {

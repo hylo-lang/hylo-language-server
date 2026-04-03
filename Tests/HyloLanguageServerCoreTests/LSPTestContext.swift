@@ -17,58 +17,32 @@ public actor LSPTestContext {
   let notificationHandler: HyloNotificationHandler
   public let logger: Logger
 
-  /// Creates a new test context
-  /// - Parameters:
-  ///   - standardLibrary: Path to the Hylo standard library's root folder
-  ///   - logger: Logger instance for debugging test execution
-  public init(tag: String) {
-    logger = {
-      var l = Logger(label: tag)
-      l.logLevel = .debug
-      return l
-    }()
+  private init(
+    documentProvider: DocumentProvider,
+    requestHandler: HyloRequestHandler,
+    notificationHandler: HyloNotificationHandler,
+    logger: Logger
+  ) {
+    self.documentProvider = documentProvider
+    self.requestHandler = requestHandler
+    self.notificationHandler = notificationHandler
+    self.logger = logger
+  }
 
-    // Create a mock data channel for testing
+  /// Creates a fully initialized test context with the given workspace configuration.
+  public static func make(
+    tag: String,
+    rootUri: String? = nil,
+    workspaceFolders: [WorkspaceFolder] = []
+  ) async throws -> LSPTestContext {
+    var logger = Logger(label: tag)
+    logger.logLevel = .debug
+
     let dataChannel = DataChannel.stdioPipe()
     let connection = JSONRPCClientConnection(dataChannel)
 
-    // Create the document provider
-    self.documentProvider = DocumentProvider(
-      connection: connection,
-      logger: self.logger,
-      standardLibrary: StandardLibrary.bundledStandardLibrarySources
-    )
-
-    // Create handlers
-    self.requestHandler = HyloRequestHandler(
-      connection: connection,
-      logger: self.logger,
-      documentProvider: documentProvider
-    )
-
-    // Note: exitSemaphore is not used in tests, but required for initialization
-    let exitSemaphore = AsyncSemaphore(value: 0)
-    self.notificationHandler = HyloNotificationHandler(
-      connection: connection,
-      logger: self.logger,
-      documentProvider: documentProvider,
-      exitSemaphore: exitSemaphore
-    )
-  }
-
-  /// Initialize the LSP server with workspace configuration
-  public func initialize(
-    rootUri: String? = nil,
-    workspaceFolders: [WorkspaceFolder] = []
-  ) async throws {
     let capabilities = ClientCapabilities(
-      workspace: nil,
-      textDocument: nil,
-      window: nil,
-      general: nil,
-      experimental: nil
-    )
-
+      workspace: nil, textDocument: nil, window: nil, general: nil, experimental: nil)
     let params = InitializeParams(
       processId: nil,
       locale: nil,
@@ -80,7 +54,30 @@ public actor LSPTestContext {
       workspaceFolders: workspaceFolders
     )
 
-    _ = try await documentProvider.initialize(params)
+    let (documentProvider, _) = try await DocumentProvider.make(
+      connection: connection,
+      logger: logger,
+      standardLibrary: StandardLibrary.bundledStandardLibrarySources,
+      parameters: params
+    )
+
+    let requestHandler = HyloRequestHandler(
+      connection: connection, logger: logger, documentProvider: documentProvider)
+
+    let exitSemaphore = AsyncSemaphore(value: 0)
+    let notificationHandler = HyloNotificationHandler(
+      connection: connection,
+      logger: logger,
+      documentProvider: documentProvider,
+      exitSemaphore: exitSemaphore
+    )
+
+    return LSPTestContext(
+      documentProvider: documentProvider,
+      requestHandler: requestHandler,
+      notificationHandler: notificationHandler,
+      logger: logger
+    )
   }
 
   /// Opens a document with the given content

@@ -9,8 +9,7 @@ final class ListGivensCommandTests: XCTestCase {
   var context: LSPTestContext!
 
   override func setUp() async throws {
-    context = LSPTestContext(tag: "ListGivensCommandTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(tag: "ListGivensCommandTests", rootUri: "file:///test")
   }
 
   func testListGivensCommandReturnsStringEntries() async throws {
