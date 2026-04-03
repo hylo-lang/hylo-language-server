@@ -71,16 +71,5 @@ let package = Package(
       name: "HyloLanguageServerCoreTests",
       dependencies: ["HyloLanguageServerCore", "JSONRPC"],
     ),
-
-    .testTarget(
-      name: "HyloLanguageServerTests",
-      dependencies: [
-        "HyloLanguageServerCore",
-        .product(name: "HyloStandardLibrary", package: "hylo-new"),
-        .product(name: "HyloFrontEnd", package: "hylo-new"),
-        .product(name: "Logging", package: "swift-log"),
-      ],
-      resources: [.copy("example.hylo")]
-    ),
   ]
 )

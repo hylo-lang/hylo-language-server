@@ -5,7 +5,7 @@ import LanguageServerProtocol
 extension FileName {
   public var absoluteUrl: AbsoluteUrl? {
     switch self {
-    case .local(let url), .localInMemory(let url):
+    case .local(let url):
       return AbsoluteUrl(url)
     case .virtual:
       return nil
@@ -34,7 +34,7 @@ extension LanguageServerProtocol.Position {
 extension SourceSpan {
   var url: AbsoluteUrl {
     switch source.name {
-    case .local(let url), .localInMemory(let url):
+    case .local(let url):
       return AbsoluteUrl(url)
     case .virtual:
       return AbsoluteUrl(URL(string: source.name.description)!)
