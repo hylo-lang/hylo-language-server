@@ -14,8 +14,7 @@ final class GoToDefinitionTests: XCTestCase {
   var context: LSPTestContext!
 
   override func setUp() async throws {
-    context = LSPTestContext(tag: "GoToDefinitionTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(tag: "GoToDefinitionTests", rootUri: "file:///test")
   }
 
   // MARK: - Basic Definition Tests

@@ -8,8 +8,8 @@ final class DocumentHighlightFeatureTests: XCTestCase {
   var context: LSPTestContext!
 
   override func setUp() async throws {
-    context = LSPTestContext(tag: "DocumentHighlightFeatureTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(
+      tag: "DocumentHighlightFeatureTests", rootUri: "file:///test")
   }
 
   func testDocumentHighlightReturnsDeclarationAndReferences() async throws {

@@ -76,20 +76,15 @@ final class DocumentManagementTests: XCTestCase {
     let logger = createLogger()
     let dataChannel = DataChannel.stdioPipe()
     let connection = JSONRPCClientConnection(dataChannel)
-    let documentProvider = DocumentProvider(
-      connection: connection, logger: logger,
-      standardLibrary: StandardLibrary.bundledStandardLibrarySources)
 
-    let caps = ClientCapabilities(
-      workspace: nil, textDocument: nil, window: nil, general: nil, experimental: nil)
-
-    let initParam = InitializeParams(
+    let params = InitializeParams(
       processId: 1,
       locale: nil,
       rootPath: nil,
       rootUri: "/foo/a",
       initializationOptions: nil,
-      capabilities: caps,
+      capabilities: ClientCapabilities(
+        workspace: nil, textDocument: nil, window: nil, general: nil, experimental: nil),
       trace: nil,
       workspaceFolders: [
         WorkspaceFolder(uri: "/foo/b", name: "b"),
@@ -97,7 +92,12 @@ final class DocumentManagementTests: XCTestCase {
       ]
     )
 
-    _ = try await documentProvider.initialize(initParam)
+    let (documentProvider, _) = try await DocumentProvider.make(
+      connection: connection,
+      logger: logger,
+      standardLibrary: StandardLibrary.bundledStandardLibrarySources,
+      parameters: params
+    )
 
     var ws1 = await documentProvider.getWorkspaceFile("/foo/a/x.hylo")
     var ws = try XCTUnwrap(ws1)

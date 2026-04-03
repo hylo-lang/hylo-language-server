@@ -28,7 +28,7 @@ extension HyloRequestHandler {
         let node = doc.program.innermostTree(
           containing: sourcePositon, reportingDiagnosticsTo: logger)
       else {
-        return .internalError("No node at cursor.")
+        return .success(nil)  // No node found at cursor position.
       }
 
       if let name = doc.program.cast(node, to: NameExpression.self) {
@@ -54,7 +54,7 @@ extension HyloRequestHandler {
         return .success(.optionA(LSPRange(identifier.site)))
       }
 
-      return .internalError("Cannot rename symbol at cursor.")
+      return .success(nil)  // Cannot rename symbol at cursor.
     }
   }
 
@@ -85,7 +85,7 @@ extension HyloRequestHandler {
       if let name = doc.program.cast(node, to: NameExpression.self) {
         guard let declarationToRename = doc.program.declaration(referredToBy: name).target
         else {
-          return .internalError("No target to rename for related declaration.")
+          return .success(nil)  // No target to rename for related declaration.
         }
 
         return .success(

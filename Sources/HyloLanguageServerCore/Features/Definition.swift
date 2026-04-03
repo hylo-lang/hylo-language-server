@@ -22,18 +22,12 @@ extension HyloRequestHandler {
         line: params.position.line + 1, column: params.position.character + 1),
       in: sourceContainer.source)
 
-    do {
-      return .success(try resolve(sourcePositon, in: doc.program, logger: logger))
-    } catch {
-      logger.error("Definition resolution error: \(error)")
-      return .internalError("Definition resolution error: \(error)")
-    }
+    return .success(resolve(sourcePositon, in: doc.program, logger: logger))
   }
 
 }
 
-func resolve(_ p: SourcePosition, in program: Program, logger: Logger) throws -> DefinitionResponse
-{
+func resolve(_ p: SourcePosition, in program: Program, logger: Logger) -> DefinitionResponse {
   guard
     let syntaxAtCursor = program.innermostTree(containing: p, reportingDiagnosticsTo: logger)
   else {

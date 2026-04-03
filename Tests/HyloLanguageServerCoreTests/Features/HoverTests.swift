@@ -15,8 +15,7 @@ final class HoverTests: XCTestCase {
   ///
   /// Run before each test method.
   override func setUp() async throws {
-    context = LSPTestContext(tag: "HoverTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(tag: "HoverTests", rootUri: "file:///test")
   }
 
   private func assertHoverEquals(

@@ -1,6 +1,4 @@
 import LanguageServerProtocol
-import Logging
-import StandardLibrary
 import XCTest
 
 @testable import HyloLanguageServerCore
@@ -14,11 +12,7 @@ final class ReferencesTests: XCTestCase {
   var context: LSPTestContext!
 
   override func setUp() async throws {
-    var logger = Logger(label: "ReferencesTests")
-    logger.logLevel = .debug
-
-    context = LSPTestContext(tag: "ReferencesTests")
-    try await context.initialize(rootUri: "file:///test")
+    context = try await LSPTestContext.make(tag: "ReferencesTests", rootUri: "file:///test")
   }
 
   // MARK: - Basic References Tests
