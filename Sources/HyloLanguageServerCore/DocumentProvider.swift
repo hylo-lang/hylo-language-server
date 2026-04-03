@@ -262,7 +262,7 @@ public actor DocumentProvider {
 
     // Create program and helper
     var helper = CompilationHelper()
-    let moduleId = helper.program.demandModule(.standardLibrary)
+    let moduleId = helper.program.demandModule(Module.standardLibraryName)
 
     // Parse sources
     let (parseTime, parseError) = await helper.parse(sources, into: moduleId)
@@ -338,7 +338,7 @@ public actor DocumentProvider {
     // Add the main module for user code
     let mainModuleId = program.demandModule(.init("MainModule"))
 
-    program[mainModuleId].addDependency(.standardLibrary)
+    program[mainModuleId].addDependency(Module.standardLibraryName)
 
     let sourceFile = SourceFile(representing: url.url, inMemoryContents: text)
 
