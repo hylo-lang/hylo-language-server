@@ -35,7 +35,7 @@ extension HyloRequestHandler {
       )
     }
 
-    var typer = Typer(typing: currentModule, of: document.program)
+    var typer = Typer(typing: currentModule, of: document.program, loggingInferenceWhere: { _, _ in false })
 
     let givens = typer.givens(visibleFrom: document.program.scope(at: nodeId))
 

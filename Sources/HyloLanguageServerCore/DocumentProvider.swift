@@ -69,7 +69,7 @@ private struct CompilationHelper {
   {
     let clock = ContinuousClock()
     let elapsed = clock.measure {
-      program.assignTypes(module)
+      program.assignTypes(module, loggingInferenceWhere: { _, _ in false })
     }
     return (elapsed, program[module].containsError)
   }
