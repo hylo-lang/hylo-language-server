@@ -5,51 +5,49 @@ import LanguageServerProtocol
 import Logging
 
 extension HyloRequestHandler {
+
   public func documentHighlight(id: JSONId, params: DocumentHighlightParams) async -> Response<
     DocumentHighlightResponse
   > {
-    await withAnalyzedDocument(params.textDocument) { doc in
-      guard let url = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
-        return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
-      }
-      guard let sourceContainer = doc.program.findSourceContainer(url, logger: logger) else {
+    guard let url = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
+      return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
+    }
+
+    return await withAnalyzedDocument(params.textDocument) { doc in
+      let p = doc.program
+
+      guard let s = p.sourceFile(named: url.localFileName) else {
         logger.error("Failed to locate translation unit: \(params.textDocument.uri)")
         return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
       }
 
-      let sourcePositon = SourcePosition(
-        sourceContainer.source.index(
-          line: params.position.line + 1, column: params.position.character + 1),
-        in: sourceContainer.source)
+      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
-        let node = doc.program.innermostTree(
-          containing: sourcePositon, reportingDiagnosticsTo: logger)
-      else {
-        return .success(nil)
-      }
+        let node = p.innermostTree(
+          containing: cursor, reportingLogsTo: logger, in: s)
+      else { return .success(nil) }
 
-      if let declaration = doc.program.castToDeclaration(node) {
-        if let identifier = doc.program.identifier(of: declaration),
-          identifier.site.region.contains(sourcePositon.index)
+      if let declaration = p.castToDeclaration(node) {
+        if let identifier = p.identifier(of: declaration),
+          identifier.site.region.contains(cursor.index)
         {
-
           return .success(
-            highlights(of: declaration, declarationIdentifierSite: identifier.site, in: doc.program)
+            highlights(of: declaration, declarationIdentifierSite: identifier.site, in: p)
           )
         }
       }
 
-      if let name = doc.program.cast(node, to: NameExpression.self) {
-        guard let declaration = doc.program.declaration(referredToBy: name).target else {
+      if let name = p.cast(node, to: NameExpression.self) {
+        guard let declaration = p.declaration(referredToBy: name).target else {
           return .success(nil)
         }
 
         return .success(
           highlights(
             of: declaration,
-            declarationIdentifierSite: doc.program.identifier(of: declaration)?.site,
-            in: doc.program))
+            declarationIdentifierSite: p.identifier(of: declaration)?.site,
+            in: p))
       }
 
       return .success(nil)
@@ -58,9 +56,7 @@ extension HyloRequestHandler {
 
   private func highlights(
     of declaration: DeclarationIdentity, declarationIdentifierSite: SourceSpan?, in program: Program
-  )
-    -> [DocumentHighlight]
-  {
+  ) -> [DocumentHighlight] {
     var highlights = findReferences(of: declaration, in: program).map(Location.init).map {
       DocumentHighlight(range: $0.range)
     }
@@ -69,4 +65,5 @@ extension HyloRequestHandler {
     }
     return highlights
   }
+
 }

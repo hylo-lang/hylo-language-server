@@ -235,19 +235,8 @@ public actor DocumentProvider {
     var sources: [SourceFile] = []
 
     try SourceFile.forEach(in: stdlibPath.url) { sourceFile in
-      // Check if we have an in-memory version of this file
-
-      if let sourceUrl = sourceFile.name.absoluteUrl,
-        let context = documents[sourceUrl]
-      {
-        let url = sourceUrl.url
-        let text = context.doc.text
-        sources.append(SourceFile(representing: url, inMemoryContents: text))
-      } else {
-        sources.append(sourceFile)
-      }
+      sources.append(sourceFile)
     }
-
     return sources
   }
 
@@ -340,7 +329,7 @@ public actor DocumentProvider {
 
     program[mainModuleId].addDependency(Module.standardLibraryName)
 
-    let sourceFile = SourceFile(representing: url.url, inMemoryContents: text)
+    let sourceFile = SourceFile(name: .local(url.url), contents: text)
 
     var helper = CompilationHelper()
     helper.program = program

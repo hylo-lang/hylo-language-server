@@ -3,19 +3,19 @@ import FrontEnd
 import LanguageServerProtocol
 
 extension FileName {
-  public var absoluteUrl: AbsoluteUrl? {
+  public var absoluteUrl: AbsoluteUrl {
     switch self {
     case .local(let url):
       return AbsoluteUrl(url)
     case .virtual:
-      return nil
+      return AbsoluteUrl(fromUrlString: self.description)!
     }
   }
 }
 
 extension LanguageServerProtocol.Location {
   public init(_ range: SourceSpan) {
-    self.init(uri: range.url.nativePath, range: LSPRange(range))
+    self.init(uri: range.absoluteURL.nativePath, range: LSPRange(range))
   }
 }
 
@@ -31,13 +31,17 @@ extension LanguageServerProtocol.Position {
   }
 }
 
+extension SourcePosition {
+
+  /// Creates a `SourcePosition` from an LSP `Position` within a given source file.
+  public init(_ position: LanguageServerProtocol.Position, in source: SourceFile) {
+    self.init(source.index(line: position.line + 1, column: position.character + 1), in: source)
+  }
+
+}
+
 extension SourceSpan {
-  var url: AbsoluteUrl {
-    switch source.name {
-    case .local(let url):
-      return AbsoluteUrl(url)
-    case .virtual:
-      return AbsoluteUrl(URL(string: source.name.description)!)
-    }
+  var absoluteURL: AbsoluteUrl {
+    source.name.absoluteUrl
   }
 }

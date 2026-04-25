@@ -17,43 +17,36 @@ extension HyloRequestHandler {
   public func semanticTokensFull(
     id: JSONId, params: SemanticTokensParams, program: Program
   ) async -> Result<SemanticTokensResponse, AnyJSONRPCResponseError> {
-    let tokens = getSemanticTokens(of: params.textDocument.uri, in: program, logger: logger)
-    logger.debug("[\(params.textDocument.uri)] Return \(tokens.count) semantic tokens")
-    return .success(SemanticTokens(tokens: tokens))
-  }
-}
+    
+    logger.debug("List semantic tokens in document: \(params.textDocument.uri)")
 
-private func getSemanticTokens(of document: DocumentUri, in program: Program, logger: Logger)
-  -> [SemanticToken]
-{
-  logger.debug("List semantic tokens in document: \(document)")
+    guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
+      return .invalidParameters("Invalid document URI: \(params.textDocument.uri)")
+    }
+    guard let s = program.sourceFile(named: source.localFileName) else {
+      logger.error("Failed to locate translation unit for document: \(params.textDocument.uri)")
+      return .invalidParameters("Failed to locate translation unit for document: \(params.textDocument.uri)")
+    }
 
-  if let source = program.findSourceContainer(AbsoluteUrl(URL(string: document)!), logger: logger) {
-    logger.debug(
-      "Translation unit found with \(source.topLevelDeclarations.count) top-level declarations")
-
+    let ds = program.topLevelDeclarations(in: s)
     var walker = SemanticTokensWalker(
-      document: document, translationUnit: source,
+      topLevelDeclarations: ds,
       program: program, logger: logger)
-    return walker.walk()
-  }
 
-  logger.error("Failed to locate translation unit for document: \(document)")
-  return []
+    return .success(SemanticTokens(tokens: walker.walk()))
+  }
 }
 
-struct SemanticTokensWalker {
-  public let document: DocumentUri
-  public let translationUnit: Module.SourceContainer
+struct SemanticTokensWalker<TopLevelDeclarations: Sequence> where TopLevelDeclarations.Element == DeclarationIdentity {
+  public let topLevelDeclarations: TopLevelDeclarations
   public let program: Program
   private let logger: Logger
   private(set) var tokens: [SemanticToken]
 
   public init(
-    document: DocumentUri, translationUnit: Module.SourceContainer, program: Program, logger: Logger
+    topLevelDeclarations: TopLevelDeclarations, program: Program, logger: Logger
   ) {
-    self.document = document
-    self.translationUnit = translationUnit
+    self.topLevelDeclarations = topLevelDeclarations
     self.program = program
     self.tokens = []
     self.logger = logger
@@ -61,17 +54,14 @@ struct SemanticTokensWalker {
 
   public mutating func walk() -> [SemanticToken] {
     precondition(tokens.isEmpty)
-    logger.debug("Walking \(translationUnit.topLevelDeclarations.count) top-level declarations")
-    addMemberDeclarations(translationUnit.topLevelDeclarations)
+    addMemberDeclarations(topLevelDeclarations)
     logger.debug("Generated \(tokens.count) semantic tokens")
     return tokens
   }
 
-  mutating func addMemberDeclarations(_ members: [DeclarationIdentity]) {
-    logger.debug("Processing \(members.count) member declarations")
-    for (index, m) in members.enumerated() {
-      logger.debug("Processing member \(index + 1)/\(members.count): \(m)")
-      addSyntax(syntaxId: m.erased)
+  mutating func addMemberDeclarations(_ members: some Sequence<DeclarationIdentity>) {
+    for d in members {
+      addSyntax(syntaxId: d.erased)
     }
   }
 

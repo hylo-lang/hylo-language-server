@@ -9,33 +9,29 @@ extension HyloRequestHandler {
   public func definition(id: JSONId, params: TextDocumentPositionParams, doc: AnalyzedDocument)
     async -> Response<DefinitionResponse>
   {
+    let p = doc.program
     guard let url = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
       return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
     }
-    guard let sourceContainer = doc.program.findSourceContainer(url, logger: logger) else {
-      logger.error("Failed to locate translation unit: \(params.textDocument.uri)")
+    guard let s = p.sourceFile(named: url.localFileName) else {
       return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
     }
 
-    let sourcePositon = SourcePosition(
-      sourceContainer.source.index(
-        line: params.position.line + 1, column: params.position.character + 1),
-      in: sourceContainer.source)
+    let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
-    return .success(resolve(sourcePositon, in: doc.program, logger: logger))
+    return .success(resolve(cursor, in: doc.program, logger: logger, in: s))
   }
 
 }
 
-func resolve(_ p: SourcePosition, in program: Program, logger: Logger) -> DefinitionResponse {
-  guard
-    let syntaxAtCursor = program.innermostTree(containing: p, reportingDiagnosticsTo: logger)
-  else {
-    return nil
-  }
+func resolve(
+  _ p: SourcePosition, in program: Program, logger: Logger, in f: SourceFile.ID
+) -> DefinitionResponse {
+  guard let d = program.innermostTree(containing: p, reportingLogsTo: logger, in: f)
+  else { return nil }
 
   if let decl = resolveDefinition(
-    program: program, syntaxAtCursor, visibleFrom: program.scope(at: syntaxAtCursor))
+    program: program, d, visibleFrom: program.scope(at: d))
   {
     return .optionA(Location(program[decl].site))
   }
@@ -46,11 +42,11 @@ func resolveDefinition(
   program: Program,
   _ node: AnySyntaxIdentity, visibleFrom scopeOfUse: ScopeIdentity
 ) -> DeclarationIdentity? {
-  if let call = program.cast(node, to: Call.self),
-    let calleeExpression = program.callee(ExpressionIdentity(call)),
-    let calleeName = program.cast(calleeExpression, to: NameExpression.self)
+  if let c = program.cast(node, to: Call.self),
+    let callee = program.callee(ExpressionIdentity(c)),
+    let n = program.cast(callee, to: NameExpression.self)
   {
-    return program.declaration(referredToBy: calleeName).target
+    return program.declaration(referredToBy: n).target
   }
 
   if let nameId = program.cast(node, to: NameExpression.self) {

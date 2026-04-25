@@ -5,13 +5,24 @@ import LanguageServerProtocol
 import Logging
 
 extension HyloRequestHandler {
+  
   public func documentSymbol(
-    id: JSONId, params: DocumentSymbolParams, program: Program
-  )
-    async -> Result<DocumentSymbolResponse, AnyJSONRPCResponseError>
-  {
-    let symbols = listDocumentSymbols(
-      AbsoluteUrl(fromUrlString: params.textDocument.uri)!, in: program, logger: logger)
+    id: JSONId, params: DocumentSymbolParams, in p: Program
+  ) async -> Result<DocumentSymbolResponse, AnyJSONRPCResponseError> {
+
+    guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
+      return .invalidParameters("Invalid URI: \(params.textDocument.uri)")
+    }
+    
+    logger.debug("List symbols in document: \(source)")
+    guard let s = p.sourceFile(named: source.localFileName) else {
+      return .internalError("Failed to locate source file: \(source)")
+    }
+
+    let ds = p.topLevelDeclarations(in: s)
+
+    let collector = DocumentSymbolCollector(program: p, logger: logger)
+    let symbols = collector.collectSymbols(from: ds)
 
     for symbol in symbols {
       precondition(validateRange(symbol))
@@ -23,24 +34,10 @@ extension HyloRequestHandler {
     DocumentSymbolResponse
   > {
     await withDocumentAST(params.textDocument) { ast in
-      await documentSymbol(id: id, params: params, program: ast)
+      await documentSymbol(id: id, params: params, in: ast)
     }
   }
-}
 
-private func listDocumentSymbols(_ document: AbsoluteUrl, in program: Program, logger: Logger)
-  -> [DocumentSymbol]
-{
-  logger.debug("List symbols in document: \(document)")
-
-  guard let sourceContainer = program.findSourceContainer(document, logger: logger) else {
-    logger.error("Failed to locate translation unit: \(document)")
-    return []
-  }
-
-  let collector = DocumentSymbolCollector(program: program, logger: logger)
-
-  return collector.collectSymbols(from: sourceContainer.topLevelDeclarations)
 }
 
 /// A helper for collecting document symbols from the syntax tree.
@@ -53,7 +50,7 @@ struct DocumentSymbolCollector {
     self.logger = logger
   }
 
-  public func collectSymbols(from declarations: [DeclarationIdentity]) -> [DocumentSymbol] {
+  public func collectSymbols(from declarations: some Sequence<DeclarationIdentity>) -> [DocumentSymbol] {
     return declarations.compactMap { getDocumentSymbol(for: $0.erased) }
   }
 
