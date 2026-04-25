@@ -5,23 +5,25 @@ import LanguageServerProtocol
 import Logging
 
 extension HyloRequestHandler {
+
   public func diagnostics(id: JSONId, params: DocumentDiagnosticParams) async -> Response<
     DocumentDiagnosticReport
   > {
     do {
       let p = try await documentProvider.getAnalyzedDocument(params.textDocument).program
 
-      guard
-        let sourceContainer = p.findSourceContainer(
-          AbsoluteUrl(fromUrlString: params.textDocument.uri)!, logger: logger)
-      else {
+      guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
+        return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
+      }
+      guard let s = p.sourceFile(named: source.localFileName) else {
         return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
       }
+      let ds = p.diagnostics(in: s)
 
       return .success(
         buildReport(
           uri: AbsoluteUrl(fromUrlString: params.textDocument.uri)!,
-          diagnostics: sourceContainer.diagnostics)
+          diagnostics: ds)
       )
     } catch {
       return .internalError("Unknown build error: \(error)")
@@ -38,9 +40,8 @@ func buildReport(uri: AbsoluteUrl, diagnostics: DiagnosticSet)
 
   var relatedDocuments: [DocumentUri: LanguageServerProtocol.DocumentDiagnosticReport] = [:]
   for d in fromOtherDocument {
-    if let documentUri = d.site.source.name.absoluteUrl?.nativePath {
-      relatedDocuments[documentUri] = DocumentDiagnosticReport(kind: .full, items: [.init(d)])
-    }
+    let u = d.site.source.name.absoluteUrl.url.absoluteString
+    relatedDocuments[u] = DocumentDiagnosticReport(kind: .full, items: [.init(d)])
   }
 
   return RelatedDocumentDiagnosticReport(

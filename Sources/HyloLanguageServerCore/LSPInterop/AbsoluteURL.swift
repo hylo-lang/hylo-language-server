@@ -1,4 +1,5 @@
 import Foundation
+import FrontEnd
 
 /// Represents a URL that's guaranteed to be absolute.
 ///
@@ -38,6 +39,12 @@ public struct AbsoluteUrl: Sendable, Hashable, CustomStringConvertible {
   public var description: String {
     url.absoluteString
   }
+
+  /// The identifier for the corresponding file in Hylo front-end.
+  public var localFileName: FileName {
+    .local(url)
+  }
+
 }
 
 /// Converts path component separators to their native version.

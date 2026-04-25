@@ -4,46 +4,30 @@ import LanguageServer
 import LanguageServerProtocol
 
 extension HyloRequestHandler {
+
   func givens(arguments: [LSPAny], location: Location, document: AnalyzedDocument) -> Response<
     LSPAny?
   > {
+    var p = document.program
+
     guard let url = AbsoluteUrl(fromUrlString: location.uri) else {
       return .invalidParameters("Invalid document uri: \(location.uri)")
     }
-    guard let sourceContainer = document.program.findSourceContainer(url, logger: logger) else {
-      return .internalError("Failed to locate translation unit: \(location.uri)")
+    guard let s = p.sourceFile(named: url.localFileName) else {
+      return .internalError("Failed to locate module: \(location.uri)")
     }
 
-    let sourcePosition = SourcePosition(
-      sourceContainer.source.index(
-        line: location.range.start.line + 1, column: location.range.start.character + 1),
-      in: sourceContainer.source)
+    let cursor = SourcePosition(location.range.start, in: p[sourceFile: s])
 
     guard
-      let nodeId = document.program.innermostTree(
-        containing: sourcePosition, reportingDiagnosticsTo: logger)
+      let n = document.program.innermostTree(
+        containing: cursor, reportingLogsTo: logger, in: s)
     else {
       return .success([])  // No node at cursor
     }
 
-    guard
-      let currentModule = document.program.findModuleContaining(
-        sourceUrl: sourceContainer.source.name.absoluteUrl!, logger: logger)
-    else {
-      return .internalError(
-        "Could not find module containing source file at url \(sourceContainer.source.name.absoluteUrl, default: "<no url>")"
-      )
-    }
-
-    var typer = Typer(typing: currentModule, of: document.program, loggingInferenceWhere: { _, _ in false })
-
-    let givens = typer.givens(visibleFrom: document.program.scope(at: nodeId))
-
-    var printer = TreePrinter(program: document.program)
-    let givenDescriptions =
-      givens
-      .flatMap { $0 }
-      .map { given in LSPAny.string(show(given, using: &printer)) }
+    let givenDescriptions = p.givens(in: s.module, visibleFrom: p.scope(at: n))
+      .map { given in LSPAny.string(p.show(given)) }
 
     return .success(LSPAny.array(givenDescriptions))
   }
@@ -57,26 +41,30 @@ extension HyloRequestHandler {
       return givens(arguments: arguments, location: location, document: doc)
     }
   }
+
 }
 
-/// Formats a given for display, using the printer to show referenced types.
-private func show(_ given: Given, using printer: inout TreePrinter) -> String {
-  switch given {
-  case .user(let declaration):
-    return printer.show(declaration)
+extension Given: @retroactive Showable {
 
-  case .coercion(let property):
-    return "[coercion]: \(property)"
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    switch self {
+    case .user(let declaration):
+      return printer.show(declaration)
 
-  case .recursive(let type):
-    return "[recursive]: \(printer.show(type))"
+    case .coercion(let property):
+      return "[coercion]: \(property)"
 
-  case .assumed(let index, let type):
-    return "[assumed \(index)]: \(printer.show(type))"
+    case .recursive(let type):
+      return "[recursive]: \(printer.show(type))"
 
-  case .nested(let traitDecl, let nestedGiven):
-    let traitName = printer.program[traitDecl].identifier.value
-    let nested = show(nestedGiven, using: &printer)
-    return "[nested in \(traitName)]: \(nested)"
+    case .assumed(let index, let type):
+      return "[assumed \(index)]: \(printer.show(type))"
+
+    case .nested(let traitDecl, let nestedGiven):
+      let traitName = printer.program[traitDecl].identifier.value
+      return "[nested in \(traitName)]: \(printer.show(nestedGiven))"
+    }
   }
+
 }

@@ -11,45 +11,41 @@ extension HyloRequestHandler {
     PrepareRenameResponse
   > {
     await withAnalyzedDocument(params.textDocument) { doc in
-      guard let url = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
+      let p = doc.program
+      guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
         return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
       }
-      guard let sourceContainer = doc.program.findSourceContainer(url, logger: logger) else {
+      guard let s = p.sourceFile(named: source.localFileName) else {
         logger.error("Failed to locate translation unit: \(params.textDocument.uri)")
         return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
       }
 
-      let sourcePositon = SourcePosition(
-        sourceContainer.source.index(
-          line: params.position.line + 1, column: params.position.character + 1),
-        in: sourceContainer.source)
+      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
-        let node = doc.program.innermostTree(
-          containing: sourcePositon, reportingDiagnosticsTo: logger)
-      else {
-        return .success(nil)  // No node found at cursor position.
-      }
+        let node = p.innermostTree(
+          containing: cursor, reportingLogsTo: logger, in: s)
+      else { return .success(nil) }  // No node found at cursor position.
 
-      if let name = doc.program.cast(node, to: NameExpression.self) {
+      if let name = p.cast(node, to: NameExpression.self) {
         // If no target declaration, cannot be renamed.
-        guard let referredDeclaration = doc.program.declaration(referredToBy: name).target else {
+        guard let referred = p.declaration(referredToBy: name).target else {
           return .success(nil)
         }
         // Cannot rename initializers.
-        if let f = doc.program.cast(referredDeclaration, to: FunctionDeclaration.self) {
-          if doc.program[f].introducer.value != .fun { return .success(nil) }
+        if let f = p.cast(referred, to: FunctionDeclaration.self) {
+          if p[f].introducer.value != .fun { return .success(nil) }
         }
         // Cannot rename `self` parameter
-        if let p = doc.program.cast(referredDeclaration, to: ParameterDeclaration.self) {
-          if doc.program[p].identifier.value == "self" { return .success(nil) }
+        if let r = p.cast(referred, to: ParameterDeclaration.self) {
+          if p[r].identifier.value == "self" { return .success(nil) }
         }
 
-        return .success(.optionA(LSPRange(doc.program[name].name.site)))
+        return .success(.optionA(LSPRange(p[name].name.site)))
       }
 
-      if let declaration = doc.program.castToDeclaration(node),
-        let identifier = doc.program.identifier(of: declaration)
+      if let declaration = p.castToDeclaration(node),
+        let identifier = p.identifier(of: declaration)
       {
         return .success(.optionA(LSPRange(identifier.site)))
       }
@@ -62,45 +58,37 @@ extension HyloRequestHandler {
     // todo validate new name
 
     await withAnalyzedDocument(params.textDocument) { doc in
-      guard let url = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
+      let p = doc.program
+
+      guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
         return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
       }
-      guard let sourceContainer = doc.program.findSourceContainer(url, logger: logger) else {
-        logger.error("Failed to locate translation unit: \(params.textDocument.uri)")
+      guard let s = p.sourceFile(named: source.localFileName) else {
         return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
       }
 
-      let sourcePositon = SourcePosition(
-        sourceContainer.source.index(
-          line: params.position.line + 1, column: params.position.character + 1),
-        in: sourceContainer.source)
+      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
-        let node = doc.program.innermostTree(
-          containing: sourcePositon, reportingDiagnosticsTo: logger)
+        let node = p.innermostTree(
+          containing: cursor, reportingLogsTo: logger, in: s)
       else {
         return .success(nil)
       }
 
-      if let name = doc.program.cast(node, to: NameExpression.self) {
-        guard let declarationToRename = doc.program.declaration(referredToBy: name).target
+      if let name = p.cast(node, to: NameExpression.self) {
+        guard let renamee = p.declaration(referredToBy: name).target
         else {
           return .success(nil)  // No target to rename for related declaration.
         }
 
         return .success(
-          workspaceEditsForRenaming(
-            declaration: declarationToRename,
-            to: params.newName,
-            in: doc.program))
+          workspaceEditsForRenaming(declaration: renamee, to: params.newName, in: p))
       }
 
-      if let declaration = doc.program.castToDeclaration(node) {
+      if let declaration = p.castToDeclaration(node) {
         return .success(
-          workspaceEditsForRenaming(
-            declaration: declaration,
-            to: params.newName,
-            in: doc.program))
+          workspaceEditsForRenaming(declaration: declaration, to: params.newName, in: p))
       }
       return .success(nil)
     }
@@ -125,7 +113,7 @@ extension HyloRequestHandler {
 func workspaceEdits(renaming: [SourceSpan], to: String) -> WorkspaceEdit {
   var changes: [DocumentUri: [TextEdit]] = [:]
   for span in renaming {
-    let uri = DocumentUri(span.source.name.absoluteUrl!.url.absoluteString)
+    let uri = DocumentUri(span.source.name.absoluteUrl.url.absoluteString)
     let edit = TextEdit(
       range: LSPRange(span),
       newText: to)
