@@ -33,8 +33,6 @@ on:
 
 env:
   swift-version: '6.2'
-  llvm-version: '20.1.6'
-  llvm-build-release: '20251207-115516'
 
 jobs:
   build-linux:
@@ -56,7 +54,7 @@ jobs:
         submodules: 'true'
         ref: ${{ inputs.git-ref }}
 
-    - name: Setup swift
+    - name: Setup Swift
       uses: SwiftyLab/setup-swift@latest
       with:
         swift-version: ${{ env.swift-version }}
@@ -91,7 +89,7 @@ jobs:
         submodules: 'true'
         ref: ${{ inputs.git-ref }}
 
-    - name: Setup swift
+    - name: Setup Swift
       uses: SwiftyLab/setup-swift@latest
       with:
         swift-version: ${{ env.swift-version }}
@@ -112,7 +110,7 @@ jobs:
     #   fail-fast: false
     runs-on: windows-latest
     steps:
-    - name: Setup swift
+    - name: Setup Swift
       uses: compnerd/gha-setup-swift@main
       with:
         branch: swift-${{ env.swift-version }}-release
