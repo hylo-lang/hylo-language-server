@@ -49,9 +49,9 @@ jobs:
 
     runs-on: ${{ matrix.host.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
-        submodules: 'true'
+        submodules: recursive
         ref: ${{ inputs.git-ref }}
 
     - name: Setup Swift
@@ -84,9 +84,9 @@ jobs:
     runs-on: ${{ matrix.host.os }}
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
-        submodules: 'true'
+        submodules: recursive
         ref: ${{ inputs.git-ref }}
 
     - name: Setup Swift
@@ -116,9 +116,9 @@ jobs:
         branch: swift-${{ env.swift-version }}-release
         tag: ${{ env.swift-version }}-RELEASE
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
-        submodules: 'true'
+        submodules: recursive
         ref: ${{ inputs.git-ref }}
 
     - name: Build (${{ inputs.build-type }})
@@ -141,7 +141,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: 'true'
+          submodules: recursive
           ref: ${{ inputs.git-ref }}
 
       - name: Set up Swift ${{ matrix.swift }} on ${{ matrix.os }}
