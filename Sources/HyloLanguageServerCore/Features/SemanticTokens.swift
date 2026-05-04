@@ -17,7 +17,7 @@ extension HyloRequestHandler {
   public func semanticTokensFull(
     id: JSONId, params: SemanticTokensParams, program: Program
   ) async -> Result<SemanticTokensResponse, AnyJSONRPCResponseError> {
-    
+
     logger.debug("List semantic tokens in document: \(params.textDocument.uri)")
 
     guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
@@ -25,7 +25,8 @@ extension HyloRequestHandler {
     }
     guard let s = program.sourceFile(named: source.localFileName) else {
       logger.error("Failed to locate translation unit for document: \(params.textDocument.uri)")
-      return .invalidParameters("Failed to locate translation unit for document: \(params.textDocument.uri)")
+      return .invalidParameters(
+        "Failed to locate translation unit for document: \(params.textDocument.uri)")
     }
 
     let ds = program.topLevelDeclarations(in: s)
@@ -37,7 +38,9 @@ extension HyloRequestHandler {
   }
 }
 
-struct SemanticTokensWalker<TopLevelDeclarations: Sequence> where TopLevelDeclarations.Element == DeclarationIdentity {
+struct SemanticTokensWalker<TopLevelDeclarations: Sequence>
+where TopLevelDeclarations.Element == DeclarationIdentity {
+
   public let topLevelDeclarations: TopLevelDeclarations
   public let program: Program
   private let logger: Logger

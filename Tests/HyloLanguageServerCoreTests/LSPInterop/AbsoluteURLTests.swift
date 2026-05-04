@@ -119,6 +119,8 @@ final class AbsoluteUrlTests: XCTestCase {
     XCTAssertEqual(
       FileName.local(.init(filePath: "/foo/bar")).absoluteUrl,
       try XCTUnwrap(AbsoluteUrl(fromPath: "/foo/bar")))
-    XCTAssertEqual(FileName.virtual(URL(string: "virtual:///12")!).absoluteUrl, AbsoluteUrl(fromUrlString: "virtual:///12"))
+    XCTAssertEqual(
+      FileName.virtual(URL(string: "virtual:///12")!).absoluteUrl,
+      AbsoluteUrl(fromUrlString: "virtual:///12"))
   }
 }
