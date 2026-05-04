@@ -17,4 +17,4 @@ cd vscode-hylo
 npm install
 npm run package:vsix
 VERSION=$(cat package.json | jq -r ".version")
-code --install-extension hylo-vscode-$VERSION.vsix
+code --install-extension hylo-$VERSION.vsix

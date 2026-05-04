@@ -43,6 +43,7 @@ final class SemanticTokensFeatureTests: XCTestCase {
           && $0.type == HyloSemanticTokenType.number.rawValue
       })
   }
+
 }
 
 extension LSPTestContext {
@@ -58,4 +59,5 @@ extension LSPTestContext {
       throw TestFailure(error.message)
     }
   }
+
 }

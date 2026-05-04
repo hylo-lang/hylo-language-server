@@ -102,4 +102,5 @@ final class GoToDefinitionTests: XCTestCase {
         definition, in: source, startMarker: 1, endMarker: 2, expectedUri: uri)
     }
   }
+
 }

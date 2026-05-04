@@ -7,6 +7,7 @@ import Logging
 // Note: Both prepareRename and rename features are implemented here.
 
 extension HyloRequestHandler {
+
   public func prepareRename(id: JSONId, params: PrepareRenameParams) async -> Response<
     PrepareRenameResponse
   > {
@@ -19,8 +20,9 @@ extension HyloRequestHandler {
         logger.error("Failed to locate translation unit: \(params.textDocument.uri)")
         return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
       }
-
-      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
+      guard let cursor = SourcePosition(params.position, in: p[sourceFile: s]) else {
+        return .invalidParameters("Position out of bounds")
+      }
 
       guard
         let node = p.innermostTree(
@@ -66,8 +68,9 @@ extension HyloRequestHandler {
       guard let s = p.sourceFile(named: source.localFileName) else {
         return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
       }
-
-      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
+      guard let cursor = SourcePosition(params.position, in: p[sourceFile: s]) else {
+        return .invalidParameters("Position out of bounds")
+      }
 
       guard
         let node = p.innermostTree(
@@ -107,6 +110,7 @@ extension HyloRequestHandler {
 
     return workspaceEdits(renaming: spansToChange, to: newName)
   }
+
 }
 
 func workspaceEdits(renaming: [SourceSpan], to: String) -> WorkspaceEdit {
@@ -122,6 +126,7 @@ func workspaceEdits(renaming: [SourceSpan], to: String) -> WorkspaceEdit {
 }
 
 extension Program {
+
   func identifier(of declaration: DeclarationIdentity) -> Parsed<String>? {
     if let associatedTypeDeclaration = cast(declaration, to: AssociatedTypeDeclaration.self) {
       return self[associatedTypeDeclaration].identifier
@@ -160,4 +165,5 @@ extension Program {
 
     return nil
   }
+
 }

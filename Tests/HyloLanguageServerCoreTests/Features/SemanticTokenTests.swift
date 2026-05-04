@@ -4,6 +4,7 @@ import LanguageServerProtocol
 import XCTest
 
 final class SemanticTokenTests: XCTestCase {
+
   func testFullySpanningToken() {
     let f: SourceFile = "hello"
 
@@ -32,4 +33,5 @@ final class SemanticTokenTests: XCTestCase {
     XCTAssertEqual(token.type, HyloSemanticTokenType.keyword.rawValue)
     XCTAssertEqual(token.modifiers, 5)
   }
+
 }

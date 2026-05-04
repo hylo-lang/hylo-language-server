@@ -31,6 +31,7 @@ struct HyloLspCommand: AsyncParsableCommand {
       dataChannel: .stdioPipe(), logger: logger, standardLibrary: URL(fileURLWithPath: stdlibPath))
     await server.run()
   }
+
 }
 
 // Allow log level to be specified as an argument.
@@ -38,4 +39,5 @@ struct HyloLspCommand: AsyncParsableCommand {
 // Assuming none of our dependencies conform Logger.Level to ExpressibleByArgument.
 // swift-format-ignore: AvoidRetroactiveConformances
 extension Logger.Level: @retroactive ExpressibleByArgument {
+
 }

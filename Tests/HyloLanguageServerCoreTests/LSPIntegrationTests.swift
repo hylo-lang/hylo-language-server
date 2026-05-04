@@ -130,4 +130,5 @@ final class LSPIntegrationTests: XCTestCase {
     XCTAssertEqual(range3.end.line, 5)
     XCTAssertEqual(range3.end.character, 20)
   }
+
 }

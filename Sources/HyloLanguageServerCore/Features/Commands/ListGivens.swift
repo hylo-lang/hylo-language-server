@@ -16,8 +16,9 @@ extension HyloRequestHandler {
     guard let s = p.sourceFile(named: url.localFileName) else {
       return .internalError("Failed to locate module: \(location.uri)")
     }
-
-    let cursor = SourcePosition(location.range.start, in: p[sourceFile: s])
+    guard let cursor = SourcePosition(location.range.start, in: p[sourceFile: s]) else {
+      return .invalidParameters("Position out of bounds")
+    }
 
     guard
       let n = document.program.innermostTree(

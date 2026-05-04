@@ -29,6 +29,7 @@ extension HyloRequestHandler {
       return .internalError("Unknown build error: \(error)")
     }
   }
+
 }
 
 func buildReport(uri: AbsoluteUrl, diagnostics: DiagnosticSet)

@@ -46,4 +46,5 @@ final class PositionStringIndexInteropTests: XCTestCase {
     let index = try XCTUnwrap(target.stringIndex(in: text))
     XCTAssertEqual(Position(in: text, at: index), target)
   }
+
 }

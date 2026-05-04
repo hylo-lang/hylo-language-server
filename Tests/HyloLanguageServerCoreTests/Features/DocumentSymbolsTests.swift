@@ -478,4 +478,5 @@ final class DocumentSymbolsTests: XCTestCase {
       }
     }
   }
+
 }

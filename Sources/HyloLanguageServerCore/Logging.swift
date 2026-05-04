@@ -6,6 +6,7 @@ public let loggerLabel = "hylo-lsp"
 
 // https://github.com/apple/swift-log/issues/63
 extension Logger {
+
   func debug(_ message: String) {
     debug(Logger.Message(stringLiteral: message))
   }
@@ -21,9 +22,11 @@ extension Logger {
   func error(_ message: String) {
     error(Logger.Message(stringLiteral: message))
   }
+
 }
 
 public struct NullLogHandler: LogHandler, Sendable {
+
   public var logLevel: Logger.Level = .critical
   public var metadata: Logger.Metadata
 
@@ -48,4 +51,5 @@ public struct NullLogHandler: LogHandler, Sendable {
     file: String, function: String, line: UInt
   ) {
   }
+
 }

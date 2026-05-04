@@ -5,14 +5,17 @@ import Logging
 import Semaphore
 
 public struct HyloErrorHandler: ErrorHandler {
+
   let logger: Logger
 
   public func internalError(_ error: Error) async {
     logger.debug("LSP stream error: \(error)")
   }
+
 }
 
 public actor HyloLanguageServer {
+
   let connection: JSONRPCClientConnection
   private let logger: Logger
   /// Path to the standard library root directory.
@@ -54,4 +57,5 @@ public actor HyloLanguageServer {
     await exitSemaphore.wait()
     logger.debug("exit")
   }
+
 }

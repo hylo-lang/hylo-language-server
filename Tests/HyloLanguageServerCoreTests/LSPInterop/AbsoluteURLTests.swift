@@ -4,6 +4,7 @@ import XCTest
 @testable import HyloLanguageServerCore
 
 final class AbsoluteUrlTests: XCTestCase {
+
   func testFromAbsoluteNativePath() throws {
     #if os(Windows)
       let testPath = "C:\\tmp\\test"
@@ -123,4 +124,5 @@ final class AbsoluteUrlTests: XCTestCase {
       FileName.virtual(URL(string: "virtual:///12")!).absoluteUrl,
       AbsoluteUrl(fromUrlString: "virtual:///12"))
   }
+
 }

@@ -61,6 +61,7 @@ final class ListGivensCommandTests: XCTestCase {
       XCTAssertFalse(value.isEmpty)
     }
   }
+
 }
 
 extension LSPTestContext {
@@ -76,4 +77,5 @@ extension LSPTestContext {
       throw TestFailure(error.message)
     }
   }
+
 }

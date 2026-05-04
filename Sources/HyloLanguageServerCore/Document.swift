@@ -3,6 +3,7 @@ import FrontEnd
 import LanguageServerProtocol
 
 public struct Document {
+
   public let uri: AbsoluteUrl
   public var version: Int?
   public var text: String
@@ -21,24 +22,31 @@ public struct Document {
     }
     self.version = version
   }
+
 }
 
 extension Document {
+
   public init(textDocument: TextDocumentItem) {
     uri = AbsoluteUrl(fromUrlString: textDocument.uri)!
     version = textDocument.version
     text = textDocument.text
   }
+
 }
 
 struct InvalidDocumentChangeRange: Error {
+
   public let range: LSPRange
+
 }
 
 /// Translates a (line, column) position in a text document to a String.Index.
 private func positionToStringIndex(_ position: Position, in text: String) -> String.Index? {
   positionToStringIndex(position, in: text, startIndex: text.startIndex, startPos: Position.zero)
 }
+
+// todo remove these inefficient/inaccurate functions.
 
 private func positionToStringIndex(
   _ position: Position, in text: String, startIndex: String.Index, startPos: Position
@@ -89,6 +97,7 @@ private func applyChange(_ change: TextDocumentContentChangeEvent, on text: inou
 }
 
 public struct AnalyzedDocument: Sendable {
+
   public let url: AbsoluteUrl
   public let program: Program
 
@@ -98,10 +107,12 @@ public struct AnalyzedDocument: Sendable {
     self.url = url
     self.program = program
   }
+
 }
 
 /// A two-way mapping between real file paths and AST source file IDs.
 public struct UriMapping: Sendable {
+
   private var translationUnitsByRealPath: [AbsoluteUrl: SourceFile.ID] = [:]
   private var realPathByAstUri: [SourceFile.ID: AbsoluteUrl] = [:]
 
@@ -117,12 +128,14 @@ public struct UriMapping: Sendable {
     translationUnitsByRealPath[realPath] = sourceFile
     realPathByAstUri[sourceFile] = realPath
   }
+
 }
 
 /// Holds a valid document and a fully typed program.
 ///
 /// May be updated when the document changes.
 struct DocumentContext {
+
   public private(set) var doc: Document
   public private(set) var program: Program
 
@@ -134,9 +147,9 @@ struct DocumentContext {
     self.program = program
   }
 
-  public mutating func applyChanges(_ changes: [TextDocumentContentChangeEvent], version: Int?)
-    throws
-  {
+  public mutating func applyChanges(
+    _ changes: [TextDocumentContentChangeEvent], version: Int?
+  ) throws {
     try doc.applyChanges(changes, version: version)
     doc.version = version
   }

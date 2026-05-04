@@ -42,6 +42,7 @@ extension HyloRequestHandler {
 
 /// A helper for collecting document symbols from the syntax tree.
 struct DocumentSymbolCollector {
+
   public let program: Program
   private let logger: Logger
 
@@ -239,4 +240,5 @@ struct DocumentSymbolCollector {
       return "lambda"
     }
   }
+
 }

@@ -18,8 +18,9 @@ extension HyloRequestHandler {
       guard let s = p.sourceFile(named: source.localFileName) else {
         return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
       }
-
-      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
+      guard let cursor = SourcePosition(params.position, in: p[sourceFile: s]) else {
+        return .invalidParameters("Position out of bounds")
+      }
 
       guard
         let nodeId = doc.program.innermostTree(
@@ -40,4 +41,5 @@ extension HyloRequestHandler {
         ))
     }
   }
+
 }

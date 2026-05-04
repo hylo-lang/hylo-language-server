@@ -2,6 +2,7 @@ import FrontEnd
 import LanguageServerProtocol
 
 extension LanguageServerProtocol.DiagnosticSeverity {
+
   public init(_ level: FrontEnd.Diagnostic.Level) {
     switch level {
     case .note:
@@ -12,9 +13,11 @@ extension LanguageServerProtocol.DiagnosticSeverity {
       self = .error
     }
   }
+
 }
 
 extension LanguageServerProtocol.Diagnostic {
+
   public init(_ diagnostic: FrontEnd.Diagnostic) {
     self.init(
       range: LSPRange(diagnostic.site),
@@ -28,4 +31,5 @@ extension LanguageServerProtocol.Diagnostic {
       }
     )
   }
+
 }

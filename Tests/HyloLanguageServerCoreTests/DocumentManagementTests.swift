@@ -23,6 +23,7 @@ func XCTUnwrapAsync<T>(
 /// - Document change application
 /// - Workspace path resolution
 final class DocumentManagementTests: XCTestCase {
+
   func createLogger() -> Logger {
     var logger = Logger(label: loggerLabel) { label in
       StreamLogHandler.standardOutput(label: label)
@@ -114,4 +115,5 @@ final class DocumentManagementTests: XCTestCase {
     XCTAssert(ws.relativePath == "x.hylo")
     XCTAssert(ws.workspace == "/foo/b/c")
   }
+
 }

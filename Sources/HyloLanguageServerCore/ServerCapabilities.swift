@@ -4,11 +4,6 @@ func getServerCapabilities() -> ServerCapabilities {
   var serverCapabilities = ServerCapabilities()
   let documentSelector = DocumentFilter(pattern: "**/*.hylo")
 
-  serverCapabilities.textDocumentSync = .optionA(
-    TextDocumentSyncOptions(
-      openClose: false, change: TextDocumentSyncKind.full, willSave: false,
-      willSaveWaitUntil: false, save: nil))
-
   serverCapabilities.textDocumentSync = .optionB(TextDocumentSyncKind.full)
   serverCapabilities.definitionProvider = .optionA(true)
   serverCapabilities.documentSymbolProvider = .optionA(true)
