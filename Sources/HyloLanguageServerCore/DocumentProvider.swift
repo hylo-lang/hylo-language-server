@@ -1,5 +1,5 @@
 import Foundation
-@preconcurrency import FrontEnd
+import FrontEnd
 import JSONRPC
 import LanguageServer
 import LanguageServerProtocol

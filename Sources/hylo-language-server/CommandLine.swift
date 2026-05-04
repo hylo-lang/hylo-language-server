@@ -6,11 +6,6 @@ import Logging
 import Puppy
 import StandardLibrary
 
-// Allow loglevel as `ArgumentParser.Option`
-// swift-format-ignore: AvoidRetroactiveConformances
-extension Logger.Level: @retroactive ExpressibleByArgument {
-}
-
 @main
 struct HyloLspCommand: AsyncParsableCommand {
 
@@ -36,4 +31,11 @@ struct HyloLspCommand: AsyncParsableCommand {
       dataChannel: .stdioPipe(), logger: logger, standardLibrary: URL(fileURLWithPath: stdlibPath))
     await server.run()
   }
+}
+
+// Allow log level to be specified as an argument.
+//
+// Assuming none of our dependencies conform Logger.Level to ExpressibleByArgument.
+// swift-format-ignore: AvoidRetroactiveConformances
+extension Logger.Level: @retroactive ExpressibleByArgument {
 }
