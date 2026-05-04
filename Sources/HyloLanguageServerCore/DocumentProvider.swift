@@ -7,7 +7,9 @@ import Logging
 import StandardLibrary
 
 public protocol TextDocumentProtocol {
+
   var uri: DocumentUri { get }
+
 }
 
 extension TextDocumentIdentifier: TextDocumentProtocol {}
@@ -15,12 +17,15 @@ extension TextDocumentItem: TextDocumentProtocol {}
 extension VersionedTextDocumentIdentifier: TextDocumentProtocol {}
 
 public enum GetDocumentContextError: Error {
+
   case invalidUri(DocumentUri)
   case documentNotOpened(AbsoluteUrl)
+
 }
 
 /// Cached standard library data
 private struct StandardLibraryCache {
+
   let program: Program
   let fingerprint: UInt64
 
@@ -28,10 +33,12 @@ private struct StandardLibraryCache {
     self.program = program
     self.fingerprint = SourceFile.fingerprint(contentsOf: sources)
   }
+
 }
 
 /// A simple compilation helper for LSP document processing
 private struct CompilationHelper {
+
   var program: Program
 
   init() {
@@ -73,6 +80,7 @@ private struct CompilationHelper {
     }
     return (elapsed, program[module].containsError)
   }
+
 }
 
 /// Manages open documents and their lazily analyzed program.
@@ -91,11 +99,12 @@ private struct CompilationHelper {
 /// the client sends `initialize`; the params are therefore not available at construction
 /// time in the live-server path.
 public actor DocumentProvider {
-  private var documents: [AbsoluteUrl: DocumentContext]
+
+  private var documents: [AbsoluteUrl: DocumentContext] = [:]
   public let logger: Logger
   let connection: JSONRPCClientConnection
   var rootUri: String?
-  var workspaceFolders: [WorkspaceFolder]
+  var workspaceFolders: [WorkspaceFolder] = []
 
   // Standard library caching
   private var stdlibCache: [AbsoluteUrl: StandardLibraryCache] = [:]
@@ -106,9 +115,7 @@ public actor DocumentProvider {
   /// Call `initialize(_:)` once the LSP `initialize` request is received.
   public init(connection: JSONRPCClientConnection, logger: Logger, standardLibrary: URL) {
     self.logger = logger
-    documents = [:]
     self.connection = connection
-    self.workspaceFolders = []
     defaultStdlibRoot = standardLibrary
     logger.info("Using stdlib path: \(standardLibrary)")
   }
@@ -196,8 +203,10 @@ public actor DocumentProvider {
   }
 
   struct WorkspaceFile {
+
     let workspace: DocumentUri
     let relativePath: String
+
   }
 
   func getWorkspaceFile(_ uri: DocumentUri) -> WorkspaceFile? {
@@ -467,12 +476,15 @@ public actor DocumentProvider {
       url: context.url,
       program: context.program)
   }
+
 }
 
 public struct DocumentProviderError: Error {
+
   public let message: String
 
   public init(_ message: String) {
     self.message = message
   }
+
 }

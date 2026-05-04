@@ -3,6 +3,7 @@ import LanguageServerProtocol
 import XCTest
 
 final class LSPDiagnosticConversionTests: XCTestCase {
+
   func testBasicProperties() {
     let f: SourceFile = "fun main()"
 
@@ -44,4 +45,5 @@ final class LSPDiagnosticConversionTests: XCTestCase {
     XCTAssertEqual(relatedInfo[0].message, "world")
     XCTAssertEqual(relatedInfo[0].location, LanguageServerProtocol.Location(f.span))
   }
+
 }

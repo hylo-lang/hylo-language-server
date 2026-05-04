@@ -25,9 +25,12 @@ import LanguageServerProtocol
 ///     source.markers           // collection of all marker poisitons
 /// ```
 public struct MarkedSource: Sendable {
+
   /// Parsing errors produced while interpreting test markers.
   public enum ParseError: Error, Equatable {
+
     case duplicateMarker(Int)
+
   }
 
   /// Positions keyed by marker number.
@@ -47,13 +50,16 @@ public struct MarkedSource: Sendable {
 
   /// Ordered marker access over parsed marker positions.
   public struct Markers: Collection, Sendable {
+
     /// Index type used to traverse sorted marker positions.
     public struct Index: Comparable, Sendable {
+
       fileprivate let offset: Int
 
       public static func < (lhs: Index, rhs: Index) -> Bool {
         lhs.offset < rhs.offset
       }
+
     }
 
     fileprivate let markerPositions: [Int: Position]
@@ -90,6 +96,7 @@ public struct MarkedSource: Sendable {
     public subscript(_ markerNumbers: [Int]) -> [Position] {
       markerNumbers.map { self[$0] }
     }
+
   }
 
   /// Returns all LSP positions from marker `a` (inclusive) up to marker `b` (exclusive).
@@ -173,6 +180,7 @@ public struct MarkedSource: Sendable {
   public subscript(marker markerValue: Int) -> Position {
     markerPositions[markerValue] ?? fatalError("Marker \(markerValue) not found in source.")
   }
+
 }
 
 extension Collection {
@@ -200,9 +208,11 @@ extension Collection {
     }
     return nil
   }
+
 }
 
 extension Character {
+
   /// Maps special marker characters to their corresponding integer values.
   fileprivate var testMarkerValue: Int? {
     switch self {
@@ -220,4 +230,5 @@ extension Character {
     default: nil
     }
   }
+
 }

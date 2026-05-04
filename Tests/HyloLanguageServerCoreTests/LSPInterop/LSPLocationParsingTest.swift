@@ -3,6 +3,7 @@ import LanguageServerProtocol
 import XCTest
 
 final class LSPLocationParsingTests: XCTestCase {
+
   func testParseValidLocation() throws {
     let json: LSPAny = [
       "uri": "file:///test.txt",

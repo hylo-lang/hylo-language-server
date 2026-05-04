@@ -27,6 +27,7 @@ final class DiagnosticsFeatureTests: XCTestCase {
     XCTAssertEqual(diagnostic.range, LSPRange(start: source.markers[0], end: source.markers[1]))
     XCTAssertEqual(diagnostic.message, "undefined symbol 'missingName'")
   }
+
 }
 
 extension LSPTestContext {
@@ -41,4 +42,5 @@ extension LSPTestContext {
       throw TestFailure(error.message)
     }
   }
+
 }

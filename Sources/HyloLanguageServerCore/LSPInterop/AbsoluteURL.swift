@@ -5,6 +5,7 @@ import FrontEnd
 ///
 /// In case of file:// scheme, the url is normalized to be absolute and start with file:///
 public struct AbsoluteUrl: Sendable, Hashable, CustomStringConvertible {
+
   let url: URL
 
   /// Creates an AbsoluteUrl from a native path.

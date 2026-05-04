@@ -35,6 +35,7 @@ final class DocumentHighlightFeatureTests: XCTestCase {
     let ranges = Set((highlights ?? []).map(\.range))
     XCTAssertEqual(ranges, expectedRanges)
   }
+
 }
 
 extension LSPTestContext {
@@ -54,4 +55,5 @@ extension LSPTestContext {
       throw TestFailure(error.message)
     }
   }
+
 }

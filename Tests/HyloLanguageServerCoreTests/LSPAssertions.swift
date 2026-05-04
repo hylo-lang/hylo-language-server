@@ -61,6 +61,7 @@ private func flattenSymbol(_ symbol: DocumentSymbol, into result: inout [Documen
 // MARK: - Range Construction Helpers
 
 extension LSPRange {
+
   /// Creates a range from line/character pairs
   public init(startPair: (Int, Int), endPair: (Int, Int)) {
     self.init(
@@ -76,4 +77,5 @@ extension LSPRange {
       end: Position(line: line, character: endChar)
     )
   }
+
 }

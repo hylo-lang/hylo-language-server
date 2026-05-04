@@ -7,6 +7,7 @@ import Logging
 import Semaphore
 
 public struct HyloNotificationHandler: NotificationHandler {
+
   public let connection: JSONRPCClientConnection
   public let logger: Logger
   var documentProvider: DocumentProvider

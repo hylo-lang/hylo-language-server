@@ -76,6 +76,7 @@ final class RenameFeatureTests: XCTestCase {
 
     return result
   }
+
 }
 
 extension LSPTestContext {
@@ -112,4 +113,5 @@ extension LSPTestContext {
       throw TestFailure(error.message)
     }
   }
+
 }

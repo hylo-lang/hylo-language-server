@@ -7,6 +7,7 @@ import Logging
 import Semaphore
 
 extension Result where Failure == AnyJSONRPCResponseError {
+
   static func invalidParameters(_ message: String) -> Self {
     return .failure(JSONRPCResponseError(code: ErrorCodes.InvalidParams, message: message))
   }
@@ -18,9 +19,11 @@ extension Result where Failure == AnyJSONRPCResponseError {
   static func invalidRequest(_ message: String) -> Self {
     return .failure(JSONRPCResponseError(code: ErrorCodes.InvalidRequest, message: message))
   }
+
 }
 
 public struct HyloRequestHandler: RequestHandler, Sendable {
+
   public func typeHierarchySubtypes(
     id: JSONRPC.JSONId, params: LanguageServerProtocol.TypeHierarchySubtypesParams
   ) async -> Response<LanguageServerProtocol.TypeHierarchySubtypesResponse> {
@@ -106,13 +109,16 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
 
     return await fn(result)
   }
+
 }
 
 extension Program {
+
   public func scope(at node: AnySyntaxIdentity) -> ScopeIdentity {
     if isScope(node) {
       return ScopeIdentity(uncheckedFrom: node)
     }
     return parent(containing: node)
   }
+
 }

@@ -12,6 +12,7 @@ import XCTest
 /// A test context that manages documents and provides direct access to LSP handlers
 /// for testing without needing a full client-server connection.
 public actor LSPTestContext {
+
   public let documentProvider: DocumentProvider
   public let requestHandler: HyloRequestHandler
   let notificationHandler: HyloNotificationHandler
@@ -180,10 +181,12 @@ public actor LSPTestContext {
       throw TestFailure(error.message)
     }
   }
+
 }
 
 /// Represents a test document with convenient access to LSP operations
 public struct TestDocument: Sendable {
+
   public let uri: String
   public let source: MarkedSource
 
@@ -196,13 +199,16 @@ public struct TestDocument: Sendable {
   public var identifier: TextDocumentIdentifier {
     TextDocumentIdentifier(uri: uri)
   }
+
 }
 
 /// Error type used for propagating test failures.
 struct TestFailure: Error {
+
   let message: String
 
   init(_ message: String) {
     self.message = message
   }
+
 }

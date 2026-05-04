@@ -134,6 +134,7 @@ final class HoverTests: XCTestCase {
     XCTAssertEqual(content1, content2)
     XCTAssertEqual(content2, content3)
   }
+
 }
 
 extension LSPTestContext {

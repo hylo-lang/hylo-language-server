@@ -3,6 +3,7 @@ import LanguageServer
 import LanguageServerProtocol
 
 extension HyloRequestHandler {
+
   public func workspaceExecuteCommand(id: JSONId, params: ExecuteCommandParams) async -> Response<
     LSPAny?
   > {
@@ -24,4 +25,5 @@ extension HyloRequestHandler {
       await definition(id: id, params: params, doc: doc)
     }
   }
+
 }

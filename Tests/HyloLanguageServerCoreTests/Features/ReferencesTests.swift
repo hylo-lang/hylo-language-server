@@ -87,4 +87,5 @@ final class ReferencesTests: XCTestCase {
       )
     }
   }
+
 }

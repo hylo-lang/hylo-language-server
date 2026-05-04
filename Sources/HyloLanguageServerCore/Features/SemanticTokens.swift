@@ -5,6 +5,7 @@ import LanguageServerProtocol
 import Logging
 
 extension HyloRequestHandler {
+
   public func semanticTokensFull(id: JSONId, params: SemanticTokensParams) async -> Result<
     SemanticTokensResponse, AnyJSONRPCResponseError
   > {
@@ -36,6 +37,7 @@ extension HyloRequestHandler {
 
     return .success(SemanticTokens(tokens: walker.walk()))
   }
+
 }
 
 struct SemanticTokensWalker<TopLevelDeclarations: Sequence>
@@ -271,20 +273,6 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
   }
 
-  // mutating func addAttributes(_ attributes: [SourceRepresentable<Attribute>]) {
-  //   for a in attributes {
-  //     addAttribute(a.value)
-  //   }
-  // }
-
-  // mutating func addAttribute(_ attribute: Attribute) {
-  //   addToken(range: attribute.name.site, type: .function)
-
-  //   for a in attribute.arguments {
-  //     addExpr(a.value)
-  //   }
-  // }
-
   mutating func addParameters(_ parameters: [ParameterDeclaration.ID]) {
     for p in parameters {
       addParameter(p)
@@ -452,33 +440,6 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
   }
 
-  // mutating func addSubscript(_ d: SubscriptDecl) {
-  //   addAttributes(d.attributes)
-  //   addAccessModifier(d.accessModifier)
-  //   addIntroducer(d.memberModifier)
-  //   addIntroducer(d.introducer)
-  //   if let identifier = d.identifier {
-  //     addToken(range: identifier.site, type: .function)
-  //   }
-
-  //   addGenericClause(d.genericClause)
-  //   addParameters(d.parameters)
-  //   addExpr(d.output, typeHint: .type)
-
-  //   for i in d.impls {
-  //     addSubscriptImpl(i)
-  //   }
-  // }
-
-  // mutating func addInitializer(_ d: InitializerDecl) {
-  //   addAttributes(d.attributes)
-  //   addAccessModifier(d.accessModifier)
-  //   addIntroducer(d.introducer)
-  //   addGenericClause(d.genericClause)
-  //   addParameters(d.parameters)
-  //   addStatements(d.body)
-  // }
-
   mutating func addFunction(_ d: FunctionDeclaration) {
     // Add modifiers
     for modifier in d.modifiers {
@@ -512,18 +473,6 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
   }
 
-  // mutating func addOperator(_ d: OperatorDecl) {
-  //   addAccessModifier(d.accessModifier)
-  //   addIntroducer(d.introducerSite)
-  //   addIntroducer(d.notation)
-  //   addIntroducer(d.introducerSite)
-  //   addToken(range: d.name.site, type: .operator)
-
-  //   if let precedenceGroup = d.precedenceGroup {
-  //     addToken(range: precedenceGroup.site, type: .identifier)
-  //   }
-  // }
-
   mutating func addFunctionBundle(_ d: FunctionBundleDeclaration) {
     // Add modifiers
     for modifier in d.modifiers {
@@ -554,152 +503,6 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
       addSyntax(syntaxId: variant.erased)
     }
   }
-
-  // mutating func addBody(_ body: FunctionBody?) {
-  //   switch body {
-  //   case nil:
-  //     break
-  //   case .expr(let e):
-  //     addExpr(e)
-  //   case .block(let b):
-  //     addStatements(b)
-  //   }
-  // }
-
-  // mutating func addStatements(_ b: BraceStmt.ID?) {
-  //   guard let b = b else {
-  //     return
-  //   }
-
-  //   addStatements(program[b].stmts)
-  // }
-
-  // mutating func addStatements(_ statements: [AnyStmtID]) {
-  //   for s in statements {
-  //     addStatement(s)
-  //   }
-  // }
-
-  // mutating func addStatement(_ statement: AnyStmtID?) {
-  //   guard let statement = statement else {
-  //     return
-  //   }
-
-  //   let s = program[statement]
-
-  //   switch s {
-  //     case let s as ExprStmt:
-  //       addExpr(s.expr)
-  //     case let s as ReturnStmt:
-  //       addToken(range: s.introducerSite, type: .keyword)
-  //       addExpr(s.value)
-  //     case let s as DeclStmt:
-  //       addSyntax(s.decl)
-  //     case let s as WhileStmt:
-  //       addIntroducer(s.introducerSite)
-  //       addConditions(s.condition)
-  //       addStatements(s.body)
-  //     case let s as ForStmt:
-  //       addIntroducer(s.introducerSite)
-  //       addBinding(program[s.binding], skipAccessModifier: true)
-  //       addIntroducer(s.domain.introducerSite)
-  //       addExpr(s.domain.value)
-  //       if let filter = s.filter {
-  //         addIntroducer(filter.introducerSite)
-  //         addExpr(filter.value)
-  //       }
-  //       addStatements(s.body)
-
-  //     case let s as DoWhileStmt:
-  //       addIntroducer(s.introducerSite)
-  //       addStatements(s.body)
-  //       addIntroducer(s.condition.introducerSite)
-  //       addExpr(s.condition.value)
-  //     case let s as AssignStmt:
-  //       addExpr(s.left)
-  //       addExpr(s.right)
-  //     case let s as ConditionalStmt:
-  //       addIntroducer(s.introducerSite)
-  //       addConditions(s.condition)
-  //       addStatements(s.success)
-  //       if let elseClause = s.failure {
-  //         addIntroducer(elseClause.introducerSite)
-  //         addStatement(elseClause.value)
-  //       }
-  //     case let s as YieldStmt:
-  //       addIntroducer(s.introducerSite)
-  //       addExpr(s.value)
-  //     case let s as BraceStmt:
-  //       addStatements(s.stmts)
-  //     case let s as DiscardStmt:
-  //       addExpr(s.expr)
-  //     default:
-  //       logger.warning("Unknown statement: \(s)")
-  //   }
-  // }
-
-  // mutating func addWhereClause(_ whereClause: SourceRepresentable<WhereClause>?) {
-  //   guard let whereClause = whereClause else {
-  //     return
-  //   }
-
-  //   addIntroducer(whereClause.value.introducerSite)
-
-  //   for c in whereClause.value.constraints {
-  //     switch c.value {
-  //     case .equality(let n, let e):
-  //       let n = program[n]
-  //       addToken(range: n.site, type: .type)
-  //       addExpr(e)
-  //     case .bound(let n, _):
-  //       let n = program[n]
-  //       addToken(range: n.site, type: .type)
-  //     case .value(let e):
-  //       addExpr(e)
-  //     }
-  //   }
-  // }
-
-  // mutating func addLabel(_ label: SourceRepresentable<Identifier>?) {
-  //   if let label = label {
-  //     addToken(range: label.site, type: .label)
-  //   }
-  // }
-
-  // mutating func addAccessModifier(_ accessModifier: SourceRepresentable<AccessModifier>) {
-  //   // Check for empty site
-  //   if accessModifier.site.start != accessModifier.site.end {
-  //     addIntroducer(accessModifier.site)
-  //   }
-  // }
-
-  // mutating func addConformances(_ conformances: [NameExpr.ID]) {
-  //   for id in conformances {
-  //     let n = program[id]
-  //     addToken(range: n.site, type: .type)
-  //   }
-  // }
-
-  // mutating func addGenericClause(_ genericClause: SourceRepresentable<GenericClause>?) {
-  //   if let genericClause = genericClause {
-  //     addGenericClause(genericClause.value)
-  //   }
-  // }
-
-  // mutating func addGenericClause(_ genericClause: GenericClause) {
-  //   addWhereClause(genericClause.whereClause)
-
-  //   for id in genericClause.parameters {
-  //     let p = program[id]
-  //     addToken(range: p.identifier.site, type: .type)
-  //     addConformances(p.conformances)
-
-  //     if let id = p.defaultValue {
-  //       let defaultValue = program[id]
-  //       addToken(range: defaultValue.site, type: .type)
-  //     }
-  //   }
-  // }
 
   // MARK: - Statement methods
 
@@ -970,4 +773,5 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
       addSyntax(syntaxId: element.erased)
     }
   }
+
 }

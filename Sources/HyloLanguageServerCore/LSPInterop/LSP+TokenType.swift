@@ -2,6 +2,7 @@ import FrontEnd
 import LanguageServerProtocol
 
 public enum HyloSemanticTokenType: UInt32, CaseIterable {
+
   case type
   case typeParameter
   case identifier
@@ -19,9 +20,11 @@ public enum HyloSemanticTokenType: UInt32, CaseIterable {
   public var description: String {
     return String(describing: self)
   }
+
 }
 
 public enum HyloSemanticTokenModifier: UInt32, CaseIterable {
+
   case `indirect` = 0
   case `static` = 1
   case `private` = 2
@@ -31,9 +34,11 @@ public enum HyloSemanticTokenModifier: UInt32, CaseIterable {
   public var description: String {
     return String(describing: self)
   }
+
 }
 
 extension SemanticToken {
+
   /// Creates an LSP SemanticToken from Hylo frontend information.
   ///
   /// Requires that range doesn't span multiple lines.
@@ -50,4 +55,5 @@ extension SemanticToken {
       modifiers: modifiers
     )
   }
+
 }
