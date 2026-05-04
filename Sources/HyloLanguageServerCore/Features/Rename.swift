@@ -103,8 +103,7 @@ extension HyloRequestHandler {
       return nil
     }
 
-    var spansToChange = findReferences(of: declaration, in: program)
-    spansToChange.append(identifier.site)
+    let spansToChange = findReferences(of: declaration, in: program) + [identifier.site]
 
     return workspaceEdits(renaming: spansToChange, to: newName)
   }
