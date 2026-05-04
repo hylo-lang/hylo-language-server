@@ -5,7 +5,7 @@ import LanguageServerProtocol
 import Logging
 
 extension HyloRequestHandler {
-  
+
   public func documentSymbol(
     id: JSONId, params: DocumentSymbolParams, in p: Program
   ) async -> Result<DocumentSymbolResponse, AnyJSONRPCResponseError> {
@@ -13,7 +13,7 @@ extension HyloRequestHandler {
     guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
       return .invalidParameters("Invalid URI: \(params.textDocument.uri)")
     }
-    
+
     logger.debug("List symbols in document: \(source)")
     guard let s = p.sourceFile(named: source.localFileName) else {
       return .internalError("Failed to locate source file: \(source)")
@@ -50,7 +50,9 @@ struct DocumentSymbolCollector {
     self.logger = logger
   }
 
-  public func collectSymbols(from declarations: some Sequence<DeclarationIdentity>) -> [DocumentSymbol] {
+  public func collectSymbols(
+    from declarations: some Sequence<DeclarationIdentity>
+  ) -> [DocumentSymbol] {
     return declarations.compactMap { getDocumentSymbol(for: $0.erased) }
   }
 
