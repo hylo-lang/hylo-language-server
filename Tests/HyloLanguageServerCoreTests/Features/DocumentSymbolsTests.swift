@@ -91,6 +91,7 @@ final class DocumentSymbolsTests: XCTestCase {
     XCTAssertEqual(symbols.count, 1)
     XCTAssertEqual(symbols[0].name, "infix +")
     XCTAssertEqual(symbols[0].kind, SymbolKind.function)
+    XCTAssertNil(symbols[0].children)
     verifyValidRanges(symbols[0])
   }
 
@@ -129,10 +130,12 @@ final class DocumentSymbolsTests: XCTestCase {
 
     XCTAssertEqual(children[0].name, "x")
     XCTAssertEqual(children[0].kind, SymbolKind.variable)
+    XCTAssertNil(children[0].children)
     verifyValidRanges(children[0])
 
     XCTAssertEqual(children[1].name, "y")
     XCTAssertEqual(children[1].kind, SymbolKind.variable)
+    XCTAssertNil(children[1].children)
     verifyValidRanges(children[1])
   }
 
@@ -168,6 +171,7 @@ final class DocumentSymbolsTests: XCTestCase {
     XCTAssertEqual(children.count, 1)
     XCTAssertEqual(children[0].name, "peek")
     XCTAssertEqual(children[0].kind, SymbolKind.function)
+    XCTAssertNil(children[0].children)
     verifyValidRanges(children[0])
   }
 
@@ -216,8 +220,7 @@ final class DocumentSymbolsTests: XCTestCase {
     let response = try await context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
-      XCTFail("Expected optionA response")
-      return
+      return XCTFail("Expected optionA response")
     }
 
     XCTAssertEqual(symbols.count, 1, "Expected extension")
@@ -235,6 +238,7 @@ final class DocumentSymbolsTests: XCTestCase {
     XCTAssertEqual(children.count, 1)
     XCTAssertEqual(children[0].name, "peek")
     XCTAssertEqual(children[0].kind, SymbolKind.function)
+    XCTAssertNil(children[0].children)
     verifyValidRanges(children[0])
   }
 
@@ -255,16 +259,32 @@ final class DocumentSymbolsTests: XCTestCase {
     let response = try await context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
-      XCTFail("Expected optionA response")
-      return
+      return XCTFail("Expected optionA response")
     }
 
-    XCTAssertEqual(symbols.count, 2, "Expected trait and conformance")
+    guard symbols.count == 2 else {
+      return XCTFail("Expected 2 symbols, got \(symbols.count)")
+    }
+
+    // Verify trait has children
+    guard let traitChildren = symbols[0].children else {
+      XCTFail("Expected trait to have children")
+      return
+    }
+    guard traitChildren.count == 1 else {
+      return XCTFail("Expected 1 child for trait")
+    }
+
+    XCTAssertEqual(traitChildren[0].name, "peek")
+    XCTAssertEqual(traitChildren[0].kind, SymbolKind.function)
+    XCTAssertNil(traitChildren[0].children)
+    
 
     // Verify conformance (uses 'given' keyword in Hylo)
     // Note: The name extraction may be "conformance Peekable" based on the implementation
     XCTAssert(symbols[1].name.contains("conformance"), "Expected conformance in name")
     XCTAssertEqual(symbols[1].kind, SymbolKind.class)
+    XCTAssertEqual(symbols[1].children, [])
     // Skip range validation as conformances have known range issues
   }
 
@@ -281,42 +301,21 @@ final class DocumentSymbolsTests: XCTestCase {
     let response = try await context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
-      XCTFail("Expected optionA response")
-      return
+      return XCTFail("Expected optionA response")
     }
 
     XCTAssertEqual(symbols.count, 2)
 
     XCTAssertEqual(symbols[0].name, "x")
-    XCTAssertEqual(symbols[0].kind, SymbolKind.variable)
+    XCTAssertEqual(symbols[0].kind, .variable)
+    XCTAssertNil(symbols[0].children)
     verifyValidRanges(symbols[0])
 
     XCTAssertEqual(symbols[1].name, "y")
-    XCTAssertEqual(symbols[1].kind, SymbolKind.variable)
+    XCTAssertEqual(symbols[1].kind, .variable)
+    XCTAssertNil(symbols[1].children)
     verifyValidRanges(symbols[1])
   }
-
-  // MARK: - ImportDeclaration Tests
-
-  // func testImportDeclaration() async throws { // todo inifinite loop https://github.com/hylo-lang/hylo-new/issues/33
-  //   let source: MarkedHyloSource = """
-  //   import Hylo
-  //   """
-
-  //   let doc = await context.openDocument(source)
-  //   let response = try await doc.documentSymbols()
-
-  //   guard case .optionA(let symbols) = response else {
-  //     XCTFail("Expected optionA response")
-  //     return
-  //   }
-
-  //   XCTAssertEqual(symbols.count, 1)
-
-  //   XCTAssertEqual(symbols[0].name, "import Hylo")
-  //   XCTAssertEqual(symbols[0].kind, .namespace)
-  //   verifyValidRanges(symbols[0])
-  // }
 
   // MARK: - FunctionBundleDeclaration Tests
 
@@ -338,11 +337,13 @@ final class DocumentSymbolsTests: XCTestCase {
     // Both functions should be listed
     XCTAssertEqual(symbols.count, 2)
     XCTAssertEqual(symbols[0].name, "foo")
-    XCTAssertEqual(symbols[0].kind, SymbolKind.function)
+    XCTAssertEqual(symbols[0].kind, .function)
+    XCTAssertNil(symbols[0].children)
     verifyValidRanges(symbols[0])
 
     XCTAssertEqual(symbols[1].name, "foo")
-    XCTAssertEqual(symbols[1].kind, SymbolKind.function)
+    XCTAssertEqual(symbols[1].kind, .function)
+    XCTAssertNil(symbols[1].children)
     verifyValidRanges(symbols[1])
   }
 
@@ -386,19 +387,28 @@ final class DocumentSymbolsTests: XCTestCase {
     XCTAssertEqual(symbols[0].name, "Peekable")
     XCTAssertEqual(symbols[0].kind, SymbolKind.interface)
     XCTAssertEqual(symbols[0].children?.count, 1)
+    XCTAssertEqual(symbols[0].children?[0].name, "peek")
+    XCTAssertEqual(symbols[0].children?[0].kind, SymbolKind.function)
+    XCTAssertNil(symbols[0].children?[0].children)
 
     XCTAssertEqual(symbols[1].name, "extension Int")
     XCTAssertEqual(symbols[1].kind, SymbolKind.class)
     XCTAssertEqual(symbols[1].children?.count, 1)
+    XCTAssertEqual(symbols[1].children?[0].name, "peek")
+    XCTAssertEqual(symbols[1].children?[0].kind, SymbolKind.function)
+    XCTAssertNil(symbols[1].children?[0].children)
 
     XCTAssertEqual(symbols[2].name, "conformance Peekable")
     XCTAssertEqual(symbols[2].kind, SymbolKind.class)
+    XCTAssertEqual(symbols[2].children, [])
 
     XCTAssertEqual(symbols[3].name, "concretePeek")
     XCTAssertEqual(symbols[3].kind, SymbolKind.function)
+    XCTAssertNil(symbols[3].children)
 
     XCTAssertEqual(symbols[4].name, "z1")
     XCTAssertEqual(symbols[4].kind, SymbolKind.variable)
+    XCTAssertNil(symbols[4].children)
 
     // Verify all ranges are valid
     for symbol in symbols {

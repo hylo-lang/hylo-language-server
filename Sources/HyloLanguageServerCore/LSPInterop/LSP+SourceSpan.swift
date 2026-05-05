@@ -4,13 +4,9 @@ import LanguageServerProtocol
 
 extension FileName {
 
-  public var absoluteUrl: AbsoluteUrl {
-    switch self {
-    case .local(let url):
-      return AbsoluteUrl(url)
-    case .virtual:
-      return AbsoluteUrl(fromUrlString: self.description)!
-    }
+  /// The LSP absolute URL of `self`.
+  public var absoluteUrl: AbsoluteURL {
+    AbsoluteURL(self.url)
   }
 
 }
@@ -18,7 +14,7 @@ extension FileName {
 extension LanguageServerProtocol.Location {
 
   public init(_ range: SourceSpan) {
-    self.init(uri: range.absoluteURL.nativePath, range: LSPRange(range))
+    self.init(uri: range.absoluteURL.url.absoluteString, range: LSPRange(range))
   }
 
 }
@@ -42,10 +38,13 @@ extension LanguageServerProtocol.Position {
 
 extension SourcePosition {
 
-  /// Creates a `SourcePosition` from an LSP `Position` within a given source file, if the position is in bounds.
-  public init?(_ position: LanguageServerProtocol.Position, in source: SourceFile) {
+  /// Creates a `SourcePosition` from an LSP `Position` within a given source file.
+  /// 
+  /// - Throws iff the position is out of bounds.
+  public init(_ position: LanguageServerProtocol.Position, in source: SourceFile) throws {
+    // FIXME: LSP gives utf16 based columns, but FrontEnd uses unicode code point columns
     guard let index = source.index(line: position.line + 1, column: position.character + 1) else {
-      return nil
+      throw LSPError.invalidParameter(message: "Position '\(position)' out of bounds in \(source.name)")
     }
     self.init(index, in: source)
   }
@@ -54,7 +53,7 @@ extension SourcePosition {
 
 extension SourceSpan {
 
-  var absoluteURL: AbsoluteUrl {
+  var absoluteURL: AbsoluteURL {
     source.name.absoluteUrl
   }
 

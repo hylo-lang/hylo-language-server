@@ -1,32 +1,29 @@
-import Foundation
 import FrontEnd
 import JSONRPC
 import LanguageServerProtocol
 import Logging
+import LanguageServer
 
 extension HyloRequestHandler {
 
-  public func semanticTokensFull(id: JSONId, params: SemanticTokensParams) async -> Result<
-    SemanticTokensResponse, AnyJSONRPCResponseError
-  > {
-
-    await withDocumentAST(params.textDocument) { ast in
-      await semanticTokensFull(id: id, params: params, program: ast)
+  public func semanticTokensFull(
+    id: JSONId, params: SemanticTokensParams
+  ) async -> Response<SemanticTokensResponse> {
+    await reportingLSPError {
+      let p = try await documentProvider.getParsedProgram(url: params.textDocument.uri)
+      return try await semanticTokensFull(id: id, params: params, program: p)
     }
   }
 
   public func semanticTokensFull(
     id: JSONId, params: SemanticTokensParams, program: Program
-  ) async -> Result<SemanticTokensResponse, AnyJSONRPCResponseError> {
-
+  ) async throws -> SemanticTokensResponse {
     logger.debug("List semantic tokens in document: \(params.textDocument.uri)")
 
-    guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
-      return .invalidParameters("Invalid document URI: \(params.textDocument.uri)")
-    }
+    let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
     guard let s = program.sourceFile(named: source.localFileName) else {
       logger.error("Failed to locate translation unit for document: \(params.textDocument.uri)")
-      return .invalidParameters(
+      throw LSPError.invalidParameter(message:
         "Failed to locate translation unit for document: \(params.textDocument.uri)")
     }
 
@@ -35,7 +32,7 @@ extension HyloRequestHandler {
       topLevelDeclarations: ds,
       program: program, logger: logger)
 
-    return .success(SemanticTokens(tokens: walker.walk()))
+    return SemanticTokens(tokens: walker.walk())
   }
 
 }
@@ -59,124 +56,132 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
   public mutating func walk() -> [SemanticToken] {
     precondition(tokens.isEmpty)
-    addMemberDeclarations(topLevelDeclarations)
+    addMembers(topLevelDeclarations)
     logger.debug("Generated \(tokens.count) semantic tokens")
     return tokens
   }
 
-  mutating func addMemberDeclarations(_ members: some Sequence<DeclarationIdentity>) {
+  /// Adds the tokens of the member declarations.
+  mutating func addMembers(_ members: some Sequence<DeclarationIdentity>) {
     for d in members {
-      addSyntax(syntaxId: d.erased)
+      addSyntax(d.erased)
     }
   }
 
-  mutating func addSyntax(syntaxId: AnySyntaxIdentity) {
-    let tag = program.tag(of: syntaxId)
+  mutating func addSyntax(_ s: AnySyntaxIdentity) {
+    let tag = program.tag(of: s)
     logger.debug("Processing syntax: \(tag)")
 
     // Declarations:
-    switch program.tag(of: syntaxId) {
+    switch program.tag(of: s) {
     case AssociatedTypeDeclaration.self:
       addAssociatedType(
-        program[program.castUnchecked(syntaxId, to: AssociatedTypeDeclaration.self)])
+        program[program.castUnchecked(s, to: AssociatedTypeDeclaration.self)])
     case BindingDeclaration.self:
-      addBinding(program[program.castUnchecked(syntaxId, to: BindingDeclaration.self)])
+      addBinding(program[program.castUnchecked(s, to: BindingDeclaration.self)])
     case ConformanceDeclaration.self:
-      addConformance(program[program.castUnchecked(syntaxId, to: ConformanceDeclaration.self)])
+      addConformance(program[program.castUnchecked(s, to: ConformanceDeclaration.self)])
     case EnumCaseDeclaration.self:
-      addEnumCase(program[program.castUnchecked(syntaxId, to: EnumCaseDeclaration.self)])
+      addEnumCase(program[program.castUnchecked(s, to: EnumCaseDeclaration.self)])
     case EnumDeclaration.self:
-      addEnum(program[program.castUnchecked(syntaxId, to: EnumDeclaration.self)])
+      addEnum(program[program.castUnchecked(s, to: EnumDeclaration.self)])
     case ExtensionDeclaration.self:
-      addExtension(program[program.castUnchecked(syntaxId, to: ExtensionDeclaration.self)])
+      addExtension(program[program.castUnchecked(s, to: ExtensionDeclaration.self)])
     case FunctionBundleDeclaration.self:
       addFunctionBundle(
-        program[program.castUnchecked(syntaxId, to: FunctionBundleDeclaration.self)])
+        program[program.castUnchecked(s, to: FunctionBundleDeclaration.self)])
     case FunctionDeclaration.self:
-      addFunction(program[program.castUnchecked(syntaxId, to: FunctionDeclaration.self)])
+      addFunction(program[program.castUnchecked(s, to: FunctionDeclaration.self)])
     case GenericParameterDeclaration.self:
       addGenericParameter(
-        program[program.castUnchecked(syntaxId, to: GenericParameterDeclaration.self)])
+        program[program.castUnchecked(s, to: GenericParameterDeclaration.self)])
     case ImportDeclaration.self:
-      addImport(program[program.castUnchecked(syntaxId, to: ImportDeclaration.self)])
+      addImport(program[program.castUnchecked(s, to: ImportDeclaration.self)])
+    case ParameterDeclaration.self:
+      addParameter(program[program.castUnchecked(s, to: ParameterDeclaration.self)])
     case StructDeclaration.self:
-      addStruct(program[program.castUnchecked(syntaxId, to: StructDeclaration.self)])
+      addStruct(program[program.castUnchecked(s, to: StructDeclaration.self)])
     case TraitDeclaration.self:
-      addTrait(program[program.castUnchecked(syntaxId, to: TraitDeclaration.self)])
+      addTrait(program[program.castUnchecked(s, to: TraitDeclaration.self)])
     case TypeAliasDeclaration.self:
-      addTypeAlias(program[program.castUnchecked(syntaxId, to: TypeAliasDeclaration.self)])
+      addTypeAlias(program[program.castUnchecked(s, to: TypeAliasDeclaration.self)])
     case VariableDeclaration.self:
-      // NOTE: VariableDeclaration is handled by BindingDeclaration, which allows binding one or more variables
-      break
+      addVariable(program[program.castUnchecked(s, to: VariableDeclaration.self)])
     case VariantDeclaration.self:
-      addVariant(program[program.castUnchecked(syntaxId, to: VariantDeclaration.self)])
+      addVariant(program[program.castUnchecked(s, to: VariantDeclaration.self)])
 
     // Statements:
     case Assignment.self:
-      addAssignment(program[program.castUnchecked(syntaxId, to: Assignment.self)])
+      addAssignment(program[program.castUnchecked(s, to: Assignment.self)])
     case Block.self:
-      addBlock(program[program.castUnchecked(syntaxId, to: Block.self)])
+      addBlock(program[program.castUnchecked(s, to: Block.self)])
     case Discard.self:
-      addDiscard(program[program.castUnchecked(syntaxId, to: Discard.self)])
+      addDiscard(program[program.castUnchecked(s, to: Discard.self)])
     case Return.self:
-      addReturn(program[program.castUnchecked(syntaxId, to: Return.self)])
+      addReturn(program[program.castUnchecked(s, to: Return.self)])
+    case Yield.self:
+      addYield(program[program.castUnchecked(s, to: Yield.self)])
 
     // Expressions:
     case ArrowExpression.self:
-      addArrowExpression(program[program.castUnchecked(syntaxId, to: ArrowExpression.self)])
+      addArrowExpression(program[program.castUnchecked(s, to: ArrowExpression.self)])
     case BooleanLiteral.self:
-      addBooleanLiteral(program[program.castUnchecked(syntaxId, to: BooleanLiteral.self)])
+      addBooleanLiteral(program[program.castUnchecked(s, to: BooleanLiteral.self)])
     case Call.self:
-      addCall(program[program.castUnchecked(syntaxId, to: Call.self)])
+      addCall(program[program.castUnchecked(s, to: Call.self)])
     case Conversion.self:
-      addConversion(program[program.castUnchecked(syntaxId, to: Conversion.self)])
+      addConversion(program[program.castUnchecked(s, to: Conversion.self)])
     case EqualityWitnessExpression.self:
       addEqualityWitnessExpression(
-        program[program.castUnchecked(syntaxId, to: EqualityWitnessExpression.self)])
+        program[program.castUnchecked(s, to: EqualityWitnessExpression.self)])
     case If.self:
-      addIf(program[program.castUnchecked(syntaxId, to: If.self)])
+      addIf(program[program.castUnchecked(s, to: If.self)])
     case ImplicitQualification.self:
       addImplicitQualification(
-        program[program.castUnchecked(syntaxId, to: ImplicitQualification.self)])
+        program[program.castUnchecked(s, to: ImplicitQualification.self)])
     case InoutExpression.self:
-      addInoutExpression(program[program.castUnchecked(syntaxId, to: InoutExpression.self)])
+      addInoutExpression(program[program.castUnchecked(s, to: InoutExpression.self)])
     case IntegerLiteral.self:
-      addIntegerLiteral(program[program.castUnchecked(syntaxId, to: IntegerLiteral.self)])
+      addIntegerLiteral(program[program.castUnchecked(s, to: IntegerLiteral.self)])
+    case FloatingPointLiteral.self:
+      addFloatingPointLiteral(program[program.castUnchecked(s, to: FloatingPointLiteral.self)])
     case KindExpression.self:
-      addKindExpression(program[program.castUnchecked(syntaxId, to: KindExpression.self)])
+      addKindExpression(program[program.castUnchecked(s, to: KindExpression.self)])
     case Lambda.self:
-      addLambda(program[program.castUnchecked(syntaxId, to: Lambda.self)])
+      addLambda(program[program.castUnchecked(s, to: Lambda.self)])
     case NameExpression.self:
-      addNameExpression(program[program.castUnchecked(syntaxId, to: NameExpression.self)])
+      addNameExpression(program[program.castUnchecked(s, to: NameExpression.self)])
     case New.self:
-      addNew(program[program.castUnchecked(syntaxId, to: New.self)])
+      addNew(program[program.castUnchecked(s, to: New.self)])
     case PatternMatch.self:
-      addPatternMatch(program[program.castUnchecked(syntaxId, to: PatternMatch.self)])
+      addPatternMatch(program[program.castUnchecked(s, to: PatternMatch.self)])
     case PatternMatchCase.self:
-      addPatternMatchCase(program[program.castUnchecked(syntaxId, to: PatternMatchCase.self)])
+      addPatternMatchCase(program[program.castUnchecked(s, to: PatternMatchCase.self)])
     case RemoteTypeExpression.self:
       addRemoteTypeExpression(
-        program[program.castUnchecked(syntaxId, to: RemoteTypeExpression.self)])
+        program[program.castUnchecked(s, to: RemoteTypeExpression.self)])
     case StaticCall.self:
-      addStaticCall(program[program.castUnchecked(syntaxId, to: StaticCall.self)])
+      addStaticCall(program[program.castUnchecked(s, to: StaticCall.self)])
     case StringLiteral.self:
-      addStringLiteral(program[program.castUnchecked(syntaxId, to: StringLiteral.self)])
+      addStringLiteral(program[program.castUnchecked(s, to: StringLiteral.self)])
     case SyntheticExpression.self:
-      addSyntheticExpression(program[program.castUnchecked(syntaxId, to: SyntheticExpression.self)])
+      addSyntheticExpression(program[program.castUnchecked(s, to: SyntheticExpression.self)])
     case TupleLiteral.self:
-      addTupleLiteral(program[program.castUnchecked(syntaxId, to: TupleLiteral.self)])
+      addTupleLiteral(program[program.castUnchecked(s, to: TupleLiteral.self)])
+    case TupleMember.self:
+      addTupleMember(program[program.castUnchecked(s, to: TupleMember.self)])
     case TupleTypeExpression.self:
-      addTupleTypeExpression(program[program.castUnchecked(syntaxId, to: TupleTypeExpression.self)])
+      addTupleTypeExpression(program[program.castUnchecked(s, to: TupleTypeExpression.self)])
     case WildcardLiteral.self:
-      addWildcardLiteral(program[program.castUnchecked(syntaxId, to: WildcardLiteral.self)])
+      addWildcardLiteral(program[program.castUnchecked(s, to: WildcardLiteral.self)])
 
     // Patterns:
     case BindingPattern.self:
-      addBindingPattern(program[program.castUnchecked(syntaxId, to: BindingPattern.self)])
+      addBindingPattern(program[program.castUnchecked(s, to: BindingPattern.self)])
     case ExtractorPattern.self:
-      addExtractorPattern(program[program.castUnchecked(syntaxId, to: ExtractorPattern.self)])
+      addExtractorPattern(program[program.castUnchecked(s, to: ExtractorPattern.self)])
     case TuplePattern.self:
-      addTuplePattern(program[program.castUnchecked(syntaxId, to: TuplePattern.self)])
+      addTuplePattern(program[program.castUnchecked(s, to: TuplePattern.self)])
 
     default:
       logger.warning("Unknown syntax node type: \(tag)")
@@ -199,8 +204,23 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     // Add enum name
     addToken(range: d.identifier.site, type: .type)
 
+    // Add generic parameters
+    for p in d.parameters {
+      addGenericParameter(program[p])
+    }
+
+    // Add representation if present
+    if let representation = d.representation {
+      addSyntax(representation.erased)
+    }
+    
+    // Add conformances
+    for c in d.conformances {
+      addSyntax(c.erased)
+    }
+
     // Add members
-    addMemberDeclarations(d.members)
+    addMembers(d.members)
   }
 
   mutating func addImport(_ d: ImportDeclaration) {
@@ -214,17 +234,21 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     // todo: add body if present
     if let body = d.body {
       for statement in body {
-        addSyntax(syntaxId: statement.erased)
+        addSyntax(statement.erased)
       }
     }
   }
 
   mutating func addEnumCase(_ d: EnumCaseDeclaration) {
     addKeyword(at: d.introducer.site)
-    addToken(range: d.identifier.site, type: .function)
+    addToken(range: d.identifier.site, type: .enumMember)
 
-    for param in d.parameters {
-      addParameter(param)
+    for p in d.parameters {
+      addParameter(program[p])
+    }
+
+    if let body = d.body {
+      addSyntax(body.erased)
     }
   }
 
@@ -240,11 +264,11 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
 
     // Add the binding pattern
-    addSyntax(syntaxId: d.pattern.erased)
+    addSyntax(d.pattern.erased)
 
     // Add initializer if present
     if let initializer = d.initializer {
-      addSyntax(syntaxId: initializer.erased)
+      addSyntax(initializer.erased)
     }
   }
 
@@ -260,55 +284,39 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addToken(range: site, type: .keyword)
   }
 
-  mutating func addBindingPattern(_ pattern: BindingPattern.ID) {
-    let p = program[pattern]
-    addKeywordIntroducer(p.introducer)
-
-    // Add nested pattern
-    addSyntax(syntaxId: p.pattern.erased)
-
-    // Add type ascription if present
-    if let ascription = p.ascription {
-      addSyntax(syntaxId: ascription.erased)
-    }
-  }
-
   mutating func addParameters(_ parameters: [ParameterDeclaration.ID]) {
     for p in parameters {
-      addParameter(p)
+      addParameter(program[p])
     }
   }
 
-  mutating func addParameter(_ parameter: ParameterDeclaration.ID) {
-    let p = program[parameter]
+  mutating func addParameter(_ p: ParameterDeclaration) {
     // addLabel(p.label)
 
-    // NOTE: We are currently using .identifier instead of .parameter here,
-    // for aesthetic purposes. This is similar to swift tokens (todo review)
-    addToken(range: p.identifier.site, type: .identifier)
+    addToken(range: p.identifier.site, type: .parameter)
 
     // Add type annotation if present
     if let annotation = p.ascription {
-      addSyntax(syntaxId: annotation.erased)
+      addSyntax(annotation.erased)
     }
 
     // Add default value if present
     if let defaultValue = p.defaultValue {
-      addSyntax(syntaxId: defaultValue.erased)
+      addSyntax(defaultValue.erased)
     }
   }
 
   mutating func addContextParameters(_ contextParams: ContextParameters) {
     // Add type parameters (generics)
     for typeParam in contextParams.types {
-      addSyntax(syntaxId: typeParam.erased)
+      addSyntax(typeParam.erased)
     }
 
     // Add where clause (usings)
     if !contextParams.usings.isEmpty {
       // The "where" keyword would be implicit in the site, but we can try to extract it
       for using in contextParams.usings {
-        addSyntax(syntaxId: using.erased)
+        addSyntax(using.erased)
       }
     }
   }
@@ -323,10 +331,10 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
 
     // Add the extended type
-    addSyntax(syntaxId: d.extendee.erased)
+    addSyntax(d.extendee.erased)
 
     // Add members
-    addMemberDeclarations(d.members)
+    addMembers(d.members)
   }
 
   mutating func addAssociatedType(_ d: AssociatedTypeDeclaration) {
@@ -348,11 +356,15 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
     // Add generic parameters
     for param in d.parameters {
-      addSyntax(syntaxId: param.erased)
+      addSyntax(param.erased)
     }
 
     // Add aliased type
-    addSyntax(syntaxId: d.aliasee.erased)
+    addSyntax(d.aliasee.erased)
+  }
+
+  mutating func addVariable(_ d: VariableDeclaration) {
+    addToken(range: d.identifier.site, type: .identifier)
   }
 
   mutating func addConformance(_ d: ConformanceDeclaration) {
@@ -375,11 +387,11 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
 
     // Add the witness (static call)
-    addSyntax(syntaxId: d.witness.erased)
+    addSyntax(d.witness.erased)
 
     // Add members if present
     if let members = d.members {
-      addMemberDeclarations(members)
+      addMembers(members)
     }
   }
 
@@ -388,7 +400,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
     // Add kind ascription if present
     if let ascription = d.ascription {
-      addSyntax(syntaxId: ascription.erased)
+      addSyntax(ascription.erased)
     }
   }
 
@@ -404,8 +416,13 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     // Add trait name
     addToken(range: d.identifier.site, type: .type)
 
+    // Add generic parameters
+    for p in d.parameters {
+      addSyntax(p.erased)
+    }
+
     // Add members
-    addMemberDeclarations(d.members)
+    addMembers(d.members)
   }
 
   mutating func addStruct(_ d: StructDeclaration) {
@@ -422,21 +439,21 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
     // Add generic parameters
     for param in d.parameters {
-      addSyntax(syntaxId: param.erased)
+      addSyntax(param.erased)
     }
 
     // Add conformances
     for conformance in d.conformances {
-      addSyntax(syntaxId: conformance.erased)
+      addSyntax(conformance.erased)
     }
 
     // Add members
-    addMemberDeclarations(d.members)
+    addMembers(d.members)
   }
 
   mutating func addMembers(_ members: [AnySyntaxIdentity]) {
     for m in members {
-      addSyntax(syntaxId: m)
+      addSyntax(m)
     }
   }
 
@@ -452,6 +469,11 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     // Add function name
     addToken(range: d.identifier.site, type: .function)
 
+    // Add captures
+    for c in d.captures.explicit {
+      addSyntax(c.erased)
+    }
+
     // Add context parameters (generics and where clauses)
     if !d.contextParameters.isEmpty {
       addContextParameters(d.contextParameters)
@@ -462,13 +484,18 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
     // Add return type if present
     if let output = d.output {
-      addSyntax(syntaxId: output.erased)
+      addSyntax(output.erased)
+    }
+
+    // Add access effect if explicitly specified
+    if !d.effect.site.region.isEmpty {
+      addKeyword(at: d.effect.site)
     }
 
     // Add body if present
     if let body = d.body {
       for statement in body {
-        addSyntax(syntaxId: statement.erased)
+        addSyntax(statement.erased)
       }
     }
   }
@@ -485,6 +512,11 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     // Add function bundle name
     addToken(range: d.identifier.site, type: .function)
 
+    // Add captures
+    for c in d.captures.explicit {
+      addSyntax(c.erased)
+    }
+
     // Add context parameters (generics and where clauses)
     if !d.contextParameters.isEmpty {
       addContextParameters(d.contextParameters)
@@ -495,12 +527,17 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
     // Add return type if present
     if let output = d.output {
-      addSyntax(syntaxId: output.erased)
+      addSyntax(output.erased)
     }
 
     // Add variants
     for variant in d.variants {
-      addSyntax(syntaxId: variant.erased)
+      addSyntax(variant.erased)
+    }
+
+    // Add access effect if explicitly specified
+    if !d.effect.site.region.isEmpty {
+      addKeyword(at: d.effect.site)
     }
   }
 
@@ -508,10 +545,10 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
   mutating func addAssignment(_ s: Assignment) {
     // Add left-hand side
-    addSyntax(syntaxId: s.lhs.erased)
+    addSyntax(s.lhs.erased)
 
     // Add right-hand side
-    addSyntax(syntaxId: s.rhs.erased)
+    addSyntax(s.rhs.erased)
   }
 
   mutating func addBlock(_ s: Block) {
@@ -522,13 +559,13 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
     // Add all statements in the block
     for statement in s.statements {
-      addSyntax(syntaxId: statement.erased)
+      addSyntax(statement.erased)
     }
   }
 
   mutating func addDiscard(_ s: Discard) {
     // Add the discarded value
-    addSyntax(syntaxId: s.value.erased)
+    addSyntax(s.value.erased)
   }
 
   mutating func addReturn(_ s: Return) {
@@ -537,8 +574,16 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
 
     if let value = s.value {
-      addSyntax(syntaxId: value.erased)
+      addSyntax(value.erased)
     }
+  }
+  
+  mutating func addYield(_ s: Yield) {
+    if let introducer = s.introducer {
+      addKeyword(at: introducer.site)
+    }
+    
+    addSyntax(s.value.erased)
   }
 
   // MARK: - Expression methods
@@ -546,7 +591,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
   mutating func addArrowExpression(_ e: ArrowExpression) {
     // Add environment if present
     if let environment = e.environment {
-      addSyntax(syntaxId: environment.erased)
+      addSyntax(environment.erased)
     }
 
     // Add parameters
@@ -554,14 +599,14 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
       if let label = parameter.label {
         addToken(range: label.site, type: .label)
       }
-      addSyntax(syntaxId: parameter.ascription.erased)
+      addSyntax(parameter.ascription.erased)
     }
 
     // Add effect
     addKeyword(at: e.effect.site)
 
     // Add output type
-    addSyntax(syntaxId: e.output.erased)
+    addSyntax(e.output.erased)
   }
 
   mutating func addBooleanLiteral(_ e: BooleanLiteral) {
@@ -570,34 +615,35 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
   mutating func addCall(_ e: Call) {
     // Add the function being called
-    addSyntax(syntaxId: e.callee.erased)
+    addSyntax(e.callee.erased)
 
     // Add arguments
     for argument in e.arguments {
       if let label = argument.label {
         addToken(range: label.site, type: .label)
       }
-      addSyntax(syntaxId: argument.value.erased)
+      addSyntax(argument.value.erased)
     }
   }
 
   mutating func addConversion(_ e: Conversion) {
     // Add source expression
-    addSyntax(syntaxId: e.source.erased)
+    addSyntax(e.source.erased)
+
+    // Add conversion operator
+    addToken(range: e.semantics.site, type: .operator)
 
     // Add target type
-    addSyntax(syntaxId: e.target.erased)
+    addSyntax(e.target.erased)
 
-    // The operator (as, as!, as*) would need special handling
-    // but it doesn't seem to have a separate token site
   }
 
   mutating func addEqualityWitnessExpression(_ e: EqualityWitnessExpression) {
     // Add left-hand side
-    addSyntax(syntaxId: e.lhs.erased)
+    addSyntax(e.lhs.erased)
 
     // Add right-hand side
-    addSyntax(syntaxId: e.rhs.erased)
+    addSyntax(e.rhs.erased)
   }
 
   mutating func addIf(_ e: If) {
@@ -606,14 +652,14 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
     // Add conditions
     for condition in e.conditions {
-      addSyntax(syntaxId: condition.erased)
+      addSyntax(condition.erased)
     }
 
     // Add success block
-    addSyntax(syntaxId: e.success.erased)
+    addSyntax(e.success.erased)
 
     // Add failure block
-    addSyntax(syntaxId: e.failure.erased)
+    addSyntax(e.failure.erased)
   }
 
   mutating func addImplicitQualification(_ e: ImplicitQualification) {
@@ -626,10 +672,14 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addToken(range: e.marker.site, type: .operator)
 
     // Add the lvalue
-    addSyntax(syntaxId: e.lvalue.erased)
+    addSyntax(e.lvalue.erased)
   }
 
   mutating func addIntegerLiteral(_ e: IntegerLiteral) {
+    addToken(range: e.site, type: .number)
+  }
+
+  mutating func addFloatingPointLiteral(_ e: FloatingPointLiteral) {
     addToken(range: e.site, type: .number)
   }
 
@@ -640,26 +690,29 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
       addToken(range: e.site, type: .keyword)
     case .arrow(let input, let output):
       // Arrow kind
-      addSyntax(syntaxId: input.erased)
-      addSyntax(syntaxId: output.erased)
+      addSyntax(input.erased)
+      addSyntax(output.erased)
     }
   }
 
   mutating func addLambda(_ e: Lambda) {
     // Add the underlying function
-    addSyntax(syntaxId: e.function.erased)
+    addSyntax(e.function.erased)
   }
 
   mutating func addNameExpression(_ e: NameExpression) {
+    if let q = e.qualification { addSyntax(q.erased) }
+    
+    // todo add more specific type and modifiers after type-checking 
     addToken(range: e.name.site, type: .identifier)
   }
 
   mutating func addNew(_ e: New) {
     // Add qualification
-    addSyntax(syntaxId: e.qualification.erased)
+    addSyntax(e.qualification.erased)
 
     // Add the target name expression
-    addSyntax(syntaxId: e.target.erased)
+    addSyntax(e.target.erased)
   }
 
   mutating func addPatternMatch(_ e: PatternMatch) {
@@ -667,11 +720,11 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: e.introducer.site)
 
     // Add scrutinee
-    addSyntax(syntaxId: e.scrutinee.erased)
+    addSyntax(e.scrutinee.erased)
 
     // Add branches
     for branch in e.branches {
-      addSyntax(syntaxId: branch.erased)
+      addSyntax(branch.erased)
     }
   }
 
@@ -680,11 +733,11 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: e.introducer.site)
 
     // Add pattern
-    addSyntax(syntaxId: e.pattern.erased)
+    addSyntax(e.pattern.erased)
 
     // Add body statements
     for statement in e.body {
-      addSyntax(syntaxId: statement.erased)
+      addSyntax(statement.erased)
     }
   }
 
@@ -693,16 +746,16 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: e.access.site)
 
     // Add projectee type
-    addSyntax(syntaxId: e.projectee.erased)
+    addSyntax(e.projectee.erased)
   }
 
   mutating func addStaticCall(_ e: StaticCall) {
     // Add callee
-    addSyntax(syntaxId: e.callee.erased)
+    addSyntax(e.callee.erased)
 
     // Add arguments
     for argument in e.arguments {
-      addSyntax(syntaxId: argument.erased)
+      addSyntax(argument.erased)
     }
   }
 
@@ -718,14 +771,22 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
   mutating func addTupleLiteral(_ e: TupleLiteral) {
     // Add all elements
     for element in e.elements {
-      addSyntax(syntaxId: element.erased)
+      addSyntax(element.erased)
     }
+  }
+  
+  mutating func addTupleMember(_ e: TupleMember) {
+    // Add parent expression
+    addSyntax(e.parent.erased)
+    
+    // Add member index
+    addToken(range: e.member.site, type: .number)
   }
 
   mutating func addTupleTypeExpression(_ e: TupleTypeExpression) {
     // Add all element types
     for element in e.elements {
-      addSyntax(syntaxId: element.erased)
+      addSyntax(element.erased)
     }
 
     // Note: ellipsis token could be handled here if needed
@@ -746,31 +807,31 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: p.introducer.site)
 
     // Add nested pattern
-    addSyntax(syntaxId: p.pattern.erased)
+    addSyntax(p.pattern.erased)
 
     // Add type ascription if present
     if let ascription = p.ascription {
-      addSyntax(syntaxId: ascription.erased)
+      addSyntax(ascription.erased)
     }
   }
 
   mutating func addExtractorPattern(_ p: ExtractorPattern) {
     // Add extractor expression
-    addSyntax(syntaxId: p.extractor.erased)
+    addSyntax(p.extractor.erased)
 
     // Add elements
     for element in p.elements {
       if let label = element.label {
         addToken(range: label.site, type: .label)
       }
-      addSyntax(syntaxId: element.value.erased)
+      addSyntax(element.value.erased)
     }
   }
 
   mutating func addTuplePattern(_ p: TuplePattern) {
     // Add all element patterns
     for element in p.elements {
-      addSyntax(syntaxId: element.erased)
+      addSyntax(element.erased)
     }
   }
 

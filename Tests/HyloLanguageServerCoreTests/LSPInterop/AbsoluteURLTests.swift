@@ -16,7 +16,7 @@ final class AbsoluteUrlTests: XCTestCase {
       let expectedNativePath = "/tmp/test"
     #endif
 
-    let url = try XCTUnwrap(AbsoluteUrl(fromPath: testPath))
+    let url = try XCTUnwrap(AbsoluteURL(fromPath: testPath))
     XCTAssertEqual(url.description, expectedDescription)
     XCTAssertEqual(url.nativePath, expectedNativePath)
   }
@@ -30,13 +30,13 @@ final class AbsoluteUrlTests: XCTestCase {
       let expectedNativePath = "/tmp/test"
     #endif
 
-    let url = try XCTUnwrap(AbsoluteUrl(fromUrlString: urlString))
+    let url = try XCTUnwrap(AbsoluteURL(fromUrlString: urlString))
     XCTAssertEqual(url.description, urlString)
     XCTAssertEqual(url.nativePath, expectedNativePath)
   }
 
   func testFromRelativeNativePath() throws {
-    let url = try XCTUnwrap(AbsoluteUrl(fromPath: "test"))
+    let url = try XCTUnwrap(AbsoluteURL(fromPath: "test"))
     let currentDir = FileManager.default.currentDirectoryPath
     let normalizedCurrentDir = currentDir.replacingOccurrences(of: "\\", with: "/")
 
@@ -61,13 +61,13 @@ final class AbsoluteUrlTests: XCTestCase {
       let absolutePath = "\(currentDir)/test"
     #endif
 
-    let absolute = try XCTUnwrap(AbsoluteUrl(fromPath: absolutePath))
-    let relative = try XCTUnwrap(AbsoluteUrl(fromPath: "test"))
+    let absolute = try XCTUnwrap(AbsoluteURL(fromPath: absolutePath))
+    let relative = try XCTUnwrap(AbsoluteURL(fromPath: "test"))
 
     XCTAssertEqual(relative, absolute)
     XCTAssertEqual(relative.hashValue, absolute.hashValue)
 
-    let set: Set<AbsoluteUrl> = [relative, absolute]
+    let set: Set<AbsoluteURL> = [relative, absolute]
     XCTAssertEqual(set.count, 1)
   }
 
@@ -79,14 +79,14 @@ final class AbsoluteUrlTests: XCTestCase {
       let absolutePath = "\(currentDir)/test"
     #endif
 
-    let fromPath = try XCTUnwrap(AbsoluteUrl(fromPath: absolutePath))
+    let fromPath = try XCTUnwrap(AbsoluteURL(fromPath: absolutePath))
     let urlString = URL(fileURLWithPath: absolutePath).standardizedFileURL.absoluteString
-    let fromUrlString = try XCTUnwrap(AbsoluteUrl(fromUrlString: urlString))
+    let fromUrlString = try XCTUnwrap(AbsoluteURL(fromUrlString: urlString))
 
     XCTAssertEqual(fromPath, fromUrlString)
     XCTAssertEqual(fromPath.hashValue, fromUrlString.hashValue)
 
-    let set: Set<AbsoluteUrl> = [fromPath, fromUrlString]
+    let set: Set<AbsoluteURL> = [fromPath, fromUrlString]
     XCTAssertEqual(set.count, 1)
   }
 
@@ -100,29 +100,29 @@ final class AbsoluteUrlTests: XCTestCase {
       let pathB = "\(currentDir)/testB"
     #endif
 
-    let a = try XCTUnwrap(AbsoluteUrl(fromPath: pathA))
-    let b = try XCTUnwrap(AbsoluteUrl(fromPath: pathB))
+    let a = try XCTUnwrap(AbsoluteURL(fromPath: pathA))
+    let b = try XCTUnwrap(AbsoluteURL(fromPath: pathB))
 
     XCTAssertNotEqual(a, b)
 
-    let set: Set<AbsoluteUrl> = [a, b]
+    let set: Set<AbsoluteURL> = [a, b]
     XCTAssertEqual(set.count, 2)
 
-    let https = try XCTUnwrap(AbsoluteUrl(fromUrlString: "https://example.com/test"))
+    let https = try XCTUnwrap(AbsoluteURL(fromUrlString: "https://example.com/test"))
     XCTAssertNotEqual(a, https)
   }
 
   func testFromInvalidUrlString() {
-    XCTAssertNil(AbsoluteUrl(fromUrlString: "hello"))
+    XCTAssertThrowsError(try AbsoluteURL(fromUrlString: "hello"))
   }
 
   func testFileNameUrl() {
     XCTAssertEqual(
       FileName.local(.init(filePath: "/foo/bar")).absoluteUrl,
-      try XCTUnwrap(AbsoluteUrl(fromPath: "/foo/bar")))
+      AbsoluteURL(fromPath: "/foo/bar"))
     XCTAssertEqual(
       FileName.virtual(URL(string: "virtual:///12")!).absoluteUrl,
-      AbsoluteUrl(fromUrlString: "virtual:///12"))
+      try AbsoluteURL(fromUrlString: "virtual:///12"))
   }
 
 }

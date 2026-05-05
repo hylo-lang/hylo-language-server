@@ -4,11 +4,11 @@ import LanguageServerProtocol
 
 public struct Document {
 
-  public let uri: AbsoluteUrl
+  public let uri: AbsoluteURL
   public var version: Int?
   public var text: String
 
-  public init(uri: AbsoluteUrl, version: Int?, text: String) {
+  public init(uri: AbsoluteURL, version: Int?, text: String) {
     self.uri = uri
     self.version = version
     self.text = text
@@ -27,8 +27,8 @@ public struct Document {
 
 extension Document {
 
-  public init(textDocument: TextDocumentItem) {
-    uri = AbsoluteUrl(fromUrlString: textDocument.uri)!
+  public init(textDocument: TextDocumentItem) throws {
+    uri = try AbsoluteURL(fromUrlString: textDocument.uri)
     version = textDocument.version
     text = textDocument.text
   }
@@ -41,45 +41,17 @@ struct InvalidDocumentChangeRange: Error {
 
 }
 
-/// Translates a (line, column) position in a text document to a String.Index.
-private func positionToStringIndex(_ position: Position, in text: String) -> String.Index? {
-  positionToStringIndex(position, in: text, startIndex: text.startIndex, startPos: Position.zero)
-}
-
-// todo remove these inefficient/inaccurate functions.
-
-private func positionToStringIndex(
-  _ position: Position, in text: String, startIndex: String.Index, startPos: Position
-) -> String.Index? {
-
-  let lineStart = text.index(startIndex, offsetBy: -startPos.character)
-
-  var it = text[lineStart...]
-  for _ in startPos.line ..< position.line {
-    guard let i = it.firstIndex(of: "\n") else {
-      return nil
-    }
-
-    it = it[it.index(after: i)...]
-  }
-
-  return text.index(it.startIndex, offsetBy: position.character)
-}
+// todo remove these inefficient functions.
 
 /// Finds the String range corresponding to the given LSP range.
 private func findRange(_ range: LSPRange, in text: String) -> Range<String.Index>? {
-  guard let startIndex = positionToStringIndex(range.start, in: text) else {
-    return nil
+  if let startIndex = range.start.stringIndex(in: text),
+    let endIndex = range.end.stringIndex(in: text)
+  {
+    startIndex ..< endIndex
+  } else {
+    nil
   }
-
-  guard
-    let endIndex = positionToStringIndex(
-      range.end, in: text, startIndex: startIndex, startPos: range.start)
-  else {
-    return nil
-  }
-
-  return startIndex ..< endIndex
 }
 
 private func applyChange(_ change: TextDocumentContentChangeEvent, on text: inout String)
@@ -98,35 +70,14 @@ private func applyChange(_ change: TextDocumentContentChangeEvent, on text: inou
 
 public struct AnalyzedDocument: Sendable {
 
-  public let url: AbsoluteUrl
+  public let url: AbsoluteURL
   public let program: Program
 
   public init(
-    url: AbsoluteUrl, program: Program
+    url: AbsoluteURL, program: Program
   ) {
     self.url = url
     self.program = program
-  }
-
-}
-
-/// A two-way mapping between real file paths and AST source file IDs.
-public struct UriMapping: Sendable {
-
-  private var translationUnitsByRealPath: [AbsoluteUrl: SourceFile.ID] = [:]
-  private var realPathByAstUri: [SourceFile.ID: AbsoluteUrl] = [:]
-
-  func realPathOf(sourceFile: SourceFile.ID) -> AbsoluteUrl? {
-    return realPathByAstUri[sourceFile]
-  }
-
-  func translationUnitOf(realPath: AbsoluteUrl) -> SourceFile.ID? {
-    return translationUnitsByRealPath[realPath]
-  }
-
-  mutating func insert(realPath: AbsoluteUrl, sourceFile: SourceFile.ID) {
-    translationUnitsByRealPath[realPath] = sourceFile
-    realPathByAstUri[sourceFile] = realPath
   }
 
 }
@@ -139,7 +90,7 @@ struct DocumentContext {
   public private(set) var doc: Document
   public private(set) var program: Program
 
-  public var url: AbsoluteUrl { doc.uri }
+  public var url: AbsoluteURL { doc.uri }
 
   /// Creates a new document context with a fully typed program.
   public init(_ doc: Document, program: Program) {
@@ -147,11 +98,11 @@ struct DocumentContext {
     self.program = program
   }
 
+  /// Applies `changes` to the document.
   public mutating func applyChanges(
     _ changes: [TextDocumentContentChangeEvent], version: Int?
   ) throws {
     try doc.applyChanges(changes, version: version)
-    doc.version = version
   }
 
 }

@@ -27,13 +27,13 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
   public func typeHierarchySubtypes(
     id: JSONRPC.JSONId, params: LanguageServerProtocol.TypeHierarchySubtypesParams
   ) async -> Response<LanguageServerProtocol.TypeHierarchySubtypesResponse> {
-    return .internalError("Not implemented")
+    .failure(.init(code: ErrorCodes.MethodNotFound, message: "Not implemented"))
   }
 
   public func typeHierarchySupertypes(
     id: JSONRPC.JSONId, params: LanguageServerProtocol.TypeHierarchySupertypesParams
   ) async -> Response<LanguageServerProtocol.TypeHierarchySupertypesResponse> {
-    return .internalError("Not implemented")
+    .failure(.init(code: ErrorCodes.MethodNotFound, message: "Not implemented"))
   }
 
   public let connection: JSONRPCClientConnection
@@ -50,7 +50,7 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
   }
 
   public func internalError(_ error: Error) async {
-    logger.debug("LSP stream error: \(error)")
+    logger.error("LSP stream error: \(error)")
   }
 
   public func handleRequest(id: JSONId, request: ClientRequest) async {
@@ -72,53 +72,6 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
   }
 
   public func shutdown(id: JSONId) async {
-  }
-
-  func validateRange(_ s: DocumentSymbol) -> Bool {
-    if s.selectionRange.start < s.range.start || s.selectionRange.end > s.range.end {
-      logger.error("Invalid symbol ranges, selectionRange is outside range: \(s)")
-      return false
-    }
-
-    return true
-  }
-
-  func withAnalyzedDocument<ResponseT>(
-    _ textDocument: TextDocumentIdentifier,
-    fn: (AnalyzedDocument) async -> Result<ResponseT?, AnyJSONRPCResponseError>
-  ) async -> Result<ResponseT?, AnyJSONRPCResponseError> {
-    do {
-      let docResult = try await documentProvider.getAnalyzedDocument(textDocument)
-      return await fn(docResult)
-    } catch {
-      return .internalError("Unknown build error: \(error)")
-    }
-  }
-
-  func withDocumentAST<ResponseT>(
-    _ textDocument: TextDocumentIdentifier,
-    fn: (Program) async -> Result<ResponseT?, AnyJSONRPCResponseError>
-  ) async -> Result<ResponseT?, AnyJSONRPCResponseError> {
-
-    let result: Program
-    do {
-      result = try await documentProvider.getParsedProgram(url: textDocument.uri)
-    } catch {
-      return .invalidParameters(error.localizedDescription)
-    }
-
-    return await fn(result)
-  }
-
-}
-
-extension Program {
-
-  public func scope(at node: AnySyntaxIdentity) -> ScopeIdentity {
-    if isScope(node) {
-      return ScopeIdentity(uncheckedFrom: node)
-    }
-    return parent(containing: node)
   }
 
 }

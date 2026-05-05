@@ -19,7 +19,7 @@ extension VersionedTextDocumentIdentifier: TextDocumentProtocol {}
 public enum GetDocumentContextError: Error {
 
   case invalidUri(DocumentUri)
-  case documentNotOpened(AbsoluteUrl)
+  case documentNotOpened(AbsoluteURL)
 
 }
 
@@ -100,14 +100,14 @@ private struct CompilationHelper {
 /// time in the live-server path.
 public actor DocumentProvider {
 
-  private var documents: [AbsoluteUrl: DocumentContext] = [:]
+  private var documents: [AbsoluteURL: DocumentContext] = [:]
   public let logger: Logger
   let connection: JSONRPCClientConnection
   var rootUri: String?
   var workspaceFolders: [WorkspaceFolder] = []
 
   // Standard library caching
-  private var stdlibCache: [AbsoluteUrl: StandardLibraryCache] = [:]
+  private var stdlibCache: [AbsoluteURL: StandardLibraryCache] = [:]
   public let defaultStdlibRoot: URL
 
   /// Creates an instance ready for the pre-handshake phase of the LSP lifecycle.
@@ -136,9 +136,9 @@ public actor DocumentProvider {
   }
 
   /// Applies the LSP `initialize` handshake parameters to this instance and returns the available server capabilities.
-  public func initialize(_ params: InitializeParams) async throws(AnyJSONRPCResponseError)
-    -> InitializationResponse
-  {
+  public func initialize(
+    _ params: InitializeParams
+  ) async throws(AnyJSONRPCResponseError) -> InitializationResponse {
     if let workspaceFolders = params.workspaceFolders {
       self.workspaceFolders = workspaceFolders
     }
@@ -159,18 +159,16 @@ public actor DocumentProvider {
   }
 
   public func workspaceDidChangeWorkspaceFolders(_ params: DidChangeWorkspaceFoldersParams) async {
-    let removed = params.event.removed
-    let added = params.event.added
-    workspaceFolders = workspaceFolders.filter { removed.contains($0) }
-    workspaceFolders.append(contentsOf: added)
+    workspaceFolders.removeAll { params.event.removed.contains($0) }
+    workspaceFolders.append(contentsOf: params.event.added)
   }
 
-  public func isStdlibDocument(_ uri: AbsoluteUrl) -> Bool {
+  public func isStdlibDocument(_ uri: AbsoluteURL) -> Bool {
     let (_, isStdlibDocument) = getStdlibPath(uri)
     return isStdlibDocument
   }
 
-  public func getStdlibPath(_ uri: AbsoluteUrl) -> (stdlibPath: AbsoluteUrl, isStdlibDocument: Bool)
+  public func getStdlibPath(_ uri: AbsoluteURL) -> (stdlibPath: AbsoluteURL, isStdlibDocument: Bool)
   {
     var it = uri.url.deletingLastPathComponent()
 
@@ -181,13 +179,13 @@ public actor DocumentProvider {
       var isDirectory: ObjCBool = false
       if fm.fileExists(atPath: voidPath, isDirectory: &isDirectory) && !isDirectory.boolValue {
         logger.info("Use local stdlib path: \(it.path)")
-        return (AbsoluteUrl(it), true)
+        return (AbsoluteURL(it), true)
       }
 
       it = it.deletingLastPathComponent()
     }
 
-    return (AbsoluteUrl(defaultStdlibRoot), false)
+    return (AbsoluteURL(defaultStdlibRoot), false)
   }
 
   func getRelativePathInWorkspace(_ uri: DocumentUri, relativeTo workspace: DocumentUri) -> String?
@@ -209,26 +207,6 @@ public actor DocumentProvider {
 
   }
 
-  func getWorkspaceFile(_ uri: DocumentUri) -> WorkspaceFile? {
-    var wsRoots = workspaceFolders.map { $0.uri }
-    if let rootUri = rootUri {
-      wsRoots.append(rootUri)
-    }
-
-    var closest: WorkspaceFile?
-
-    // Look for the closest matching workspace root
-    for root in wsRoots {
-      if let relPath = getRelativePathInWorkspace(uri, relativeTo: root) {
-        if closest == nil || relPath.count < closest!.relativePath.count {
-          closest = WorkspaceFile(workspace: root, relativePath: relPath)
-        }
-      }
-    }
-
-    return closest
-  }
-
   func uriAsFilepath(_ uri: DocumentUri) -> String? {
     guard let url = URL.init(string: uri) else {
       return nil
@@ -240,7 +218,7 @@ public actor DocumentProvider {
   // MARK: - Standard Library Management
 
   /// Loads standard library sources from the given path
-  private func loadStandardLibrarySources(from stdlibPath: AbsoluteUrl) throws -> [SourceFile] {
+  private func loadStandardLibrarySources(from stdlibPath: AbsoluteURL) throws -> [SourceFile] {
     var sources: [SourceFile] = []
 
     try SourceFile.forEach(in: stdlibPath.url) { sourceFile in
@@ -250,7 +228,7 @@ public actor DocumentProvider {
   }
 
   /// Builds a program with standard library loaded and typed
-  private func buildStandardLibraryProgram(from stdlibPath: AbsoluteUrl) async throws
+  private func buildStandardLibraryProgram(from stdlibPath: AbsoluteURL) async throws
     -> StandardLibraryCache
   {
     logger.debug("Building standard library program from: \(stdlibPath)")
@@ -290,7 +268,7 @@ public actor DocumentProvider {
   }
 
   /// Gets or builds the standard library program, with caching
-  private func getStandardLibraryProgram(from stdlibPath: AbsoluteUrl) async throws
+  private func getStandardLibraryProgram(from stdlibPath: AbsoluteURL) async throws
     -> StandardLibraryCache
   {
     // Check if we have a cached version
@@ -314,7 +292,7 @@ public actor DocumentProvider {
   }
 
   /// Invalidates standard library cache for the given path
-  private func invalidateStandardLibraryCache(for stdlibPath: AbsoluteUrl) {
+  private func invalidateStandardLibraryCache(for stdlibPath: AbsoluteURL) {
     logger.debug("Invalidating standard library cache for: \(stdlibPath)")
     stdlibCache.removeValue(forKey: stdlibPath)
   }
@@ -322,7 +300,7 @@ public actor DocumentProvider {
   // MARK: - Program Building
 
   /// Builds a complete program for a document
-  private func buildProgramForDocument(url: AbsoluteUrl, text: String) async throws -> Program {
+  private func buildProgramForDocument(url: AbsoluteURL, text: String) async throws -> Program {
     let (standardLibrary, isStdlibDocument) = getStdlibPath(url)
 
     if isStdlibDocument {
@@ -371,7 +349,7 @@ public actor DocumentProvider {
   }
 
   public func updateDocument(_ params: DidChangeTextDocumentParams) async throws {
-    let uri = AbsoluteUrl(fromUrlString: params.textDocument.uri)!
+    let uri = try AbsoluteURL(fromUrlString: params.textDocument.uri)
 
     guard var context = documents[uri] else {
       throw DocumentProviderError("Could not find opened document: \(uri)")
@@ -401,7 +379,7 @@ public actor DocumentProvider {
   ///
   /// If the document has been implicitly registered before, this will override the existing context.
   public func registerDocument(_ params: DidOpenTextDocumentParams) async throws {
-    let doc = Document(textDocument: params.textDocument)
+    let doc = try Document(textDocument: params.textDocument)
 
     // Build program for the document
     let program = try await buildProgramForDocument(url: doc.uri, text: doc.text)
@@ -418,7 +396,7 @@ public actor DocumentProvider {
       throw DocumentProviderError(
         "Could not find opened document to remove at: \(params.textDocument.uri)")
     }
-    guard let _ = documents.removeValue(forKey: AbsoluteUrl(validUrl)) else {
+    guard let _ = documents.removeValue(forKey: AbsoluteURL(validUrl)) else {
       throw DocumentProviderError("Could not find opened document to remove at: \(validUrl)")
     }
   }
@@ -428,7 +406,7 @@ public actor DocumentProvider {
   /// We cannot assume that the client has sent a `didOpen` notification before performing other LSP requests.
   /// - See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_didOpen
   /// - See https://github.com/microsoft/language-server-protocol/issues/1912
-  func implicitlyRegisterDocument(url: AbsoluteUrl) async throws -> DocumentContext {
+  func implicitlyRegisterDocument(url: AbsoluteURL) async throws -> DocumentContext {
     guard let text = try? String(contentsOf: url.url, encoding: .utf8) else {
       throw GetDocumentContextError.documentNotOpened(url)
     }
@@ -446,13 +424,10 @@ public actor DocumentProvider {
   }
 
   func getDocumentContext(uri: DocumentUri) async throws -> DocumentContext {
-    guard let url = AbsoluteUrl(fromUrlString: uri) else {
-      throw GetDocumentContextError.invalidUri(uri)
-    }
-    return try await getDocumentContext(url: url)
+    try await getDocumentContext(url: try AbsoluteURL(fromUrlString: uri))
   }
 
-  func getDocumentContext(url: AbsoluteUrl) async throws -> DocumentContext {
+  func getDocumentContext(url: AbsoluteURL) async throws -> DocumentContext {
     if let d = documents[url] {
       return d
     }
@@ -460,21 +435,15 @@ public actor DocumentProvider {
     return try await implicitlyRegisterDocument(url: url)
   }
 
-  public func getParsedProgram(url: DocumentUri) async throws
-    -> Program
-  {
+  public func getParsedProgram(url: DocumentUri) async throws -> Program {
     (try await getDocumentContext(uri: url)).program
   }
 
-  public func getAnalyzedDocument(_ textDocument: TextDocumentProtocol) async throws
-    -> AnalyzedDocument
-  {
-
+  public func getAnalyzedDocument(
+    _ textDocument: TextDocumentProtocol
+  ) async throws -> AnalyzedDocument {
     let context = try await getDocumentContext(uri: textDocument.uri)
-
-    return AnalyzedDocument(
-      url: context.url,
-      program: context.program)
+    return AnalyzedDocument(url: context.url, program: context.program)
   }
 
 }

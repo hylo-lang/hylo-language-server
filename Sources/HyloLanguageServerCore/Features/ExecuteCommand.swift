@@ -18,12 +18,4 @@ extension HyloRequestHandler {
       .init(code: ErrorCodes.MethodNotFound, message: "Unknown command: \(params.command)"))
   }
 
-  public func definition(id: JSONId, params: TextDocumentPositionParams) async -> Response<
-    DefinitionResponse
-  > {
-    await withAnalyzedDocument(params.textDocument) { doc in
-      await definition(id: id, params: params, doc: doc)
-    }
-  }
-
 }

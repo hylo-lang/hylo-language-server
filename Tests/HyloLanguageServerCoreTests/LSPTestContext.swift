@@ -144,12 +144,7 @@ public actor LSPTestContext {
     )
 
     let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
-    switch await requestHandler.definition(id: .numericId(1), params: params, doc: doc) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw TestFailure(error.message)
-    }
+    return try await requestHandler.definition(id: .numericId(1), params: params, doc: doc)
   }
 
   public func references(

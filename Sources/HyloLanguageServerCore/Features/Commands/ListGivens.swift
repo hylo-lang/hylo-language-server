@@ -5,44 +5,38 @@ import LanguageServerProtocol
 
 extension HyloRequestHandler {
 
-  func givens(arguments: [LSPAny], location: Location, document: AnalyzedDocument) -> Response<
-    LSPAny?
-  > {
+  func givens(
+    arguments: [LSPAny], location: Location, document: AnalyzedDocument
+  ) throws -> LSPAny? {
     var p = document.program
 
-    guard let url = AbsoluteUrl(fromUrlString: location.uri) else {
-      return .invalidParameters("Invalid document uri: \(location.uri)")
-    }
-    guard let s = p.sourceFile(named: url.localFileName) else {
-      return .internalError("Failed to locate module: \(location.uri)")
-    }
-    guard let cursor = SourcePosition(location.range.start, in: p[sourceFile: s]) else {
-      return .invalidParameters("Position out of bounds")
-    }
+    let s = try p.requireSourceFile(at: document.url)
+    let cursor = try SourcePosition(location.range.start, in: p[sourceFile: s])
 
     guard
       let n = document.program.innermostTree(
         containing: cursor, reportingLogsTo: logger, in: s)
     else {
-      return .success([])  // No node at cursor
+      return .array([])  // No node at cursor
     }
 
     let givenDescriptions = p.givens(in: s.module, visibleFrom: p.scope(at: n))
       .map { given in LSPAny.string(p.show(given)) }
 
-    return .success(LSPAny.array(givenDescriptions))
+    return .array(givenDescriptions)
   }
 
   public func givens(arguments: [LSPAny]) async -> Response<LSPAny?> {
-    guard let a = arguments.first, let location = Location(json: a) else {
-      return .invalidParameters("First argument must be a Location.")
-    }
+    await reportingLSPError {
+      guard let a = arguments.first, let location = Location(json: a) else {
+        throw LSPError.invalidParameter(message: "First argument must be a Location.")
+      }
 
-    return await withAnalyzedDocument(TextDocumentIdentifier(uri: location.uri)) { doc in
-      return givens(arguments: arguments, location: location, document: doc)
+      let doc = try await documentProvider.getAnalyzedDocument(
+        TextDocumentIdentifier(uri: location.uri))
+      return try givens(arguments: arguments, location: location, document: doc)
     }
   }
-
 }
 
 extension Given: @retroactive Showable {

@@ -4,6 +4,7 @@ func getServerCapabilities() -> ServerCapabilities {
   var serverCapabilities = ServerCapabilities()
   let documentSelector = DocumentFilter(pattern: "**/*.hylo")
 
+  // todo implement efficient incremental sync
   serverCapabilities.textDocumentSync = .optionB(TextDocumentSyncKind.full)
   serverCapabilities.definitionProvider = .optionA(true)
   serverCapabilities.documentSymbolProvider = .optionA(true)

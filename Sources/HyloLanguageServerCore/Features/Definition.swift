@@ -6,54 +6,56 @@ import Logging
 
 extension HyloRequestHandler {
 
+  public func definition(id: JSONId, params: TextDocumentPositionParams) async -> Response<
+    DefinitionResponse
+  > {
+    await reportingLSPError {
+      let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
+      return try await definition(id: id, params: params, doc: doc)
+    }
+  }
+
   public func definition(id: JSONId, params: TextDocumentPositionParams, doc: AnalyzedDocument)
-    async -> Response<DefinitionResponse>
+    async throws -> DefinitionResponse
   {
     let p = doc.program
-    guard let url = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
-      return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
-    }
-    guard let s = p.sourceFile(named: url.localFileName) else {
-      return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
-    }
-
-    guard let cursor = SourcePosition(params.position, in: p[sourceFile: s]) else {
-      return .invalidParameters("Position out of bounds")
-    }
-
-    return .success(resolve(cursor, in: doc.program, logger: logger, in: s))
+    let url = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+    let s = try p.requireSourceFile(at: url)
+    let cursor = try SourcePosition(params.position, in: p[sourceFile: s])
+    return resolveDefinition(cursor, in: doc.program, logger: logger, in: s)
   }
 
-}
-
-func resolve(
-  _ p: SourcePosition, in program: Program, logger: Logger, in f: SourceFile.ID
-) -> DefinitionResponse {
-  guard let d = program.innermostTree(containing: p, reportingLogsTo: logger, in: f)
-  else { return nil }
-
-  if let decl = resolveDefinition(
-    program: program, d, visibleFrom: program.scope(at: d))
-  {
-    return .optionA(Location(program[decl].site))
-  }
-  return nil
 }
 
 func resolveDefinition(
-  program: Program,
-  _ node: AnySyntaxIdentity, visibleFrom scopeOfUse: ScopeIdentity
-) -> DeclarationIdentity? {
-  if let c = program.cast(node, to: Call.self),
-    let callee = program.callee(ExpressionIdentity(c)),
-    let n = program.cast(callee, to: NameExpression.self)
+  _ p: SourcePosition, in program: Program, logger: Logger, in f: SourceFile.ID
+) -> DefinitionResponse {
+  if let d = program.innermostTree(containing: p, reportingLogsTo: logger, in: f),
+    let decl = program.resolveDefinition(d, visibleFrom: program.scope(at: d))
   {
-    return program.declaration(referredToBy: n).target
+    .optionA(Location(program[decl].site))
+  } else {
+    nil
+  }
+}
+
+extension Program {
+
+  func resolveDefinition(
+    _ node: AnySyntaxIdentity, visibleFrom scopeOfUse: ScopeIdentity
+  ) -> DeclarationIdentity? {
+    if let c = cast(node, to: Call.self),
+      let callee = callee(ExpressionIdentity(c)),
+      let n = cast(callee, to: NameExpression.self)
+    {
+      return declaration(ifReferredToBy: n)?.target
+    }
+
+    if let nameId = cast(node, to: NameExpression.self) {
+      return declaration(ifReferredToBy: nameId)?.target
+    }
+
+    return nil
   }
 
-  if let nameId = program.cast(node, to: NameExpression.self) {
-    return program.declaration(referredToBy: nameId).target
-  }
-
-  return nil
 }

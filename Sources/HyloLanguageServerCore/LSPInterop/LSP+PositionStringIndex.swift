@@ -13,7 +13,7 @@ extension Position {
         line += 1
         character = 0
       } else {
-        character += 1
+        character += c.utf16.count
       }
       i = text.index(after: i)
     }
@@ -37,7 +37,7 @@ extension Position {
         line += 1
         character = 0
       } else {
-        character += 1
+        character += text[i].utf16.count
       }
 
       i = text.index(after: i)

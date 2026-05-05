@@ -7,27 +7,19 @@ import Logging
 extension HyloRequestHandler {
 
   public func references(id: JSONId, params: ReferenceParams) async -> Response<ReferenceResponse> {
-    await withAnalyzedDocument(params.textDocument) { doc in
+    await reportingLSPError {
+      let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
       let p = doc.program
-      guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
-        return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
-      }
-      guard let s = p.sourceFile(named: source.localFileName) else {
-        logger.error("Failed to locate translation unit: \(params.textDocument.uri)")
-        return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
-      }
-      guard let cursor = SourcePosition(params.position, in: p[sourceFile: s]) else {
-        return .invalidParameters("Position out of bounds")
-      }
+      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+      let s = try p.requireSourceFile(at: source)
+      let cursor = try SourcePosition(params.position, in: p[sourceFile: s])
 
       guard let target = p.innermostTree(containing: cursor, reportingLogsTo: logger, in: s)
-      else { return .success(nil) }
+      else { return nil }
 
-      guard let d = p.castToDeclaration(target) else { return .success(nil) }
+      guard let d = p.castToDeclaration(target) else { return nil }
 
-      return .success(
-        findReferences(of: d, in: doc.program).map(Location.init)
-      )
+      return findReferences(of: d, in: doc.program).map(Location.init)
     }
   }
 
@@ -36,7 +28,7 @@ extension HyloRequestHandler {
   ) -> [SourceSpan] {
     return program.select(.tag(NameExpression.self))
       .map(NameExpression.ID.init(uncheckedFrom:))
-      .filter { program.declaration(referredToBy: $0).target == declaration }
+      .filter { program.declaration(ifReferredToBy: $0)?.target == declaration }
       .map { program[$0].name.site }
   }
 
