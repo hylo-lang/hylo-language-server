@@ -9,32 +9,24 @@ extension HyloRequestHandler {
   public func diagnostics(id: JSONId, params: DocumentDiagnosticParams) async -> Response<
     DocumentDiagnosticReport
   > {
-    do {
+    await reportingLSPError{
       let p = try await documentProvider.getAnalyzedDocument(params.textDocument).program
 
-      guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
-        return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
-      }
+      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
       guard let s = p.sourceFile(named: source.localFileName) else {
-        return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
+        throw LSPError.internalError(message: "Failed to locate translation unit: \(params.textDocument.uri)")
       }
       let ds = p.diagnostics(in: s)
 
-      return .success(
-        buildReport(
-          uri: AbsoluteUrl(fromUrlString: params.textDocument.uri)!,
-          diagnostics: ds)
-      )
-    } catch {
-      return .internalError("Unknown build error: \(error)")
+      return buildReport(uri: source, diagnostics: ds)
     }
   }
 
 }
 
-func buildReport(uri: AbsoluteUrl, diagnostics: DiagnosticSet)
-  -> RelatedDocumentDiagnosticReport
-{
+private func buildReport(
+  uri: AbsoluteURL, diagnostics: DiagnosticSet
+) -> RelatedDocumentDiagnosticReport {
   let (fromOtherDocument, fromCurrentDocument) = diagnostics.elements.partitioned {
     $0.site.source.name.absoluteUrl == uri
   }

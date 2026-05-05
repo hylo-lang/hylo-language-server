@@ -9,58 +9,44 @@ extension HyloRequestHandler {
   public func documentHighlight(id: JSONId, params: DocumentHighlightParams) async -> Response<
     DocumentHighlightResponse
   > {
-    guard let url = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
-      return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
-    }
-
-    return await withAnalyzedDocument(params.textDocument) { doc in
+    await reportingLSPError {
+      let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
       let p = doc.program
-
-      guard let s = p.sourceFile(named: url.localFileName) else {
-        logger.error("Failed to locate translation unit: \(params.textDocument.uri)")
-        return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
-      }
-      guard let cursor = SourcePosition(params.position, in: p[sourceFile: s]) else {
-        return .invalidParameters("Position out of bounds")
-      }
+      let s = try p.requireSourceFile(at: doc.url)
+      let cursor = try SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
         let node = p.innermostTree(
           containing: cursor, reportingLogsTo: logger, in: s)
-      else { return .success(nil) }
+      else { return nil }
 
       if let declaration = p.castToDeclaration(node) {
         if let identifier = p.identifier(of: declaration),
           identifier.site.region.contains(cursor.index)
         {
-          return .success(
-            highlights(of: declaration, declarationIdentifierSite: identifier.site, in: p)
-          )
+          return highlights(of: declaration, declarationIdentifierSite: identifier.site, in: p)
         }
       }
 
       if let name = p.cast(node, to: NameExpression.self) {
-        guard let declaration = p.declaration(referredToBy: name).target else {
-          return .success(nil)
+        guard let declaration = p.declaration(ifReferredToBy: name)?.target else {
+          return nil
         }
 
-        return .success(
-          highlights(
-            of: declaration,
-            declarationIdentifierSite: p.identifier(of: declaration)?.site,
-            in: p))
+        return highlights(
+          of: declaration, declarationIdentifierSite: p.identifier(of: declaration)?.site, in: p)
       }
 
-      return .success(nil)
+      return nil
     }
   }
 
   private func highlights(
     of declaration: DeclarationIdentity, declarationIdentifierSite: SourceSpan?, in program: Program
   ) -> [DocumentHighlight] {
-    var highlights = findReferences(of: declaration, in: program).map(Location.init).map {
-      DocumentHighlight(range: $0.range)
-    }
+    var highlights = findReferences(of: declaration, in: program)
+      .map(Location.init).map { DocumentHighlight(range: $0.range) }
+
     if let declarationIdentifierSite = declarationIdentifierSite {
       highlights.append(DocumentHighlight(range: LSPRange(declarationIdentifierSite)))
     }

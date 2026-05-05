@@ -15,6 +15,7 @@ public enum HyloSemanticTokenType: UInt32, CaseIterable {
   case function
   case keyword
   case namespace
+  case enumMember
   case unknown
 
   public var description: String {

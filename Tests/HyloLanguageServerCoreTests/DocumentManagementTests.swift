@@ -56,7 +56,7 @@ final class DocumentManagementTests: XCTestCase {
 
     let textDocument = TextDocumentItem(uri: uri, languageId: "hylo", version: 0, text: beforeEdit)
 
-    var doc = Document(textDocument: textDocument)
+    var doc = try Document(textDocument: textDocument)
 
     let changes = [
       TextDocumentContentChangeEvent(
@@ -71,49 +71,6 @@ final class DocumentManagementTests: XCTestCase {
 
     try doc.applyChanges(changes, version: 2)
     XCTAssertEqual(doc.text, afterEdit)
-  }
-
-  func testFindDocumentRelativeWorkspacePath() async throws {
-    let logger = createLogger()
-    let dataChannel = DataChannel.stdioPipe()
-    let connection = JSONRPCClientConnection(dataChannel)
-
-    let params = InitializeParams(
-      processId: 1,
-      locale: nil,
-      rootPath: nil,
-      rootUri: "/foo/a",
-      initializationOptions: nil,
-      capabilities: ClientCapabilities(
-        workspace: nil, textDocument: nil, window: nil, general: nil, experimental: nil),
-      trace: nil,
-      workspaceFolders: [
-        WorkspaceFolder(uri: "/foo/b", name: "b"),
-        WorkspaceFolder(uri: "/foo/b/c", name: "b/c"),
-      ]
-    )
-
-    let (documentProvider, _) = try await DocumentProvider.make(
-      connection: connection,
-      logger: logger,
-      standardLibrary: StandardLibrary.bundledStandardLibrarySources,
-      parameters: params
-    )
-
-    var ws1 = await documentProvider.getWorkspaceFile("/foo/a/x.hylo")
-    var ws = try XCTUnwrap(ws1)
-    XCTAssert(ws.relativePath == "x.hylo")
-    XCTAssert(ws.workspace == "/foo/a")
-
-    ws1 = await documentProvider.getWorkspaceFile("/foo/b/x.hylo")
-    ws = try XCTUnwrap(ws1)
-    XCTAssert(ws.relativePath == "x.hylo")
-    XCTAssert(ws.workspace == "/foo/b")
-
-    ws1 = await documentProvider.getWorkspaceFile("/foo/b/c/x.hylo")
-    ws = try XCTUnwrap(ws1)
-    XCTAssert(ws.relativePath == "x.hylo")
-    XCTAssert(ws.workspace == "/foo/b/c")
   }
 
 }

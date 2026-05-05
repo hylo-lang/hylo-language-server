@@ -6,39 +6,31 @@ import Logging
 
 extension HyloRequestHandler {
 
-  public func hover(id: JSONId, params: TextDocumentPositionParams) async -> Response<HoverResponse>
-  {
-    guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
-      return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
-    }
-
-    return await withAnalyzedDocument(params.textDocument) { doc in
+  public func hover(
+    id: JSONId, params: TextDocumentPositionParams
+  ) async -> Response<HoverResponse> {
+    await reportingLSPError {
+      let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
       let p = doc.program
 
-      guard let s = p.sourceFile(named: source.localFileName) else {
-        return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
-      }
-      guard let cursor = SourcePosition(params.position, in: p[sourceFile: s]) else {
-        return .invalidParameters("Position out of bounds")
-      }
-
+      let s = try p.requireSourceFile(at: doc.url)
+      let cursor = try SourcePosition(params.position, in: p[sourceFile: s])
+    
       guard
         let nodeId = doc.program.innermostTree(
           containing: cursor, reportingLogsTo: logger, in: s)
-      else { return .success(nil) }
+      else { return nil }
 
       let site = p[nodeId].site
       let realType = p.type(assignedTo: nodeId)
       let astNodeType = p.tag(of: nodeId)
 
-      var printer = TreePrinter(program: p)
-      return .success(
-        Hover(
-          contents: .optionB([
-            .optionA("```hylo\n\(printer.show(realType))\n```"),
-            .optionA(astNodeType.description),
-          ]), range: LSPRange.init(site)
-        ))
+      return Hover(
+        contents: .optionB([
+          .optionA("```hylo\n\(p.show(realType))\n```"),
+          .optionA(astNodeType.description),
+        ]), range: LSPRange.init(site)
+      )
     }
   }
 

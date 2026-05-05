@@ -11,97 +11,77 @@ extension HyloRequestHandler {
   public func prepareRename(id: JSONId, params: PrepareRenameParams) async -> Response<
     PrepareRenameResponse
   > {
-    await withAnalyzedDocument(params.textDocument) { doc in
+    await reportingLSPError {
+      let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
       let p = doc.program
-      guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
-        return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
-      }
-      guard let s = p.sourceFile(named: source.localFileName) else {
-        logger.error("Failed to locate translation unit: \(params.textDocument.uri)")
-        return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
-      }
-      guard let cursor = SourcePosition(params.position, in: p[sourceFile: s]) else {
-        return .invalidParameters("Position out of bounds")
-      }
+      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+      let s = try p.requireSourceFile(at: source)
+      let cursor = try SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
         let node = p.innermostTree(
           containing: cursor, reportingLogsTo: logger, in: s)
-      else { return .success(nil) }  // No node found at cursor position.
+      else { return nil }  // No node found at cursor position.
 
       if let name = p.cast(node, to: NameExpression.self) {
         // If no target declaration, cannot be renamed.
-        guard let referred = p.declaration(referredToBy: name).target else {
-          return .success(nil)
-        }
+        guard let referred = p.declaration(ifReferredToBy: name)?.target else { return nil }
+
         // Cannot rename initializers.
         if let f = p.cast(referred, to: FunctionDeclaration.self) {
-          if p[f].introducer.value != .fun { return .success(nil) }
+          if p[f].introducer.value != .fun { return nil }
         }
         // Cannot rename `self` parameter
         if let r = p.cast(referred, to: ParameterDeclaration.self) {
-          if p[r].identifier.value == "self" { return .success(nil) }
+          if p[r].identifier.value == "self" { return nil }
         }
 
-        return .success(.optionA(LSPRange(p[name].name.site)))
+        return .optionA(LSPRange(p[name].name.site))
       }
 
       if let declaration = p.castToDeclaration(node),
         let identifier = p.identifier(of: declaration)
       {
-        return .success(.optionA(LSPRange(identifier.site)))
+        return .optionA(LSPRange(identifier.site))
       }
 
-      return .success(nil)  // Cannot rename symbol at cursor.
+      return nil  // Cannot rename symbol at cursor.
     }
   }
 
   public func rename(id: JSONId, params: RenameParams) async -> Response<RenameResponse> {
     // todo validate new name
 
-    await withAnalyzedDocument(params.textDocument) { doc in
+    await reportingLSPError {
+      let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
       let p = doc.program
 
-      guard let source = AbsoluteUrl(fromUrlString: params.textDocument.uri) else {
-        return .invalidParameters("Invalid document uri: \(params.textDocument.uri)")
-      }
-      guard let s = p.sourceFile(named: source.localFileName) else {
-        return .internalError("Failed to locate translation unit: \(params.textDocument.uri)")
-      }
-      guard let cursor = SourcePosition(params.position, in: p[sourceFile: s]) else {
-        return .invalidParameters("Position out of bounds")
-      }
+      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+      let s = try p.requireSourceFile(at: source)
+      let cursor = try SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
         let node = p.innermostTree(
           containing: cursor, reportingLogsTo: logger, in: s)
-      else {
-        return .success(nil)
-      }
+      else { return nil }
 
       if let name = p.cast(node, to: NameExpression.self) {
-        guard let renamee = p.declaration(referredToBy: name).target
-        else {
-          return .success(nil)  // No target to rename for related declaration.
-        }
+        guard let renamee = p.declaration(ifReferredToBy: name)?.target
+        else { return nil }  // No target to rename for related declaration.
 
-        return .success(
-          workspaceEditsForRenaming(declaration: renamee, to: params.newName, in: p))
+        return workspaceEditsForRenaming(declaration: renamee, to: params.newName, in: p)
       }
 
       if let declaration = p.castToDeclaration(node) {
-        return .success(
-          workspaceEditsForRenaming(declaration: declaration, to: params.newName, in: p))
+        return workspaceEditsForRenaming(declaration: declaration, to: params.newName, in: p)
       }
-      return .success(nil)
+      return nil
     }
   }
 
   func workspaceEditsForRenaming(
     declaration: DeclarationIdentity, to newName: String, in program: Program
-  )
-    -> WorkspaceEdit?
-  {
+  ) -> WorkspaceEdit? {
     guard let identifier = program.identifier(of: declaration) else {
       return nil
     }

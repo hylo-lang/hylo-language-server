@@ -4,7 +4,7 @@ import FrontEnd
 /// Represents a URL that's guaranteed to be absolute.
 ///
 /// In case of file:// scheme, the url is normalized to be absolute and start with file:///
-public struct AbsoluteUrl: Sendable, Hashable, CustomStringConvertible {
+public struct AbsoluteURL: Sendable, Hashable, CustomStringConvertible {
 
   let url: URL
 
@@ -18,9 +18,9 @@ public struct AbsoluteUrl: Sendable, Hashable, CustomStringConvertible {
   }
 
   /// Creates an AbsoluteUrl from a URL string.
-  public init?(fromUrlString urlString: String) {
+  public init(fromUrlString urlString: String) throws {
     guard let url = URL(string: urlString), url.scheme != nil else {
-      return nil
+      throw LSPError.invalidParameter(message: "Invalid URL string: \(urlString)")
     }
     self.init(url.absoluteURL)
   }

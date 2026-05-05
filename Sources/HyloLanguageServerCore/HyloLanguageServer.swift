@@ -9,7 +9,7 @@ public struct HyloErrorHandler: ErrorHandler {
   let logger: Logger
 
   public func internalError(_ error: Error) async {
-    logger.debug("LSP stream error: \(error)")
+    logger.error("LSP stream error: \(error)")
   }
 
 }

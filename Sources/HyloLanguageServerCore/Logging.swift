@@ -2,7 +2,6 @@ import Logging
 
 // NOTE: Currently using a global logger
 public let loggerLabel = "hylo-lsp"
-// public var loger : Logger = Logger(label: loggerLabel)
 
 // https://github.com/apple/swift-log/issues/63
 extension Logger {
