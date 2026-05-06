@@ -25,7 +25,7 @@ final class SemanticTokenTests: XCTestCase {
           from: SourcePosition(f.span.text.index(f.span.start.index, offsetBy: 4), in: f),
           to: f.span.end),
       type: .keyword,
-      modifiers: 5)
+      modifiers: [.indirect, .private])
 
     XCTAssertEqual(token.line, 1)
     XCTAssertEqual(token.char, 3)
