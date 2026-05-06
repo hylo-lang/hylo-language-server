@@ -29,14 +29,14 @@ private struct NodeFinder: SyntaxVisitor {
   }
 
   mutating func willEnter(_ n: AnySyntaxIdentity, in program: Program) -> Bool {
-    if program[n].site.region.contains(targetPosition.index) {
+    if program[n].site.region.containsInclusive(targetPosition.index) {
       if currentDepth > deepestMatchDepth {
         deepestMatchDepth = currentDepth
         deepestMatch = n
       }
     } else {
       if program.isScope(n) {
-        // If it's a scope, we know its childrens' sites are strictly subsumed, so we can skip its children.
+        // If it's a scope, we know its children's sites are strictly subsumed, so we can skip them.
         return false
       }
     }
@@ -48,6 +48,14 @@ private struct NodeFinder: SyntaxVisitor {
 
   public mutating func willExit(_ node: AnySyntaxIdentity, in program: Program) {
     currentDepth -= 1
+  }
+
+}
+
+extension Range {
+
+  func containsInclusive(_ i: Bound) -> Bool {
+    return self.lowerBound <= i && i <= self.upperBound
   }
 
 }

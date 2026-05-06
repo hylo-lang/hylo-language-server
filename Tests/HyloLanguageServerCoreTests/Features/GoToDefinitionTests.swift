@@ -1,3 +1,4 @@
+import FrontEnd
 import LanguageServerProtocol
 import Logging
 import StandardLibrary
@@ -17,90 +18,85 @@ final class GoToDefinitionTests: XCTestCase {
     context = try await LSPTestContext.make(tag: "GoToDefinitionTests", rootUri: "file:///test")
   }
 
-  // MARK: - Basic Definition Tests
 
-  private func assertDefinitionAtMarkerRange(
-    _ definition: DefinitionResponse,
-    in source: MarkedSource,
-    startMarker: Int,
-    endMarker: Int,
-    expectedUri: URL,
-    file: StaticString = #filePath,
-    line: UInt = #line
-  ) throws {
-    let expected = LSPRange(start: source.markers[startMarker], end: source.markers[endMarker])
-
-    guard let definition else {
-      XCTFail("Expected non-nil definition response", file: file, line: line)
-      return
+  /// Returns the text at the site of the definition response `d`.
+  func text(of d: DefinitionResponse, in source: MarkedSource) throws -> String {
+    switch d {
+    case .optionA(let location):
+      let start = try XCTUnwrap(location.range.start.stringIndex(in: source.source))
+      let end = try XCTUnwrap(location.range.end.stringIndex(in: source.source))
+      return String(source.source[start ..< end])
+    default:
+      throw TestFailure("Expected optionA - single location")
     }
-
-    let location: Location
-    switch definition {
-    case .optionA(let loc):
-      location = loc
-    case .optionB(let locations):
-      guard let first = locations.first else {
-        XCTFail("Expected at least one location", file: file, line: line)
-        return
-      }
-      location = first
-    case .optionC(let links):
-      guard let first = links.first else {
-        XCTFail("Expected at least one location link", file: file, line: line)
-        return
-      }
-      location = Location(uri: first.targetUri, range: first.targetRange)
-    }
-
-    let actualPath = URL(string: location.uri)?.path ?? location.uri
-    XCTAssertEqual(actualPath, expectedUri.path, file: file, line: line)
-    XCTAssertEqual(location.range, expected, file: file, line: line)
   }
 
-  func testCallFromOutside() async throws {
-    // Test "go to definition" on a function call
+  func testCall() async throws {
+    // Test definition on a recursive call
     let source = try MarkedSource(
       """
-      1️⃣fun factorial(_ n: Int) -> Int {
-        if n < 2 { 1 } else { n * factorial(n - 1) }
-      }2️⃣
+      fun factorial(n: Int) -> Int {
+        if n < 2 { 1 } else { n * 0️⃣fact1️⃣orial2️⃣(n - 1) }
+      }
 
       public fun main() {
-        let _ = 0️⃣factorial(6)
+        let _ = 9️⃣factorial🔟(6)
+      }
+      """)
+
+    for fromMarker in [0, 1, 2, 9, 10] {
+      let uri = try await context.openDocument(source)
+      let d = try await context.definition(uri: uri, at: source.markers[fromMarker])
+
+      XCTAssertEqual(
+        try text(of: d, in: source),
+        """
+        fun factorial(n: Int) -> Int {
+          if n < 2 { 1 } else { n * factorial(n - 1) }
+        }
+        """)
+    }
+  }
+
+  func testBothSidesOfIdentifiersMatch() async throws {
+    let source = try MarkedSource(
+      """
+      struct K is Deinitializable {
+        memberwise init
+        fun infix+(other: K) -> K { K() }
+        fun prefix-() -> K { K() }
+      }
+
+      public fun main() {
+        let x = K()
+        let y = K()
+        let z = 0️⃣x1️⃣ 2️⃣+3️⃣ 4️⃣-5️⃣y6️⃣
       }
       """)
 
     let uri = try await context.openDocument(source)
 
-    // Perform definition lookup
-    let definition = try await context.definition(uri: uri, at: source.markers[0])
+    let d0 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[0]))
+    XCTAssertEqual(try text(of: d0, in: source), "x")
 
-    // Assert it points to the function declaration (whole function, not just identifier)
-    try assertDefinitionAtMarkerRange(
-      definition, in: source, startMarker: 1, endMarker: 2, expectedUri: uri)
-  }
+    let d1 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[1]))
+    XCTAssertEqual(try text(of: d1, in: source), "x")
 
-  func testDefinitionOfRecursiveCall() async throws {
-    // Test definition on a recursive call
-    let source = try MarkedSource(
-      """
-      1️⃣fun factorial(_ n: Int) -> Int {
-        if n < 2 { 1 } else { n * 0️⃣factorial(n - 1) }
-      }2️⃣
+    let d2 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[2]))
+    XCTAssertEqual(try text(of: d2, in: source), "fun infix+(other: K) -> K { K() }")
 
-      public fun main() {
-        let _ = 9️⃣fac🔟torial(6)
-      }
-      """)
+    let d3 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[3]))
+    XCTAssertEqual(try text(of: d3, in: source), "fun infix+(other: K) -> K { K() }")
 
-    for fromMarker in [0, 9, 10] {
-      let uri = try await context.openDocument(source)
-      let definition = try await context.definition(uri: uri, at: source.markers[fromMarker])
+    let d4 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[4]))
+    XCTAssertEqual(try text(of: d4, in: source), "fun prefix-() -> K { K() }")
 
-      try assertDefinitionAtMarkerRange(
-        definition, in: source, startMarker: 1, endMarker: 2, expectedUri: uri)
-    }
+    let d5 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[5]))
+    XCTAssertEqual(try text(of: d5, in: source), "y")
+
+    let d6 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[6]))
+    XCTAssertEqual(try text(of: d6, in: source), "y")
+
   }
 
 }
