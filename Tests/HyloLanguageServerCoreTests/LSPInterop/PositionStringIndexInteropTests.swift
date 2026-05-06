@@ -27,6 +27,11 @@ final class PositionStringIndexInteropTests: XCTestCase {
     XCTAssertNil(Position(line: 5, character: 0).stringIndex(in: "one\nline"))
   }
 
+  func testStringIndexFromPositionReturnsEndWhenExactlyAtEnd() {
+    let s = "one\n"
+    XCTAssertEqual(Position(line: 1, character: 0).stringIndex(in: s), s.endIndex)
+  }
+
   func testPositionFromStringIndexWithLF() {
     let text = "ab\ncd"
     let index = text.index(after: text.index(after: text.startIndex))

@@ -11,7 +11,7 @@ extension HyloRequestHandler {
     var p = document.program
 
     let s = try p.requireSourceFile(at: document.url)
-    let cursor = try SourcePosition(location.range.start, in: p[sourceFile: s])
+    let cursor = SourcePosition(location.range.start, in: p[sourceFile: s])
 
     guard
       let n = document.program.innermostTree(

@@ -22,7 +22,8 @@ extension Position {
 
   /// Returns the String.Index corresponding to this LSP position in `text`.
   ///
-  /// Returns `nil` if the position lies outside the text bounds.
+  /// - Returns `endIndex` if the position is exactly at the end of the text.
+  /// - Returns `nil` if the position lies outside the text bounds and is not exactly at the end.
   public func stringIndex(in text: String) -> String.Index? {
     var line = 0
     var character = 0

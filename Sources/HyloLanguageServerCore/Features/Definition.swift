@@ -21,7 +21,7 @@ extension HyloRequestHandler {
     let p = doc.program
     let url = try AbsoluteURL(fromUrlString: params.textDocument.uri)
     let s = try p.requireSourceFile(at: url)
-    let cursor = try SourcePosition(params.position, in: p[sourceFile: s])
+    let cursor = SourcePosition(params.position, in: p[sourceFile: s])
     return resolveDefinition(cursor, in: doc.program, logger: logger, in: s)
   }
 

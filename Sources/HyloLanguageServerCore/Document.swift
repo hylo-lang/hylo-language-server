@@ -41,14 +41,12 @@ struct InvalidDocumentChangeRange: Error {
 
 }
 
-// todo remove these inefficient functions.
-
 /// Finds the String range corresponding to the given LSP range.
 private func findRange(_ range: LSPRange, in text: String) -> Range<String.Index>? {
-  if let startIndex = range.start.stringIndex(in: text),
-    let endIndex = range.end.stringIndex(in: text)
+  if let start = range.start.stringIndex(in: text),
+    let end = range.end.stringIndex(in: text)
   {
-    startIndex ..< endIndex
+    start ..< end
   } else {
     nil
   }

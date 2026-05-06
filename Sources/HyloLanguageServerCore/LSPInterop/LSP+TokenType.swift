@@ -44,13 +44,11 @@ extension SemanticToken {
   ///
   /// Requires that range doesn't span multiple lines.
   public init(range: SourceSpan, type: HyloSemanticTokenType, modifiers: UInt32 = 0) {
-    let (line, column) = range.start.lineAndColumn
-    precondition(line >= 1)
-    precondition(column >= 1)
+    let (line, column) = range.start.lineAndUtf16Column
 
     self.init(
-      line: UInt32(line - 1),
-      char: UInt32(column - 1),
+      line: UInt32(line),
+      char: UInt32(column),
       length: UInt32(range.text.utf16.count),
       type: type.rawValue,
       modifiers: modifiers
