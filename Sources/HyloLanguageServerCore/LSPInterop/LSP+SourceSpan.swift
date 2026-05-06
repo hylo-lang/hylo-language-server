@@ -30,8 +30,8 @@ extension LanguageServerProtocol.LSPRange {
 extension LanguageServerProtocol.Position {
 
   public init(_ pos: SourcePosition) {
-    let (line, column) = pos.lineAndColumn
-    self.init(line: line - 1, character: column - 1)
+    let (line, column) = pos.lineAndUtf16Column
+    self.init(line: line, character: column)
   }
 
 }
@@ -40,13 +40,9 @@ extension SourcePosition {
 
   /// Creates a `SourcePosition` from an LSP `Position` within a given source file.
   /// 
-  /// - Throws iff the position is out of bounds.
-  public init(_ position: LanguageServerProtocol.Position, in source: SourceFile) throws {
-    // FIXME: LSP gives utf16 based columns, but FrontEnd uses unicode code point columns
-    guard let index = source.index(line: position.line + 1, column: position.character + 1) else {
-      throw LSPError.invalidParameter(message: "Position '\(position)' out of bounds in \(source.name)")
-    }
-    self.init(index, in: source)
+  /// Clamps the position to [startIndex, endIndex] of the source file.
+  public init(_ position: LanguageServerProtocol.Position, in source: SourceFile) {
+    self.init(source.index(line: position.line, utf16Column: position.character), in: source)
   }
 
 }

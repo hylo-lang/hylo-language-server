@@ -13,7 +13,7 @@ extension HyloRequestHandler {
       let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
       let p = doc.program
       let s = try p.requireSourceFile(at: doc.url)
-      let cursor = try SourcePosition(params.position, in: p[sourceFile: s])
+      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
         let node = p.innermostTree(

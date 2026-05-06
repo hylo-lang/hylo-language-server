@@ -188,10 +188,6 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
   }
 
-  mutating func addCaptureList(_ d: CaptureList) {
-    // todo
-  }
-
   mutating func addEnum(_ d: EnumDeclaration) {
     // Add modifiers
     for modifier in d.modifiers {
@@ -231,7 +227,6 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
   mutating func addVariant(_ d: VariantDeclaration) {
     addKeyword(at: d.effect.site)
 
-    // todo: add body if present
     if let body = d.body {
       for statement in body {
         addSyntax(statement.erased)

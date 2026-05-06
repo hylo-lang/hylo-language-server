@@ -12,7 +12,7 @@ extension HyloRequestHandler {
       let p = doc.program
       let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
       let s = try p.requireSourceFile(at: source)
-      let cursor = try SourcePosition(params.position, in: p[sourceFile: s])
+      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard let target = p.innermostTree(containing: cursor, reportingLogsTo: logger, in: s)
       else { return nil }

@@ -62,7 +62,7 @@ final class DocumentManagementTests: XCTestCase {
       TextDocumentContentChangeEvent(
         range: LSPRange(startPair: (0, 4), endPair: (0, 13)), rangeLength: nil, text: "foo"),
       TextDocumentContentChangeEvent(
-        range: LSPRange(startPair: (3, 0), endPair: (3, 1)), rangeLength: nil, text: ""),
+        range: LSPRange(startPair: (3, 0), endPair: (4, 0)), rangeLength: nil, text: ""),
       TextDocumentContentChangeEvent(
         range: LSPRange(startPair: (4, 10), endPair: (4, 19)), rangeLength: nil, text: "foo"),
       TextDocumentContentChangeEvent(
