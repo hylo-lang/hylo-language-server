@@ -325,7 +325,7 @@ public actor DocumentProvider {
     let (parseTime, parseError) = await helper.parse([sourceFile], into: mainModuleId)
     logger.debug("Main module parsing took: \(parseTime)")
     if parseError {
-      logger.error("Main module parsing failed")
+      logger.error("Main module parsing failed\n\(render(helper.program.diagnostics))")
       // Continue anyway for LSP features
     }
 
@@ -333,7 +333,7 @@ public actor DocumentProvider {
     let (scopeTime, scopeError) = await helper.assignScopes(of: mainModuleId)
     logger.debug("Main module scope assignment took: \(scopeTime)")
     if scopeError {
-      logger.error("Main module scope assignment failed")
+      logger.error("Main module scope assignment failed\n\(render(helper.program.diagnostics))")
       // Continue anyway for LSP features
     }
 
@@ -341,11 +341,20 @@ public actor DocumentProvider {
     let (typeTime, typeError) = await helper.assignTypes(of: mainModuleId)
     logger.debug("Main module type checking took: \(typeTime)")
     if typeError {
-      logger.error("Main module type checking failed")
+      logger.error("Main module type checking failed.\n\(render(helper.program.diagnostics))")
       // Continue anyway for LSP features
     }
 
     return helper.program
+  }
+
+  /// Renders the diagnostics in `ds` to a newline-separated string.
+  func render(_ ds: some Sequence<FrontEnd.Diagnostic>) -> String {
+    var o = ""
+    for d in ds {
+      d.render(into: &o, showingPaths: .absolute, style: .unstyled)
+    }
+    return o
   }
 
   public func updateDocument(_ params: DidChangeTextDocumentParams) async throws {
