@@ -70,10 +70,9 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
   mutating func addSyntax(_ s: AnySyntaxIdentity) {
     let tag = program.tag(of: s)
-    logger.debug("Processing syntax: \(tag)")
 
     // Declarations:
-    switch program.tag(of: s) {
+    switch tag {
     case AssociatedTypeDeclaration.self:
       addAssociatedType(
         program[program.castUnchecked(s, to: AssociatedTypeDeclaration.self)])
@@ -198,7 +197,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: d.introducer.site)
 
     // Add enum name
-    addToken(range: d.identifier.site, type: .type)
+    addToken(range: d.identifier.site, type: .type, modifiers: .declaration)
 
     // Add generic parameters
     for p in d.parameters {
@@ -221,7 +220,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
   mutating func addImport(_ d: ImportDeclaration) {
     addKeyword(at: d.introducer.site)
-    addToken(range: d.identifier.site, type: HyloSemanticTokenType.namespace)
+    addToken(range: d.identifier.site, type: .namespace, modifiers: .declaration)
   }
 
   mutating func addVariant(_ d: VariantDeclaration) {
@@ -236,7 +235,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
   mutating func addEnumCase(_ d: EnumCaseDeclaration) {
     addKeyword(at: d.introducer.site)
-    addToken(range: d.identifier.site, type: .enumMember)
+    addToken(range: d.identifier.site, type: .enumMember, modifiers: .declaration)
 
     for p in d.parameters {
       addParameter(program[p])
@@ -267,7 +266,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
   }
 
-  mutating func addToken(range: SourceSpan, type: HyloSemanticTokenType, modifiers: UInt32 = 0) {
+  mutating func addToken(range: SourceSpan, type: HyloSemanticTokenType, modifiers: HyloSemanticTokenModifier = []) {
     tokens.append(SemanticToken(range: range, type: type, modifiers: modifiers))
   }
 
@@ -288,7 +287,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
   mutating func addParameter(_ p: ParameterDeclaration) {
     // addLabel(p.label)
 
-    addToken(range: p.identifier.site, type: .parameter)
+    addToken(range: p.identifier.site, type: .parameter, modifiers: .declaration)
 
     // Add type annotation if present
     if let annotation = p.ascription {
@@ -334,7 +333,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
   mutating func addAssociatedType(_ d: AssociatedTypeDeclaration) {
     addKeyword(at: d.introducer.site)
-    addToken(range: d.identifier.site, type: .type)
+    addToken(range: d.identifier.site, type: .type, modifiers: .declaration)
   }
 
   mutating func addTypeAlias(_ d: TypeAliasDeclaration) {
@@ -347,7 +346,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: d.introducer.site)
 
     // Add type alias name
-    addToken(range: d.identifier.site, type: .type)
+    addToken(range: d.identifier.site, type: .type, modifiers: .declaration)
 
     // Add generic parameters
     for param in d.parameters {
@@ -359,7 +358,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
   }
 
   mutating func addVariable(_ d: VariableDeclaration) {
-    addToken(range: d.identifier.site, type: .identifier)
+    addToken(range: d.identifier.site, type: .variable, modifiers: .declaration)
   }
 
   mutating func addConformance(_ d: ConformanceDeclaration) {
@@ -373,7 +372,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
     // Add identifier if present
     if let identifier = d.identifier {
-      addToken(range: identifier.site, type: .identifier)
+      addToken(range: identifier.site, type: .variable, modifiers: .declaration)
     }
 
     // Add context parameters (generics and where clauses)
@@ -391,7 +390,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
   }
 
   mutating func addGenericParameter(_ d: GenericParameterDeclaration) {
-    addToken(range: d.identifier.site, type: .typeParameter)
+    addToken(range: d.identifier.site, type: .typeParameter, modifiers: .declaration)
 
     // Add kind ascription if present
     if let ascription = d.ascription {
@@ -409,7 +408,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: d.introducer.site)
 
     // Add trait name
-    addToken(range: d.identifier.site, type: .type)
+    addToken(range: d.identifier.site, type: .type, modifiers: .declaration)
 
     // Add generic parameters
     for p in d.parameters {
@@ -430,7 +429,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: d.introducer.site)
 
     // Add struct name
-    addToken(range: d.identifier.site, type: .type)
+    addToken(range: d.identifier.site, type: .type, modifiers: .declaration)
 
     // Add generic parameters
     for param in d.parameters {
@@ -462,7 +461,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: d.introducer.site)
 
     // Add function name
-    addToken(range: d.identifier.site, type: .function)
+    addToken(range: d.identifier.site, type: .function, modifiers: .declaration)
 
     // Add captures
     for c in d.captures.explicit {
@@ -505,7 +504,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     addKeyword(at: d.introducer.site)
 
     // Add function bundle name
-    addToken(range: d.identifier.site, type: .function)
+    addToken(range: d.identifier.site, type: .function, modifiers: .declaration)
 
     // Add captures
     for c in d.captures.explicit {
@@ -598,7 +597,9 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
 
     // Add effect
-    addKeyword(at: e.effect.site)
+    if !e.effect.site.region.isEmpty {
+      addKeyword(at: e.effect.site)
+    }
 
     // Add output type
     addSyntax(e.output.erased)
