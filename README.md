@@ -52,3 +52,13 @@ The project uses `swift-format` bundled by the Swift toolchain to enforce a cons
 
 - Use `./format.sh` to format the code.
 - Use `./lint.sh` to check the code.
+
+## Publishing
+To publish a new release, push a tag to the repository of the form `vX.Y.Z`.
+
+```
+git tag v0.0.17
+git push origin v0.0.17
+```
+
+The VSCode extension automatically downloads the latest LSP binary release from GitHub releases.
