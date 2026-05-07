@@ -143,8 +143,7 @@ public actor LSPTestContext {
       position: position
     )
 
-    let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
-    return try await requestHandler.definition(id: .numericId(1), params: params, doc: doc)
+    return try await requestHandler.definition(id: .numericId(1), params: params).get()
   }
 
   public func references(

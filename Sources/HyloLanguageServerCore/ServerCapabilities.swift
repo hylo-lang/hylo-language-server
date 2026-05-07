@@ -1,35 +1,34 @@
 import LanguageServerProtocol
 
-func getServerCapabilities() -> ServerCapabilities {
-  var serverCapabilities = ServerCapabilities()
-  let documentSelector = DocumentFilter(pattern: "**/*.hylo")
+/// The capabilities of the language server.
+///
+/// Used to inform the client about which features are supported.
+let serverCapabilities: ServerCapabilities = {
+  var c = ServerCapabilities()
 
-  // todo implement efficient incremental sync
-  serverCapabilities.textDocumentSync = .optionB(TextDocumentSyncKind.incremental)
-  serverCapabilities.definitionProvider = .optionA(true)
-  serverCapabilities.documentSymbolProvider = .optionA(true)
+  c.textDocumentSync = .optionB(TextDocumentSyncKind.incremental)
+  c.definitionProvider = .optionA(true)
+  c.documentSymbolProvider = .optionA(true)
 
-  // The protocol defines a set of token types and modifiers but clients are allowed to extend these and announce the values they support in the corresponding client capability.
-  // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_semanticTokens
-  let tokenLedgend = SemanticTokensLegend(
+  let l = SemanticTokensLegend(
     tokenTypes: HyloSemanticTokenType.allCases.map { $0.description },
     tokenModifiers: HyloSemanticTokenModifier.allCases.map { $0.description })
 
-  serverCapabilities.semanticTokensProvider = .optionB(
+  c.semanticTokensProvider = .optionB(
     SemanticTokensRegistrationOptions(
-      documentSelector: [documentSelector], legend: tokenLedgend,
+      documentSelector: [.init(pattern: "**/*.hylo")], legend: l,
       range: .optionA(false),  // todo add range support
       full: .optionA(true)
     ))
 
-  serverCapabilities.diagnosticProvider = .optionA(
+  c.diagnosticProvider = .optionA(
     DiagnosticOptions(interFileDependencies: false, workspaceDiagnostics: false))
 
-  serverCapabilities.hoverProvider = .optionA(true)
-  serverCapabilities.executeCommandProvider = .init(commands: ["givens"])
-  serverCapabilities.referencesProvider = .optionA(true)
-  serverCapabilities.documentHighlightProvider = .optionA(true)
-  serverCapabilities.renameProvider = .optionB(RenameOptions(prepareProvider: true))
+  c.hoverProvider = .optionA(true)
+  c.executeCommandProvider = .init(commands: ["givens"])
+  c.referencesProvider = .optionA(true)
+  c.documentHighlightProvider = .optionA(true)
+  c.renameProvider = .optionB(RenameOptions(prepareProvider: true))
 
-  return serverCapabilities
-}
+  return c
+}()

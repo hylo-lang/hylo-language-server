@@ -1,8 +1,8 @@
 import FrontEnd
 import JSONRPC
+import LanguageServer
 import LanguageServerProtocol
 import Logging
-import LanguageServer
 
 extension HyloRequestHandler {
 
@@ -10,7 +10,8 @@ extension HyloRequestHandler {
     id: JSONId, params: SemanticTokensParams
   ) async -> Response<SemanticTokensResponse> {
     await reportingLSPError {
-      let p = try await documentProvider.getParsedProgram(url: params.textDocument.uri)
+      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+      let p = try await documentProvider.getDocumentContext(at: source).program
       return try await semanticTokensFull(id: id, params: params, program: p)
     }
   }
@@ -23,29 +24,30 @@ extension HyloRequestHandler {
     let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
     guard let s = program.sourceFile(named: source.localFileName) else {
       logger.error("Failed to locate translation unit for document: \(params.textDocument.uri)")
-      throw LSPError.invalidParameter(message:
-        "Failed to locate translation unit for document: \(params.textDocument.uri)")
+      throw LSPError.invalidParameter(
+        message:
+          "Failed to locate translation unit for document: \(params.textDocument.uri)")
     }
 
     let ds = program.topLevelDeclarations(in: s)
-    var walker = SemanticTokensWalker(
-      topLevelDeclarations: ds,
-      program: program, logger: logger)
 
-    return SemanticTokens(tokens: walker.walk())
+    let luke = SemanticTokensWalker(
+      topLevelDeclarations: ds, program: program, logger: logger)
+
+    return SemanticTokens(tokens: luke.walk())
   }
 
 }
 
-struct SemanticTokensWalker<TopLevelDeclarations: Sequence>
+internal struct SemanticTokensWalker<TopLevelDeclarations: Sequence>
 where TopLevelDeclarations.Element == DeclarationIdentity {
 
-  public let topLevelDeclarations: TopLevelDeclarations
-  public let program: Program
+  private let topLevelDeclarations: TopLevelDeclarations
+  private let program: Program
   private let logger: Logger
-  private(set) var tokens: [SemanticToken]
+  private var tokens: [SemanticToken]
 
-  public init(
+  init(
     topLevelDeclarations: TopLevelDeclarations, program: Program, logger: Logger
   ) {
     self.topLevelDeclarations = topLevelDeclarations
@@ -54,7 +56,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     self.logger = logger
   }
 
-  public mutating func walk() -> [SemanticToken] {
+  consuming func walk() -> [SemanticToken] {
     precondition(tokens.isEmpty)
     addMembers(topLevelDeclarations)
     logger.debug("Generated \(tokens.count) semantic tokens")
@@ -208,7 +210,7 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     if let representation = d.representation {
       addSyntax(representation.erased)
     }
-    
+
     // Add conformances
     for c in d.conformances {
       addSyntax(c.erased)
@@ -266,7 +268,9 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
     }
   }
 
-  mutating func addToken(range: SourceSpan, type: HyloSemanticTokenType, modifiers: HyloSemanticTokenModifier = []) {
+  mutating func addToken(
+    range: SourceSpan, type: HyloSemanticTokenType, modifiers: HyloSemanticTokenModifier = []
+  ) {
     tokens.append(SemanticToken(range: range, type: type, modifiers: modifiers))
   }
 
@@ -571,12 +575,12 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
       addSyntax(value.erased)
     }
   }
-  
+
   mutating func addYield(_ s: Yield) {
     if let introducer = s.introducer {
       addKeyword(at: introducer.site)
     }
-    
+
     addSyntax(s.value.erased)
   }
 
@@ -698,8 +702,8 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
 
   mutating func addNameExpression(_ e: NameExpression) {
     if let q = e.qualification { addSyntax(q.erased) }
-    
-    // todo add more specific type and modifiers after type-checking 
+
+    // todo add more specific type and modifiers after type-checking
     addToken(range: e.name.site, type: .identifier)
   }
 
@@ -770,11 +774,11 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
       addSyntax(element.erased)
     }
   }
-  
+
   mutating func addTupleMember(_ e: TupleMember) {
     // Add parent expression
     addSyntax(e.parent.erased)
-    
+
     // Add member index
     addToken(range: e.member.site, type: .number)
   }

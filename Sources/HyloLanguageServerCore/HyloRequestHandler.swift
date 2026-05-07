@@ -6,51 +6,20 @@ import LanguageServerProtocol
 import Logging
 import Semaphore
 
-extension Result where Failure == AnyJSONRPCResponseError {
-
-  static func invalidParameters(_ message: String) -> Self {
-    return .failure(JSONRPCResponseError(code: ErrorCodes.InvalidParams, message: message))
-  }
-
-  static func internalError(_ message: String) -> Self {
-    return .failure(JSONRPCResponseError(code: ErrorCodes.InternalError, message: message))
-  }
-
-  static func invalidRequest(_ message: String) -> Self {
-    return .failure(JSONRPCResponseError(code: ErrorCodes.InvalidRequest, message: message))
-  }
-
-}
-
+/// A set of handlers responsible for processing LSP requests from the client.
 public struct HyloRequestHandler: RequestHandler, Sendable {
 
-  public func typeHierarchySubtypes(
-    id: JSONRPC.JSONId, params: LanguageServerProtocol.TypeHierarchySubtypesParams
-  ) async -> Response<LanguageServerProtocol.TypeHierarchySubtypesResponse> {
-    .failure(.init(code: ErrorCodes.MethodNotFound, message: "Not implemented"))
-  }
+  private let connection: JSONRPCClientConnection
+  internal let logger: Logger
+  internal var documentProvider: DocumentProvider
 
-  public func typeHierarchySupertypes(
-    id: JSONRPC.JSONId, params: LanguageServerProtocol.TypeHierarchySupertypesParams
-  ) async -> Response<LanguageServerProtocol.TypeHierarchySupertypesResponse> {
-    .failure(.init(code: ErrorCodes.MethodNotFound, message: "Not implemented"))
-  }
-
-  public let connection: JSONRPCClientConnection
-  public let logger: Logger
-
-  var documentProvider: DocumentProvider
-
+  /// Creates an instance from its parts.
   public init(
     connection: JSONRPCClientConnection, logger: Logger, documentProvider: DocumentProvider
   ) {
     self.connection = connection
     self.logger = logger
     self.documentProvider = documentProvider
-  }
-
-  public func internalError(_ error: Error) async {
-    logger.error("LSP stream error: \(error)")
   }
 
   public func handleRequest(id: JSONId, request: ClientRequest) async {
@@ -71,7 +40,26 @@ public struct HyloRequestHandler: RequestHandler, Sendable {
     }
   }
 
+  /// Called when the client initiates the shutdown of the language server.
   public func shutdown(id: JSONId) async {
   }
 
+  /// Implementation of ErrorHandler. Never called in practice.
+  @available(*, deprecated, message: "EventDispatcher uses the explicitly provided error handler.")
+  public func internalError(_ error: Error) async {}
+
+}
+
+extension HyloRequestHandler {
+  public func typeHierarchySubtypes(
+    id: JSONRPC.JSONId, params: LanguageServerProtocol.TypeHierarchySubtypesParams
+  ) async -> Response<LanguageServerProtocol.TypeHierarchySubtypesResponse> {
+    .failure(.init(code: ErrorCodes.MethodNotFound, message: "Not implemented"))
+  }
+
+  public func typeHierarchySupertypes(
+    id: JSONRPC.JSONId, params: LanguageServerProtocol.TypeHierarchySupertypesParams
+  ) async -> Response<LanguageServerProtocol.TypeHierarchySupertypesResponse> {
+    .failure(.init(code: ErrorCodes.MethodNotFound, message: "Not implemented"))
+  }  
 }

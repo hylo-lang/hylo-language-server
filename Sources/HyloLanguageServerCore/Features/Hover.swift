@@ -10,14 +10,15 @@ extension HyloRequestHandler {
     id: JSONId, params: TextDocumentPositionParams
   ) async -> Response<HoverResponse> {
     await reportingLSPError {
-      let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
+      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+      let doc = try await documentProvider.getDocumentContext(at: source)
       let p = doc.program
 
-      let s = try p.requireSourceFile(at: doc.url)
+      let s = try p.requireSourceFile(at: source)
       let cursor = SourcePosition(params.position, in: p[sourceFile: s])
-    
+
       guard
-        let nodeId = doc.program.innermostTree(
+        let nodeId = p.innermostTree(
           containing: cursor, reportingLogsTo: logger, in: s)
       else { return nil }
 
@@ -25,9 +26,16 @@ extension HyloRequestHandler {
       let realType = p.type(ifAssignedTo: nodeId)
       let astNodeType = p.tag(of: nodeId)
 
+      let t =
+        if let realType {
+          p.show(realType)
+        } else {
+          "Type not assigned."
+        }
+
       return Hover(
         contents: .optionB([
-          .optionA("```hylo\n\(p.show(realType ?? .error))\n```"),
+          .optionA("```hylo\n\(t)\n```"),
           .optionA(astNodeType.description),
         ]), range: LSPRange.init(site)
       )

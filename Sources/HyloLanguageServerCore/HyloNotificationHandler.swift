@@ -6,6 +6,7 @@ import LanguageServerProtocol
 import Logging
 import Semaphore
 
+/// A handler for observing LSP notifications from the client and adjusting the server state.
 public struct HyloNotificationHandler: NotificationHandler {
 
   public let connection: JSONRPCClientConnection
@@ -23,10 +24,6 @@ public struct HyloNotificationHandler: NotificationHandler {
     self.logger = logger
     self.documentProvider = documentProvider
     self.exitSemaphore = exitSemaphore
-  }
-
-  public func internalError(_ error: Error) async {
-    logger.debug("LSP stream error: \(error)")
   }
 
   public func handleNotification(_ notification: ClientNotification) async {
@@ -96,8 +93,10 @@ public struct HyloNotificationHandler: NotificationHandler {
 
   }
 
+  /// Called when the client switched the set of active workspace folders.
   public func workspaceDidChangeWorkspaceFolders(_ params: DidChangeWorkspaceFoldersParams) async {
-    await documentProvider.workspaceDidChangeWorkspaceFolders(params)
+    await documentProvider.changeWorkspaceFolders(
+      added: params.event.added, removed: params.event.removed)
   }
 
   public func workspaceDidChangeConfiguration(_ params: DidChangeConfigurationParams) async {
@@ -115,5 +114,9 @@ public struct HyloNotificationHandler: NotificationHandler {
   public func workspaceDidDeleteFiles(_ params: DeleteFilesParams) async {
 
   }
+
+  /// Implementation of ErrorHandler. Never called in practice.
+  @available(*, deprecated, message: "EventDispatcher uses the explicitly provided error handler.")
+  public func internalError(_ error: Error) async {}
 
 }

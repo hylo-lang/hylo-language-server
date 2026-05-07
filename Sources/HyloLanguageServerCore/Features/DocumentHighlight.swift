@@ -10,9 +10,10 @@ extension HyloRequestHandler {
     DocumentHighlightResponse
   > {
     await reportingLSPError {
-      let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
+      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+      let doc = try await documentProvider.getDocumentContext(at: source)
       let p = doc.program
-      let s = try p.requireSourceFile(at: doc.url)
+      let s = try p.requireSourceFile(at: source)
       let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard

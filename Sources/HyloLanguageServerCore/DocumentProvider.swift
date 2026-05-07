@@ -103,7 +103,6 @@ public actor DocumentProvider {
   private var documents: [AbsoluteURL: DocumentContext] = [:]
   public let logger: Logger
   let connection: JSONRPCClientConnection
-  var rootUri: String?
   var workspaceFolders: [WorkspaceFolder] = []
 
   // Standard library caching
@@ -139,28 +138,21 @@ public actor DocumentProvider {
   public func initialize(
     _ params: InitializeParams
   ) async throws(AnyJSONRPCResponseError) -> InitializationResponse {
-    if let workspaceFolders = params.workspaceFolders {
-      self.workspaceFolders = workspaceFolders
-    }
-
-    // From spec: If both `rootPath` and `rootUri` are set `rootUri` wins.
-    if let rootUri = params.rootUri {
-      self.rootUri = rootUri
-    } else if let rootPath = params.rootPath {
-      self.rootUri = rootPath
+    if let w = params.workspaceFolders {
+      self.workspaceFolders = w
     }
 
     logger.info(
-      "Initialize in working directory: \(FileManager.default.currentDirectoryPath), with rootUri: \(rootUri ?? "nil"), workspace folders: \(workspaceFolders)"
+      "Initialize in working directory: \(FileManager.default.currentDirectoryPath), with workspace folders: \(workspaceFolders)"
     )
 
     let serverInfo = ServerInfo(name: "hylo", version: "0.1.0")
-    return InitializationResponse(capabilities: getServerCapabilities(), serverInfo: serverInfo)
+    return InitializationResponse(capabilities: serverCapabilities, serverInfo: serverInfo)
   }
 
-  public func workspaceDidChangeWorkspaceFolders(_ params: DidChangeWorkspaceFoldersParams) async {
-    workspaceFolders.removeAll { params.event.removed.contains($0) }
-    workspaceFolders.append(contentsOf: params.event.added)
+  public func changeWorkspaceFolders(added: [WorkspaceFolder], removed: [WorkspaceFolder]) async {
+    workspaceFolders.removeAll { removed.contains($0) }
+    workspaceFolders.append(contentsOf: added)
   }
 
   public func isStdlibDocument(_ uri: AbsoluteURL) -> Bool {
@@ -186,33 +178,6 @@ public actor DocumentProvider {
     }
 
     return (AbsoluteURL(defaultStdlibRoot), false)
-  }
-
-  func getRelativePathInWorkspace(_ uri: DocumentUri, relativeTo workspace: DocumentUri) -> String?
-  {
-    if uri.starts(with: workspace) {
-      let start = uri.index(uri.startIndex, offsetBy: workspace.count)
-      let tail = uri[start...]
-      let relPath = tail.trimmingPrefix("/")
-      return String(relPath)
-    } else {
-      return nil
-    }
-  }
-
-  struct WorkspaceFile {
-
-    let workspace: DocumentUri
-    let relativePath: String
-
-  }
-
-  func uriAsFilepath(_ uri: DocumentUri) -> String? {
-    guard let url = URL.init(string: uri) else {
-      return nil
-    }
-
-    return url.path
   }
 
   // MARK: - Standard Library Management
@@ -360,19 +325,18 @@ public actor DocumentProvider {
   public func updateDocument(_ params: DidChangeTextDocumentParams) async throws {
     let uri = try AbsoluteURL(fromUrlString: params.textDocument.uri)
 
-    guard var context = documents[uri] else {
+    guard var document = documents[uri]?.doc else {
       throw DocumentProviderError("Could not find opened document: \(uri)")
     }
 
-    try context.applyChanges(params.contentChanges, version: params.textDocument.version)
+    try document.applyChanges(params.contentChanges, version: params.textDocument.version)
 
     // Rebuild program with updated content
-    let program = try await buildProgramForDocument(url: uri, text: context.doc.text)
-    context = DocumentContext(context.doc, program: program)
+    documents[uri] = DocumentContext(
+      document, 
+      program: try await buildProgramForDocument(url: uri, text: document.text))
 
-    documents[uri] = context
-
-    logger.debug("Updated changed document: \(uri), version: \(context.doc.version ?? -1)")
+    logger.debug("Updated changed document: \(uri), version: \(document.version ?? -1)")
 
     // Invalidate cached stdlib AST if the edited document is part of the stdlib
     let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
@@ -432,27 +396,12 @@ public actor DocumentProvider {
     }
   }
 
-  func getDocumentContext(uri: DocumentUri) async throws -> DocumentContext {
-    try await getDocumentContext(url: try AbsoluteURL(fromUrlString: uri))
-  }
-
-  func getDocumentContext(url: AbsoluteURL) async throws -> DocumentContext {
-    if let d = documents[url] {
+  public func getDocumentContext(at: AbsoluteURL) async throws -> DocumentContext {
+    if let d = documents[at] {
       return d
     }
 
-    return try await implicitlyRegisterDocument(url: url)
-  }
-
-  public func getParsedProgram(url: DocumentUri) async throws -> Program {
-    (try await getDocumentContext(uri: url)).program
-  }
-
-  public func getAnalyzedDocument(
-    _ textDocument: TextDocumentProtocol
-  ) async throws -> AnalyzedDocument {
-    let context = try await getDocumentContext(uri: textDocument.uri)
-    return AnalyzedDocument(url: context.url, program: context.program)
+    return try await implicitlyRegisterDocument(url: at)
   }
 
 }

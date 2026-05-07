@@ -6,7 +6,7 @@ import LanguageServerProtocol
 extension HyloRequestHandler {
 
   func givens(
-    arguments: [LSPAny], location: Location, document: AnalyzedDocument
+    arguments: [LSPAny], location: Location, document: DocumentContext
   ) throws -> LSPAny? {
     var p = document.program
 
@@ -32,34 +32,9 @@ extension HyloRequestHandler {
         throw LSPError.invalidParameter(message: "First argument must be a Location.")
       }
 
-      let doc = try await documentProvider.getAnalyzedDocument(
-        TextDocumentIdentifier(uri: location.uri))
-      return try givens(arguments: arguments, location: location, document: doc)
+      let source = try AbsoluteURL(fromUrlString: location.uri)
+      let d = try await documentProvider.getDocumentContext(at: source)
+      return try givens(arguments: arguments, location: location, document: d)
     }
   }
-}
-
-extension Given: @retroactive Showable {
-
-  /// Returns a textual representation of `self` using `printer`.
-  public func show(using printer: inout TreePrinter) -> String {
-    switch self {
-    case .user(let declaration):
-      return printer.show(declaration)
-
-    case .coercion(let property):
-      return "[coercion]: \(property)"
-
-    case .recursive(let type):
-      return "[recursive]: \(printer.show(type))"
-
-    case .assumed(let index, let type):
-      return "[assumed \(index)]: \(printer.show(type))"
-
-    case .nested(let traitDecl, let nestedGiven):
-      let traitName = printer.program[traitDecl].identifier.value
-      return "[nested in \(traitName)]: \(printer.show(nestedGiven))"
-    }
-  }
-
 }
