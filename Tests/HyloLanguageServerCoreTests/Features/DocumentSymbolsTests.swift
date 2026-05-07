@@ -75,7 +75,7 @@ final class DocumentSymbolsTests: XCTestCase {
   func testOperatorFunction() async throws {
     let source = try MarkedSource(
       """
-      infix fun infix+ (x: Int, y: Int) -> Int {
+      fun infix+ (x: Int, y: Int) -> Int {
         x.add(y)
       }
       """)
@@ -89,7 +89,7 @@ final class DocumentSymbolsTests: XCTestCase {
     }
 
     XCTAssertEqual(symbols.count, 1)
-    XCTAssertEqual(symbols[0].name, "infix +")
+    XCTAssertEqual(symbols[0].name, "infix+")
     XCTAssertEqual(symbols[0].kind, SymbolKind.function)
     XCTAssertNil(symbols[0].children)
     verifyValidRanges(symbols[0])
@@ -180,7 +180,11 @@ final class DocumentSymbolsTests: XCTestCase {
   func testTypeAliasDeclaration() async throws {
     let source = try MarkedSource(
       """
-      type IntPair = (Int, Int)
+      type IntPair = {Int, Int}
+
+      trait B {}
+
+      type C = B
       """)
 
     let doc = try await context.openDocument(source)
@@ -191,11 +195,24 @@ final class DocumentSymbolsTests: XCTestCase {
       return
     }
 
-    XCTAssertEqual(symbols.count, 1)
+    guard symbols.count == 3 else {
+      return XCTFail("Expected 3 symbols, got \(symbols)")
+    }
+
     XCTAssertEqual(symbols[0].name, "IntPair")
-    XCTAssertEqual(symbols[0].kind, SymbolKind.class)  // Uses .class as closest match
+    XCTAssertEqual(symbols[0].kind, SymbolKind.typeParameter)
     XCTAssertNil(symbols[0].children)
     verifyValidRanges(symbols[0])
+
+    XCTAssertEqual(symbols[1].name, "B")
+    XCTAssertEqual(symbols[1].kind, SymbolKind.interface)
+    XCTAssertEqual(symbols[1].children, [])
+    verifyValidRanges(symbols[1])
+
+    XCTAssertEqual(symbols[2].name, "C")
+    XCTAssertEqual(symbols[2].kind, SymbolKind.typeParameter)
+    XCTAssertNil(symbols[2].children)
+    verifyValidRanges(symbols[2])
   }
 
   // MARK: - AssociatedTypeDeclaration Tests
@@ -226,7 +243,7 @@ final class DocumentSymbolsTests: XCTestCase {
     XCTAssertEqual(symbols.count, 1, "Expected extension")
 
     // Verify extension
-    XCTAssertEqual(symbols[0].name, "extension Int")
+    XCTAssertEqual(symbols[0].name, "extension of Int")
     XCTAssertEqual(symbols[0].kind, SymbolKind.class)
     verifyValidRanges(symbols[0])
 
@@ -391,14 +408,14 @@ final class DocumentSymbolsTests: XCTestCase {
     XCTAssertEqual(symbols[0].children?[0].kind, SymbolKind.function)
     XCTAssertNil(symbols[0].children?[0].children)
 
-    XCTAssertEqual(symbols[1].name, "extension Int")
+    XCTAssertEqual(symbols[1].name, "extension of Int")
     XCTAssertEqual(symbols[1].kind, SymbolKind.class)
     XCTAssertEqual(symbols[1].children?.count, 1)
     XCTAssertEqual(symbols[1].children?[0].name, "peek")
     XCTAssertEqual(symbols[1].children?[0].kind, SymbolKind.function)
     XCTAssertNil(symbols[1].children?[0].children)
 
-    XCTAssertEqual(symbols[2].name, "conformance Peekable")
+    XCTAssertEqual(symbols[2].name, "conformance Peekable<Int>")
     XCTAssertEqual(symbols[2].kind, SymbolKind.class)
     XCTAssertEqual(symbols[2].children, [])
 

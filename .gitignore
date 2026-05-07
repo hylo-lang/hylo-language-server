@@ -13,3 +13,4 @@ hylo-lsp.log
 .idea
 .vscode
 *.profraw
+.sourcekit-lsp

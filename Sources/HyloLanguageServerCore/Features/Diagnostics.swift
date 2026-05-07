@@ -10,9 +10,9 @@ extension HyloRequestHandler {
     DocumentDiagnosticReport
   > {
     await reportingLSPError{
-      let p = try await documentProvider.getAnalyzedDocument(params.textDocument).program
-
       let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+      let p = try await documentProvider.getDocumentContext(at: source).program
+
       guard let s = p.sourceFile(named: source.localFileName) else {
         throw LSPError.internalError(message: "Failed to locate translation unit: \(params.textDocument.uri)")
       }

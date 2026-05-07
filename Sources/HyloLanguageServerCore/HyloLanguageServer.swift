@@ -4,58 +4,45 @@ import LanguageServer
 import Logging
 import Semaphore
 
-public struct HyloErrorHandler: ErrorHandler {
+/// Starts serving the LSP server through `channel`.
+public func serveLanguageServer(channel: DataChannel, logger: Logger, standardLibrary: URL) async {
+  logger.debug("Starting Hylo LSP server...")
 
-  let logger: Logger
+  let connection = JSONRPCClientConnection(channel)
+  let exitSemaphore = AsyncSemaphore(value: 0)
 
-  public func internalError(_ error: Error) async {
-    logger.error("LSP stream error: \(error)")
-  }
+  let dispatcher = createLSPEventDispatcher(
+    exitSemaphore: exitSemaphore, connection: connection, standardLibrary: standardLibrary,
+    logger: logger)
 
+  await dispatcher.run()
+  logger.debug("dispatcher completed")
+  await exitSemaphore.wait()
+  logger.debug("exit")
 }
 
-public actor HyloLanguageServer {
+/// Creates the dispatcher that dispatches events to different event handlers.
+private func createLSPEventDispatcher(
+  exitSemaphore: AsyncSemaphore, connection: JSONRPCClientConnection, standardLibrary: URL,
+  logger: Logger
+) -> EventDispatcher {
+  // An actor shared between request handler and notification handler.
+  let documentProvider = DocumentProvider(
+    connection: connection, logger: logger, standardLibrary: standardLibrary)
 
-  let connection: JSONRPCClientConnection
-  private let logger: Logger
-  /// Path to the standard library root directory.
-  private let standardLibrary: URL
+  let requestHandler = HyloRequestHandler(
+    connection: connection, logger: logger, documentProvider: documentProvider)
 
-  public init(dataChannel: DataChannel, logger: Logger, standardLibrary: URL) {
-    self.logger = logger
-    self.standardLibrary = standardLibrary
-    self.connection = JSONRPCClientConnection(dataChannel)
-  }
+  let notificationHandler = HyloNotificationHandler(
+    connection: connection, logger: logger, documentProvider: documentProvider,
+    exitSemaphore: exitSemaphore)
 
-  nonisolated private func createDispatcher(exitSemaphore: AsyncSemaphore) -> EventDispatcher {
-    let documentProvider = DocumentProvider(
-      connection: connection, logger: logger, standardLibrary: standardLibrary)
+  let errorHandler = HyloErrorHandler(logger: logger)
 
-    let requestHandler = HyloRequestHandler(
-      connection: connection, logger: logger, documentProvider: documentProvider)
-
-    let notificationHandler = HyloNotificationHandler(
-      connection: connection, logger: logger, documentProvider: documentProvider,
-      exitSemaphore: exitSemaphore)
-
-    let errorHandler = HyloErrorHandler(logger: logger)
-
-    return EventDispatcher(
-      connection: connection,
-      requestHandler: requestHandler,
-      notificationHandler: notificationHandler,
-      errorHandler: errorHandler
-    )
-  }
-
-  public func run() async {
-    logger.debug("starting server")
-    let exitSemaphore = AsyncSemaphore(value: 0)
-    let dispatcher = createDispatcher(exitSemaphore: exitSemaphore)
-    await dispatcher.run()
-    logger.debug("dispatcher completed")
-    await exitSemaphore.wait()
-    logger.debug("exit")
-  }
-
+  return EventDispatcher(
+    connection: connection,
+    requestHandler: requestHandler,
+    notificationHandler: notificationHandler,
+    errorHandler: errorHandler
+  )
 }

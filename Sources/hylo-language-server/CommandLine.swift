@@ -27,9 +27,8 @@ struct HyloLspCommand: AsyncParsableCommand {
     var logger = Logger(label: "s")
     logger.handler = NullLogHandler(label: "s")
 
-    let server = HyloLanguageServer(
-      dataChannel: .stdioPipe(), logger: logger, standardLibrary: URL(fileURLWithPath: stdlibPath))
-    await server.run()
+    await serveLanguageServer(
+      channel: .stdioPipe(), logger: logger, standardLibrary: URL(fileURLWithPath: stdlibPath))
   }
 
 }

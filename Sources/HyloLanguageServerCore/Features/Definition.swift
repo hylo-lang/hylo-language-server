@@ -10,19 +10,16 @@ extension HyloRequestHandler {
     DefinitionResponse
   > {
     await reportingLSPError {
-      let doc = try await documentProvider.getAnalyzedDocument(params.textDocument)
-      return try await definition(id: id, params: params, doc: doc)
+      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+      let doc = try await documentProvider.getDocumentContext(at: source)
+    
+      
+      let p = doc.program
+      let url = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+      let s = try p.requireSourceFile(at: url)
+      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
+      return resolveDefinition(cursor, in: doc.program, logger: logger, in: s)
     }
-  }
-
-  public func definition(id: JSONId, params: TextDocumentPositionParams, doc: AnalyzedDocument)
-    async throws -> DefinitionResponse
-  {
-    let p = doc.program
-    let url = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-    let s = try p.requireSourceFile(at: url)
-    let cursor = SourcePosition(params.position, in: p[sourceFile: s])
-    return resolveDefinition(cursor, in: doc.program, logger: logger, in: s)
   }
 
 }
