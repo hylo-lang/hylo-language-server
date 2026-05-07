@@ -12,8 +12,7 @@ extension HyloRequestHandler {
     await reportingLSPError {
       let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
       let doc = try await documentProvider.getDocumentContext(at: source)
-    
-      
+
       let p = doc.program
       let url = try AbsoluteURL(fromUrlString: params.textDocument.uri)
       let s = try p.requireSourceFile(at: url)

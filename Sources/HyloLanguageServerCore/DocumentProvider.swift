@@ -333,7 +333,7 @@ public actor DocumentProvider {
 
     // Rebuild program with updated content
     documents[uri] = DocumentContext(
-      document, 
+      document,
       program: try await buildProgramForDocument(url: uri, text: document.text))
 
     logger.debug("Updated changed document: \(uri), version: \(document.version ?? -1)")

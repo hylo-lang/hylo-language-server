@@ -18,7 +18,6 @@ final class GoToDefinitionTests: XCTestCase {
     context = try await LSPTestContext.make(tag: "GoToDefinitionTests", rootUri: "file:///test")
   }
 
-
   /// Returns the text at the site of the definition response `d`.
   func text(of d: DefinitionResponse, in source: MarkedSource) throws -> String {
     switch d {
