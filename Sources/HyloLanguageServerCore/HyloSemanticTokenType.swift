@@ -1,5 +1,5 @@
 /// The semantic token types supported by Hylo LSP.
-/// 
+///
 /// Configured as `tokenModifiers` in the semantic tokens legend.
 /// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_semanticTokens
 public enum HyloSemanticTokenType: UInt32, CaseIterable {

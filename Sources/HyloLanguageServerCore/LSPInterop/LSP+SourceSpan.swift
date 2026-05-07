@@ -39,7 +39,7 @@ extension LanguageServerProtocol.Position {
 extension SourcePosition {
 
   /// Creates a `SourcePosition` from an LSP `Position` within a given source file.
-  /// 
+  ///
   /// Clamps the position to [startIndex, endIndex] of the source file.
   public init(_ position: LanguageServerProtocol.Position, in source: SourceFile) {
     self.init(source.index(line: position.line, utf16Column: position.character), in: source)

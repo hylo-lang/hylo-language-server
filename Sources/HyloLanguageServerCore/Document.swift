@@ -38,7 +38,7 @@ public struct Document: Sendable {
 }
 
 /// Applies `change` on `text`.
-/// 
+///
 /// - Throws if the range specified by `change` was invalid.
 private func applyChange(
   _ change: TextDocumentContentChangeEvent, on text: inout String

@@ -61,5 +61,5 @@ extension HyloRequestHandler {
     id: JSONRPC.JSONId, params: LanguageServerProtocol.TypeHierarchySupertypesParams
   ) async -> Response<LanguageServerProtocol.TypeHierarchySupertypesResponse> {
     .failure(.init(code: ErrorCodes.MethodNotFound, message: "Not implemented"))
-  }  
+  }
 }

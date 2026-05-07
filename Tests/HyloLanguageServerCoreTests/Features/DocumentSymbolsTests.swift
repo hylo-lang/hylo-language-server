@@ -295,7 +295,6 @@ final class DocumentSymbolsTests: XCTestCase {
     XCTAssertEqual(traitChildren[0].name, "peek")
     XCTAssertEqual(traitChildren[0].kind, SymbolKind.function)
     XCTAssertNil(traitChildren[0].children)
-    
 
     // Verify conformance (uses 'given' keyword in Hylo)
     // Note: The name extraction may be "conformance Peekable" based on the implementation

@@ -14,7 +14,7 @@ extension HyloRequestHandler {
       let p = try await documentProvider.getDocumentContext(at: source).program
       let s = try p.requireSourceFile(at: source)
 
-      return .optionA(p.LSPSymbols(for: p.topLevelDeclarations(in: s)))
+      return .optionA(p.lspSymbols(for: p.topLevelDeclarations(in: s)))
     }
   }
 
@@ -23,10 +23,10 @@ extension HyloRequestHandler {
 extension Program {
 
   /// Returns the declaration symbols from `ds` to be exposed to the LSP.
-  public func LSPSymbols(
+  public func lspSymbols(
     for ds: some Sequence<DeclarationIdentity>
   ) -> [DocumentSymbol] {
-    let symbols = ds.flatMap { LSPSymbols(for: $0.erased) }
+    let symbols = ds.flatMap { lspSymbols(for: $0.erased) }
     for symbol in symbols {
       assert(symbol.hasValidRange())
     }
@@ -35,14 +35,14 @@ extension Program {
   }
 
   /// Returns the declaration symbols from `node` to be exposed to the LSP.
-  private func LSPSymbols(for node: AnySyntaxIdentity) -> [DocumentSymbol] {
+  private func lspSymbols(for node: AnySyntaxIdentity) -> [DocumentSymbol] {
     switch tag(of: node) {
     case StructDeclaration.self:
       let d = self[castUnchecked(node, to: StructDeclaration.self)]
       return [
         .init(
           name: d.identifier.value, kind: .struct, range: d.site, selectionRange: d.identifier.site,
-          children: LSPSymbols(for: d.members)
+          children: lspSymbols(for: d.members)
         )
       ]
 
@@ -51,7 +51,7 @@ extension Program {
       return [
         .init(
           name: d.identifier.value, kind: .enum, range: d.site, selectionRange: d.identifier.site,
-          children: LSPSymbols(for: d.members)
+          children: lspSymbols(for: d.members)
         )
       ]
 
@@ -60,7 +60,7 @@ extension Program {
       return [
         .init(
           name: d.identifier.value, kind: .interface, range: d.site,
-          selectionRange: d.identifier.site, children: LSPSymbols(for: d.members)
+          selectionRange: d.identifier.site, children: lspSymbols(for: d.members)
         )
       ]
 
@@ -88,7 +88,7 @@ extension Program {
       return [
         .init(
           name: "extension of \(extendedTypeName)", kind: .class, range: d.site,
-          selectionRange: self[d.extendee].site, children: LSPSymbols(for: d.members)
+          selectionRange: self[d.extendee].site, children: lspSymbols(for: d.members)
         )
       ]
 
@@ -99,7 +99,7 @@ extension Program {
         .init(
           name: "conformance \(subjectName)", kind: .class, range: d.site,
           selectionRange: d.identifier?.site ?? d.site,
-          children: d.members.map { LSPSymbols(for: $0) }
+          children: d.members.map { lspSymbols(for: $0) }
         )
       ]
 
