@@ -1,0 +1,141 @@
+name: Publish release version
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g., v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  REF: ${{ inputs.tag || github.ref }}
+
+jobs:
+  prepare-draft-release:
+    name: Prepare draft release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            exit 0 # Release already exists, nothing to do.
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --generate-notes --latest=false --title "$TAG"
+        shell: bash
+
+  build-distributable:
+    name: Build distributable (${{ matrix.target }})
+    needs: prepare-draft-release
+    strategy: &distributable-strategy
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04,     target: linux-x64 }
+          - { os: ubuntu-24.04-arm, target: linux-arm64 }
+          - { os: macos-15,         target: macos-arm64 }
+          - { os: macos-15-intel,   target: macos-x64 }
+          - { os: windows-2025,     target: windows-x64 }
+          - { os: windows-11-arm,   target: windows-arm64 }
+
+    runs-on: ${{ matrix.os }}
+    env: &distributable-env
+      ARTIFACT_NAME: hylo-language-server-${{ matrix.target }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          ref: ${{ env.REF }}
+
+      - name: Set up Swift
+        uses: SwiftyLab/setup-swift@latest
+        with:
+          swift-version: "6.2"
+
+      - name: Build distributable
+        run: swift build -c release --verbose --product hylo-language-server --static-swift-stdlib
+        shell: pwsh
+
+      - name: Locate distributable
+        id: locate
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $binPath = (swift build -c release --product hylo-language-server --static-swift-stdlib --show-bin-path).Trim()
+          $binaryName = if ($env:RUNNER_OS -eq 'Windows') { 'hylo-language-server.exe' } else { 'hylo-language-server' }
+          "bin_path=$binPath" >> $env:GITHUB_OUTPUT
+          "binary_path=$(Join-Path $binPath $binaryName)" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Bundle Windows DLL dependencies
+        if: runner.os == 'Windows'
+        uses: hylo-lang/swift-windows-dll-bundler@c16562d38c058b71f62b2c3b92d5bf0aa47f4768 # v1.0.0
+        with:
+          executable: ${{ steps.locate.outputs.binary_path }}
+
+      - name: Archive distributable
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $binPath = '${{ steps.locate.outputs.bin_path }}'
+          Set-Content -Path (Join-Path $binPath 'version.txt') -Value $env:TAG -NoNewline -Encoding ascii
+
+          $archive = Join-Path $env:RUNNER_TEMP "$($env:ARTIFACT_NAME).tar.zst"
+          if (Test-Path $archive) { Remove-Item -Force $archive }
+          tar --zstd -cf $archive -C $binPath .
+        shell: pwsh
+
+      - name: Upload distributable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/${{ env.ARTIFACT_NAME }}.tar.zst
+          if-no-files-found: error
+          retention-days: 2
+
+  verify-and-publish-distributable:
+    name: Verify and publish distributable (${{ matrix.target }})
+    needs: build-distributable
+    strategy: *distributable-strategy
+    runs-on: ${{ matrix.os }}
+    env: *distributable-env
+
+    steps:
+      - name: Download distributable artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/dist
+
+      - name: Verify distributable in a Swift-free environment
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP "dist/$($env:ARTIFACT_NAME).tar.zst"
+          $extract = Join-Path $env:RUNNER_TEMP 'extracted'
+          if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+          tar --zstd -xf $archive -C $extract
+
+          & (Join-Path $extract 'hylo-language-server') --help
+        shell: pwsh
+
+      - name: Upload distributable to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP "dist/$($env:ARTIFACT_NAME).tar.zst"
+          gh release upload "$env:TAG" $archive --repo "$env:GITHUB_REPOSITORY" --clobber
+        shell: pwsh
