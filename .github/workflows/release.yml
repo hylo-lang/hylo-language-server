@@ -75,21 +75,19 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $binPath = (swift build -c release --product hylo-language-server --static-swift-stdlib --show-bin-path).Trim()
-          $binaryName = if ($env:RUNNER_OS -eq 'Windows') { 'hylo-language-server.exe' } else { 'hylo-language-server' }
           "bin_path=$binPath" >> $env:GITHUB_OUTPUT
-          "binary_path=$(Join-Path $binPath $binaryName)" >> $env:GITHUB_OUTPUT
         shell: pwsh
 
-      - name: Bundle Windows DLL dependencies
-        if: runner.os == 'Windows'
-        uses: hylo-lang/swift-windows-dll-bundler@c16562d38c058b71f62b2c3b92d5bf0aa47f4768 # v1.0.0
+      - name: Assemble portable bundle
+        uses: hylo-lang/swift-portable-tool-bundler@v1.0.0
         with:
-          executable: ${{ steps.locate.outputs.binary_path }}
+          products: hylo-language-server
+          output-directory: ${{ runner.temp }}/bundle
 
       - name: Archive distributable
         run: |
           $ErrorActionPreference = 'Stop'
-          $binPath = '${{ steps.locate.outputs.bin_path }}'
+          $binPath = '${{ runner.temp }}/bundle'
           Set-Content -Path (Join-Path $binPath 'version.txt') -Value $env:TAG -NoNewline -Encoding ascii
 
           $archive = Join-Path $env:RUNNER_TEMP "$($env:ARTIFACT_NAME).tar.zst"
