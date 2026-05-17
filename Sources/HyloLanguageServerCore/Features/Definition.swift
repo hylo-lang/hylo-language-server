@@ -44,11 +44,11 @@ extension Program {
       let callee = callee(ExpressionIdentity(c)),
       let n = cast(callee, to: NameExpression.self)
     {
-      return declaration(ifReferredToBy: n)?.target
+      return declaration(maybeReferredToBy: n)?.target
     }
 
     if let nameId = cast(node, to: NameExpression.self) {
-      return declaration(ifReferredToBy: nameId)?.target
+      return declaration(maybeReferredToBy: nameId)?.target
     }
 
     return nil

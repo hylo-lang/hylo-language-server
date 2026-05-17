@@ -23,7 +23,7 @@ extension HyloRequestHandler {
       else { return nil }
 
       let site = p[nodeId].site
-      let realType = p.type(ifAssignedTo: nodeId)
+      let realType = p.type(maybeAssignedTo: nodeId)
       let astNodeType = p.tag(of: nodeId)
 
       let t =

@@ -30,7 +30,7 @@ extension LanguageServerProtocol.LSPRange {
 extension LanguageServerProtocol.Position {
 
   public init(_ pos: SourcePosition) {
-    let (line, column) = pos.lineAndUtf16Column
+    let (line, column) = pos.lineAndUTF16Offset
     self.init(line: line, character: column)
   }
 
@@ -42,7 +42,7 @@ extension SourcePosition {
   ///
   /// Clamps the position to [startIndex, endIndex] of the source file.
   public init(_ position: LanguageServerProtocol.Position, in source: SourceFile) {
-    self.init(source.index(line: position.line, utf16Column: position.character), in: source)
+    self.init(source.index(line: position.line, utf16Offset: position.character), in: source)
   }
 
 }
