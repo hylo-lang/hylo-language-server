@@ -28,7 +28,7 @@ extension HyloRequestHandler {
   ) -> [SourceSpan] {
     return program.select(.tag(NameExpression.self))
       .map(NameExpression.ID.init(uncheckedFrom:))
-      .filter { program.declaration(ifReferredToBy: $0)?.target == declaration }
+      .filter { program.declaration(maybeReferredToBy: $0)?.target == declaration }
       .map { program[$0].name.site }
   }
 

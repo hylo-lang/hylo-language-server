@@ -30,7 +30,7 @@ extension HyloRequestHandler {
       }
 
       if let name = p.cast(node, to: NameExpression.self) {
-        guard let declaration = p.declaration(ifReferredToBy: name)?.target else {
+        guard let declaration = p.declaration(maybeReferredToBy: name)?.target else {
           return nil
         }
 

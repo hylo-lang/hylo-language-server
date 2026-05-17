@@ -25,7 +25,7 @@ extension HyloRequestHandler {
 
       if let name = p.cast(node, to: NameExpression.self) {
         // If no target declaration, cannot be renamed.
-        guard let referred = p.declaration(ifReferredToBy: name)?.target else { return nil }
+        guard let referred = p.declaration(maybeReferredToBy: name)?.target else { return nil }
 
         // Cannot rename initializers.
         if let f = p.cast(referred, to: FunctionDeclaration.self) {
@@ -66,7 +66,7 @@ extension HyloRequestHandler {
       else { return nil }
 
       if let name = p.cast(node, to: NameExpression.self) {
-        guard let renamee = p.declaration(ifReferredToBy: name)?.target
+        guard let renamee = p.declaration(maybeReferredToBy: name)?.target
         else { return nil }  // No target to rename for related declaration.
 
         return workspaceEditsForRenaming(declaration: renamee, to: params.newName, in: p)

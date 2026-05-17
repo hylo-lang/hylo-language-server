@@ -9,7 +9,7 @@ extension SemanticToken {
   public init(
     range: SourceSpan, type: HyloSemanticTokenType, modifiers: HyloSemanticTokenModifier = []
   ) {
-    let (line, column) = range.start.lineAndUtf16Column
+    let (line, column) = range.start.lineAndUTF16Offset
 
     self.init(
       line: UInt32(line), char: UInt32(column), length: UInt32(range.text.utf16.count),
