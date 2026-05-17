@@ -399,6 +399,54 @@ public actor DocumentProvider {
     return try await implicitlyRegisterDocument(url: at)
   }
 
+  /// Build a complete `Program` and a `Source` from a `String`
+  public func buildProgramFromModifiedString(
+    url: AbsoluteURL, newText: String
+  ) async throws -> (Program, SourceFile) {
+    let (stdlibPath, _) = getStdlibPath(url)
+    // Document is separate from standard library
+    let stdlibCache = try await getStandardLibraryProgram(from: stdlibPath)
+
+    // Create a copy of the standard library program
+    var program = stdlibCache.program
+
+    // Add the main module for user code
+    let mainModuleId = program.demandModule(.init("MainModule"))
+
+    program[mainModuleId].addDependency(Module.standardLibraryName)
+
+    let sourceFile = SourceFile(name: url.localFileName, contents: newText)
+
+    var helper = CompilationHelper()
+    helper.program = program
+
+    // Parse the main file
+    let (parseTime, parseError) = await helper.parse([sourceFile], into: mainModuleId)
+    logger.debug("Main module parsing took: \(parseTime)")
+    if parseError {
+      logger.error("Main module parsing failed")
+      // Continue anyway for LSP features
+    }
+
+    // Assign scopes
+    let (scopeTime, scopeError) = await helper.assignScopes(of: mainModuleId)
+    logger.debug("Main module scope assignment took: \(scopeTime)")
+    if scopeError {
+      logger.error("Main module scope assignment failed")
+      // Continue anyway for LSP features
+    }
+
+    // Type check
+    let (typeTime, typeError) = await helper.assignTypes(of: mainModuleId)
+    logger.debug("Main module type checking took: \(typeTime)")
+    if typeError {
+      logger.error("Main module type checking failed")
+      // Continue anyway for LSP features
+    }
+
+    return (helper.program, sourceFile)
+  }
+
 }
 
 public struct DocumentProviderError: Error {
