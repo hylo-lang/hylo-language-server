@@ -233,21 +233,12 @@ public actor DocumentProvider {
   }
 
   /// Gets or builds the standard library program, with caching
-  private func getStandardLibraryProgram(from stdlibPath: AbsoluteURL) async throws
+  private func getStandardLibraryProgram(root stdlibPath: AbsoluteURL) async throws
     -> StandardLibraryCache
   {
-    // Check if we have a cached version
+    // Return cached version if available (invalidation is handled by invalidateStandardLibraryCache)
     if let cached = stdlibCache[stdlibPath] {
-      // Verify the cache is still valid by checking fingerprint
-      let currentSources = try loadStandardLibrarySources(from: stdlibPath)
-      let currentFingerprint = SourceFile.fingerprint(contentsOf: currentSources)
-
-      if cached.fingerprint == currentFingerprint {
-        logger.debug("Using cached standard library")
-        return cached
-      } else {
-        logger.debug("Standard library cache invalidated, rebuilding")
-      }
+      return cached
     }
 
     // Build new program
@@ -270,11 +261,11 @@ public actor DocumentProvider {
 
     if isStdlibDocument {
       // Document is part of standard library - just return the stdlib program
-      return try await getStandardLibraryProgram(from: standardLibrary).program
+      return try await getStandardLibraryProgram(root: standardLibrary).program
     }
 
     // Create a copy of the standard library program
-    var program = try await getStandardLibraryProgram(from: standardLibrary).program
+    var program = try await getStandardLibraryProgram(root: standardLibrary).program
 
     // Add the main module for user code
     let mainModuleId = program.demandModule(.init("MainModule"))
@@ -388,11 +379,15 @@ public actor DocumentProvider {
 
     do {
       let program = try await buildProgramForDocument(url: url, text: text)
-      return DocumentContext(document, program: program)
+      let context = DocumentContext(document, program: program)
+      documents[url] = context
+      return context
     } catch {
       logger.error("Failed to build program for implicitly registered document \(url): \(error)")
       // Return context with empty program as fallback
-      return DocumentContext(document, program: Program())
+      let context = DocumentContext(document, program: Program())
+      documents[url] = context
+      return context
     }
   }
 
