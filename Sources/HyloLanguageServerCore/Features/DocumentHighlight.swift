@@ -25,7 +25,9 @@ extension HyloRequestHandler {
         if let identifier = p.identifier(of: declaration),
           identifier.site.region.contains(cursor.index)
         {
-          return highlights(of: declaration, declarationIdentifierSite: identifier.site, in: p)
+          return highlights(
+            of: declaration, declarationIdentifierSite: identifier.site, in: p,
+            restrictedTo: source)
         }
       }
 
@@ -35,20 +37,30 @@ extension HyloRequestHandler {
         }
 
         return highlights(
-          of: declaration, declarationIdentifierSite: p.identifier(of: declaration)?.site, in: p)
+          of: declaration, declarationIdentifierSite: p.identifier(of: declaration)?.site, in: p,
+          restrictedTo: source)
       }
 
       return nil
     }
   }
 
+  /// Returns the document highlights for `declaration`, restricted to the source file at `source`.
+  ///
+  /// Document highlights are reported relative to a single document, so references located in other
+  /// source files must be excluded.
   private func highlights(
-    of declaration: DeclarationIdentity, declarationIdentifierSite: SourceSpan?, in program: Program
+    of declaration: DeclarationIdentity, declarationIdentifierSite: SourceSpan?,
+    in program: Program,
+    restrictedTo source: AbsoluteURL
   ) -> [DocumentHighlight] {
     var highlights = findReferences(of: declaration, in: program)
-      .map(Location.init).map { DocumentHighlight(range: $0.range) }
+      .filter { $0.absoluteURL == source }
+      .map { DocumentHighlight(range: LSPRange($0)) }
 
-    if let declarationIdentifierSite = declarationIdentifierSite {
+    if let declarationIdentifierSite = declarationIdentifierSite,
+      declarationIdentifierSite.absoluteURL == source
+    {
       highlights.append(DocumentHighlight(range: LSPRange(declarationIdentifierSite)))
     }
     return highlights
