@@ -66,6 +66,7 @@ extension HyloRequestHandler {
 
     return program.completions(at: node)
   }
+
 }
 
 /// Returns the bounds of the maximal identifier-like token containing `cursor` in `text`.
@@ -145,10 +146,12 @@ extension Program {
       wantsStatic = true
     }
 
-    let items = primaryMembers(of: type).compactMap { d in
+    let items = primaryMembers(of: type).compactMap { (d) in
       includesMember(d, static: wantsStatic) ? CompletionItem.create(from: d, in: self) : nil
     }
-    return CompletionList(isIncomplete: true, items: items)
+    // The result is the complete set of primary members and is not prefix-filtered, so the
+    // client may filter it locally without re-querying on every keystroke.
+    return CompletionList(isIncomplete: false, items: items)
   }
 
   /// Returns the members declared directly by the nominal type `t`.
@@ -161,6 +164,10 @@ extension Program {
 
   /// Returns `true` iff member `d` should be offered in a static (`true`) or instance (`false`)
   /// member-access position.
+  ///
+  /// - TODO: This approximates the type checker's own static/instance selection
+  ///   (`qualificationForSelection`). Reconcile it with the frontend once a public
+  ///   member-lookup API is available, so the classification cannot drift.
   private func includesMember(_ d: DeclarationIdentity, static wantsStatic: Bool) -> Bool {
     let isStaticMember = isStatic(d) || isInitializer(d) || isNominalTypeDeclaration(d)
     return wantsStatic == isStaticMember
@@ -176,13 +183,9 @@ extension Program {
 
   /// Returns `true` iff `d` declares a nominal type (and is therefore reached statically).
   private func isNominalTypeDeclaration(_ d: DeclarationIdentity) -> Bool {
-    switch tag(of: d) {
-    case StructDeclaration.self, EnumDeclaration.self, TraitDeclaration.self,
-      TypeAliasDeclaration.self, AssociatedTypeDeclaration.self:
-      return true
-    default:
-      return false
-    }
+    let t = tag(of: d)
+    return t == StructDeclaration.self || t == EnumDeclaration.self || t == TraitDeclaration.self
+      || t == TypeAliasDeclaration.self || t == AssociatedTypeDeclaration.self
   }
 
   /// Returns the declarations visible from `scope` and its enclosing scopes.
@@ -205,6 +208,7 @@ extension Program {
     }
     return CompletionList(isIncomplete: false, items: items)
   }
+
 }
 
 /// Builds the parameter list label and snippet for an arrow (function) type.
@@ -260,14 +264,26 @@ extension CompletionItem {
     case VariableDeclaration.self:
       return self.init(from: p.cast(d, to: VariableDeclaration.self)!, in: p)
     case FunctionDeclaration.self:
-      return self.init(from: p.cast(d, to: FunctionDeclaration.self)!, in: p)
+      let f = p.cast(d, to: FunctionDeclaration.self)!
+      // Operators and lambdas can't be invoked through name completion; only simple names
+      // (including initializers, which are offered as `new`).
+      switch p[f].identifier.value {
+      case .simple:
+        return self.init(from: f, in: p)
+      case .operator:
+        return nil
+      case .lambda:
+        return nil
+      }
     case ParameterDeclaration.self:
       return self.init(from: p.cast(d, to: ParameterDeclaration.self)!, in: p)
     case StructDeclaration.self:
       return self.init(from: p.cast(d, to: StructDeclaration.self)!, in: p)
     case BindingDeclaration.self:
       return self.init(from: p.cast(d, to: BindingDeclaration.self)!, in: p)
-    case ExtensionDeclaration.self, ConformanceDeclaration.self:
+    case ExtensionDeclaration.self:
+      return nil
+    case ConformanceDeclaration.self:
       return nil
     default:
       let name = p.name(of: d)?.identifier ?? p.nameOrTag(of: d)
@@ -298,18 +314,10 @@ extension CompletionItem {
     var detail = d.modifiers.reduce("", { "\($0)\($1.description) " }) + name
     var snippet = name
 
-    guard let tid = p.type(maybeAssignedTo: c) else {
-      self.init(
-        label: name, kind: kind, detail: detail, insertText: snippet,
-        insertTextFormat: InsertTextFormat.snippet)
-      return
-    }
-
-    if let t = p.types[tid] as? Arrow {
+    if let tid = p.type(maybeAssignedTo: c), let t = p.types[tid] as? Arrow {
       let r = buildLabelAndSnippets(from: t, in: p)
-      detail += r.label
+      detail += r.label + " -> \(p.show(t.output))"
       snippet += r.snippet
-      detail += " -> \(p.show(t.output))"
     }
     self.init(
       label: name, kind: kind, detail: detail, insertText: snippet,
@@ -322,18 +330,15 @@ extension CompletionItem {
     let label = p.show(b.pattern)
     var detail = "\(b.introducer.description) \(label)"
 
-    guard let type = p.type(maybeAssignedTo: b.pattern) else {
-      self.init(label: label, kind: CompletionItemKind.variable, detail: detail)
-      return
+    if let type = p.type(maybeAssignedTo: b.pattern) {
+      let projectedType =
+        if let remote = p.types.cast(type, to: RemoteType.self) {
+          p.types[remote].projectee
+        } else {
+          type
+        }
+      detail += ": \(p.show(projectedType))"
     }
-
-    let projectedType =
-      if let remote = p.types.cast(type, to: RemoteType.self) {
-        p.types[remote].projectee
-      } else {
-        type
-      }
-    detail += ": \(p.show(projectedType))"
     detail = p[c].modifiers.reduce(detail, { "\($1) \($0)" })
     self.init(label: label, kind: CompletionItemKind.variable, detail: detail)
   }
@@ -358,4 +363,5 @@ extension CompletionItem {
       label: p[d].identifier.value, kind: CompletionItemKind.variable,
       detail: "\(p[d].identifier.value): \(p.show(p.type(maybeAssignedTo: d) ?? .error))")
   }
+
 }
