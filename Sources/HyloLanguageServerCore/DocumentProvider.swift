@@ -304,6 +304,15 @@ public actor DocumentProvider {
     return helper.program
   }
 
+  /// Builds a `Program` for the document at `url` as if its contents were `text`.
+  ///
+  /// Used by completion to recover a parseable, type-checked program after splicing a sentinel
+  /// identifier at the cursor.
+  func buildProgram(at url: AbsoluteURL, replacingContentsWith text: String) async throws -> Program
+  {
+    try await buildProgramForDocument(url: url, text: text)
+  }
+
   /// Renders the diagnostics in `ds` to a newline-separated string.
   func render(_ ds: some Sequence<FrontEnd.Diagnostic>) -> String {
     var o = ""
