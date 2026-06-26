@@ -196,6 +196,32 @@ final class CompletionTests: XCTestCase {
       "locals must not be self-qualified, got \(local.insertText ?? "nil")")
   }
 
+  func testOperatorMembersAreNotOfferedInScope() async throws {
+    // Operator members can't be invoked through name completion (`self.infix+` is invalid),
+    // so they must not be offered.
+    let source = try MarkedSource(
+      """
+      public struct Vec {
+        var n: Int
+        public memberwise init
+        public fun infix+(other: Vec) -> Int { return self.n }
+        public fun size() -> Int {
+          let _ = 0️⃣
+          return self.n
+        }
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    // The sibling method `size` is offered (self-qualified); the operator is not.
+    assertContains(items, ["size"], context: "non-operator members")
+    for item in items {
+      XCTAssertEqual(
+        item.insertText?.contains("infix") ?? false, false,
+        "operator member must not be offered, got \(item.label) -> \(item.insertText ?? "nil")")
+    }
+  }
+
   // MARK: - Robustness
 
   func testCompletionDoesNotCrashOnDanglingMemberAccess() async throws {
