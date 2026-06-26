@@ -139,6 +139,63 @@ final class CompletionTests: XCTestCase {
     assertContains(items, ["helper"], context: "top-level functions in scope")
   }
 
+  // MARK: - `self.` qualification of members in scope
+
+  func testInstanceMembersInScopeAreSelfQualified() async throws {
+    // Inside a method body, a sibling instance member must be inserted as `self.member`,
+    // because Hylo has no implicit `self`.
+    let source = try MarkedSource(
+      """
+      public struct Box {
+        var value: Int
+        public memberwise init
+        public fun helper() -> Int { return self.value }
+        public fun caller() -> Int {
+          let _ = 0️⃣
+          return 0
+        }
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+
+    let helper = try XCTUnwrap(
+      items.first { $0.label == "helper" }, "expected `helper` in scope. \(labels(items))")
+    XCTAssertEqual(
+      helper.insertText?.hasPrefix("self.helper") ?? false, true,
+      "expected `helper` to insert `self.helper...`, got \(helper.insertText ?? "nil")")
+    XCTAssertEqual(helper.filterText, "helper", "filterText should match the bare member name")
+
+    let value = try XCTUnwrap(
+      items.first { $0.label == "value" }, "expected `value` in scope. \(labels(items))")
+    XCTAssertEqual(
+      value.insertText?.hasPrefix("self.value") ?? false, true,
+      "expected `value` to insert `self.value`, got \(value.insertText ?? "nil")")
+  }
+
+  func testLocalsInScopeAreNotSelfQualified() async throws {
+    // Locals must NOT be prefixed with `self.`.
+    let source = try MarkedSource(
+      """
+      public struct Box {
+        var value: Int
+        public memberwise init
+        public fun caller() -> Int {
+          let local = 1
+          let _ = 0️⃣
+          return 0
+        }
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let local = try XCTUnwrap(
+      items.first { $0.label == "local" }, "expected `local` in scope. \(labels(items))")
+    XCTAssertEqual(
+      local.insertText?.hasPrefix("self.") ?? false, false,
+      "locals must not be self-qualified, got \(local.insertText ?? "nil")")
+  }
+
   // MARK: - Robustness
 
   func testCompletionDoesNotCrashOnDanglingMemberAccess() async throws {
