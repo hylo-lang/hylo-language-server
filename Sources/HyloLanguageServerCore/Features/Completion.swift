@@ -191,7 +191,12 @@ extension Program {
     var items: [CompletionItem] = []
     for s in scopes(from: scope) {
       for d in declarations(lexicallyIn: s) {
-        guard let item = CompletionItem.create(from: d, in: self) else { continue }
+        guard var item = CompletionItem.create(from: d, in: self) else { continue }
+        // Instance members reached without a qualifier must be inserted as `self.member`;
+        // Hylo has no implicit `self`.
+        if isMember(d), !isStatic(d), !isInitializer(d) {
+          item = item.selfQualified()
+        }
         // Keep the innermost binding for a given name (shadowing).
         if seen.insert(item.label).inserted {
           items.append(item)
@@ -236,6 +241,18 @@ private func buildLabelAndSnippets(from a: Arrow, in p: Program, includeParenthe
 }
 
 extension CompletionItem {
+
+  /// Returns a copy of `self` whose inserted text is prefixed with `self.`, while keeping the
+  /// bare member name as the filter text so prefix matching is unaffected.
+  func selfQualified() -> CompletionItem {
+    CompletionItem(
+      label: label, kind: kind, detail: detail, documentation: documentation,
+      deprecated: deprecated, preselect: preselect, sortText: sortText,
+      filterText: filterText ?? label, insertText: "self." + (insertText ?? label),
+      insertTextFormat: insertTextFormat ?? .plaintext, textEdit: textEdit,
+      additionalTextEdits: additionalTextEdits, commitCharacters: commitCharacters,
+      command: command, data: data)
+  }
 
   /// Creates a completion item for `d`, or `nil` if `d` should not be offered.
   static public func create(from d: DeclarationIdentity, in p: Program) -> CompletionItem? {
