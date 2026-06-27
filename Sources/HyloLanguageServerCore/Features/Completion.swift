@@ -6,8 +6,7 @@ import Logging
 
 /// An identifier spliced into the source at the cursor so that an otherwise incomplete
 /// expression (e.g. `x.`, `.`, or a half-typed name) parses into a well-formed tree whose
-/// receiver/qualification can be type-checked. This is the "sentinel identifier" recovery
-/// technique (a.k.a. the IntelliJ trick).
+/// receiver/qualification can be type-checked.
 ///
 /// It must be a legal Hylo identifier in every position a completion can be requested.
 private let completionSentinel = "__hylo_completion_marker__"
@@ -52,19 +51,22 @@ extension HyloRequestHandler {
     let markerColumn = position.character - prefixUTF16
     let lookupPosition = Position(line: position.line, character: markerColumn + 1)
 
-    let program = try await documentProvider.buildProgram(
+    var p = try await documentProvider.buildProgram(
       at: url, replacingContentsWith: modifiedText)
-    let fileId = try program.requireSourceFile(at: url)
-    let lookup = SourcePosition(lookupPosition, in: program[sourceFile: fileId])
+    let file = try p.requireSourceFile(at: url)
+    let lookup = SourcePosition(lookupPosition, in: p[sourceFile: file])
 
     guard
-      let node = program.innermostTree(
-        containing: lookup, reportingLogsTo: logger, in: fileId)
+      let node = p.innermostTree(
+        containing: lookup, reportingLogsTo: logger, in: file)
     else {
-      return CompletionList(isIncomplete: false, items: [])
+      // No syntax tree contains the cursor (e.g. the recovered program is too broken to locate a
+      // node). Fall back to unqualified lookup from the file scope so we still offer everything in
+      // scope at top level.
+      return p.completions(atFileScopeOf: file)
     }
 
-    return program.completions(at: node)
+    return p.completions(at: node, in: file.module)
   }
 
 }
@@ -94,11 +96,16 @@ private func identifierTokenBounds(
 
 extension Program {
 
+  /// Returns the unqualified (lexical-scope) completions visible at the top level of `f`.
+  mutating func completions(atFileScopeOf f: SourceFile.ID) -> CompletionList {
+    scopeCompletions(visibleFrom: ScopeIdentity(file: f))
+  }
+
   /// Returns the completions reachable from `node`, the cursor node in a recovered program.
-  func completions(at node: AnySyntaxIdentity) -> CompletionList {
+  mutating func completions(at node: AnySyntaxIdentity, in m: Module.ID) -> CompletionList {
     if isExpression(node), let e = castToExpression(node) {
       if let n = self[e] as? NameExpression {
-        return completions(forName: n, at: node)
+        return completions(forName: n, at: node, in: m)
       }
       // Inside some other expression (e.g. a partially-applied call): offer the lexical scope.
       return scopeCompletions(visibleFrom: parent(containing: node))
@@ -115,22 +122,36 @@ extension Program {
   ///
   /// A qualified name (`x.`, `T.`, or `.member`) yields member completions; a bare name yields
   /// lexical-scope completions.
-  private func completions(forName n: NameExpression, at node: AnySyntaxIdentity) -> CompletionList
-  {
+  private mutating func completions(
+    forName n: NameExpression, at node: AnySyntaxIdentity, in m: Module.ID
+  ) -> CompletionList {
     guard let qualification = n.qualification else {
       return scopeCompletions(visibleFrom: parent(containing: node))
     }
     let isImplicit = self[qualification] is ImplicitQualification
-    return memberCompletions(ofQualification: qualification, isImplicit: isImplicit)
+    return memberCompletions(
+      ofQualification: qualification, isImplicitQualification: isImplicit, in: m)
   }
 
   /// Returns the members reachable through `qualification`.
   ///
-  /// - If `qualification` is a type (its type is a `Metatype`) or is an implicit member
-  ///   reference (`.member`), static members / initializers are offered.
-  /// - Otherwise instance members are offered.
-  private func memberCompletions(
-    ofQualification qualification: ExpressionIdentity, isImplicit: Bool
+  /// The member set is the sound, complete one the type checker would accept: native members,
+  /// members of applicable visible extensions, and the requirements of every visible trait to which
+  /// the receiver conforms in the implicit context at the cursor.
+  ///
+  /// The static/instance *mode* is decided exactly as the type checker decides it
+  /// (`Typer.qualificationForSelection`): the access is static iff `qualification` has a `Metatype`
+  /// type, or is an implicit member reference (`.member`). That mode is threaded into the frontend
+  /// enumeration; the full result is offered unfiltered.
+  ///
+  /// Because Hylo permits unbound member access, the frontend deliberately does not partition the
+  /// set: `T.` also reaches instance members (as unbound selections, e.g. `Point.offset`) and `x.`
+  /// also reaches a type's static members. We keep all of them, but a member whose own nature
+  /// disagrees with the access position is ranked last and tagged so the editor renders it as
+  /// distinct (see `CompletionItem.reranked(inPosition:offPositionTag:)`).
+  private mutating func memberCompletions(
+    ofQualification qualification: ExpressionIdentity, isImplicitQualification: Bool,
+    in m: Module.ID
   ) -> CompletionList {
     guard var type = type(maybeAssignedTo: qualification) else {
       // The receiver could not be typed (e.g. surrounding code is too broken).
@@ -140,58 +161,83 @@ extension Program {
     // Unwrap a projection (the type of a `let`/`inout` binding is a remote type).
     if let remote = types[type] as? RemoteType { type = remote.projectee }
 
-    var wantsStatic = isImplicit
+    var wantsStatic = isImplicitQualification
     if let metatype = types[type] as? Metatype {
       type = metatype.inhabitant
       wantsStatic = true
     }
 
-    let items = primaryMembers(of: type).compactMap { (d) in
-      includesMember(d, static: wantsStatic) ? CompletionItem.create(from: d, in: self) : nil
-    }
-    // The result is the complete set of primary members and is not prefix-filtered, so the
-    // client may filter it locally without re-querying on every keystroke.
+    let scope = scope(at: qualification.erased)
+    let items = members(of: type, in: m, visibleFrom: scope, static: wantsStatic)
+      .compactMap { (c) -> CompletionItem? in
+        // A member is "in position" when its own nature matches the access. Off-position members
+        // are still valid (unbound instance selection on a type, or a static member reached on a
+        // value) — we rank them last and tag them rather than dropping them.
+        let memberIsStatic = isStaticMember(c.declaration)
+        // An instance member reached through a type is an *unbound* selection: its snippet must
+        // carry the leading `self:` parameter (e.g. `Point.offset(self:, dx:)`).
+        let isUnboundMember = wantsStatic && !memberIsStatic
+        guard
+          let item = CompletionItem.create(
+            from: c.declaration, in: self, includeSelf: isUnboundMember)
+        else { return nil }
+        return item.reranked(
+          asPrimary: memberIsStatic == wantsStatic,
+          secondaryTag: memberIsStatic ? "static" : "unbound")
+      }
+    // The result is the complete member set and is not prefix-filtered, so the client may filter it
+    // locally without re-querying on every keystroke.
     return CompletionList(isIncomplete: false, items: items)
   }
 
-  /// Returns the members declared directly by the nominal type `t`.
-  private func primaryMembers(of t: AnyTypeIdentity) -> [DeclarationIdentity] {
-    if let s = types[t] as? Struct { return self[s.declaration].members }
-    if let e = types[t] as? Enum { return self[e.declaration].members }
-    if let tr = types[t] as? Trait { return self[tr.declaration].members }
-    return []
-  }
-
-  /// Returns `true` iff member `d` should be offered in a static (`true`) or instance (`false`)
-  /// member-access position.
+  /// Returns `true` iff `d`'s own nature is static-like — a `static` member, an initializer
+  /// (reached as `T.new`), or a nested type declaration (reached on the enclosing type).
   ///
-  /// - TODO: This approximates the type checker's own static/instance selection
-  ///   (`qualificationForSelection`). Reconcile it with the frontend once a public
-  ///   member-lookup API is available, so the classification cannot drift.
-  private func includesMember(_ d: DeclarationIdentity, static wantsStatic: Bool) -> Bool {
-    let isStaticMember = isStatic(d) || isInitializer(d) || isNominalTypeDeclaration(d)
-    return wantsStatic == isStaticMember
+  /// This classifies the *member*, not the access. It is only used to rank a member relative to the
+  /// access position; it never filters the set. Each clause defers to a frontend predicate
+  /// (`Program.isStatic`, the `init` introducer, `Program.isTypeDeclaration`) so it cannot drift
+  /// from the type checker's own notion of staticness.
+  private func isStaticMember(_ d: DeclarationIdentity) -> Bool {
+    isStatic(d) || isInitializer(d) || isTypeDeclaration(d)
   }
 
   /// Returns `true` iff `d` declares an initializer.
   private func isInitializer(_ d: DeclarationIdentity) -> Bool {
     if let f = cast(d, to: FunctionDeclaration.self) {
-      return self[f].introducer.value.isInitializer
+      self[f].introducer.value.isInitializer
+    } else {
+      false
     }
-    return false
-  }
-
-  /// Returns `true` iff `d` declares a nominal type (and is therefore reached statically).
-  private func isNominalTypeDeclaration(_ d: DeclarationIdentity) -> Bool {
-    let t = tag(of: d)
-    return t == StructDeclaration.self || t == EnumDeclaration.self || t == TraitDeclaration.self
-      || t == TypeAliasDeclaration.self || t == AssociatedTypeDeclaration.self
   }
 
   /// Returns the declarations visible from `scope` and its enclosing scopes.
-  private func scopeCompletions(visibleFrom scope: ScopeIdentity) -> CompletionList {
+  private mutating func scopeCompletions(visibleFrom scope: ScopeIdentity) -> CompletionList {
     var seen: Set<String> = []
-    var items: [CompletionItem] = []
+
+    // TODO: keep these descriptions in sync with the Hover request handler documentation.
+    var items: [CompletionItem] = [
+      .init(
+        label: "Metatype", kind: .struct, documentation: .optionA("Type of a type."),
+        insertText: "Metatype<$0>", insertTextFormat: .snippet),
+      .init(
+        label: "Never", kind: .struct,
+        documentation: .optionA("Type that has no instance, i.e. cannot be inhabited.")),
+      .init(
+        label: "Void", kind: .struct, detail: "()", documentation: .optionA("Empty tuple.")),
+      .init(
+        label: "Builtin", kind: .module,
+        documentation: .optionA("Namespace of Hylo compiler intrinsics.")),
+    ]
+
+    if let selfType = typeOfSelf(in: scope) {
+      let resolved = show(selfType)
+      items.append(
+        .init(
+          label: "Self", kind: .struct,
+          detail: resolved == "Self" ? nil : resolved,
+          documentation: .optionA("Type of the enclosing declaration.")))
+    }
+
     for s in scopes(from: scope) {
       for d in declarations(lexicallyIn: s) {
         guard var item = CompletionItem.create(from: d, in: self) else { continue }
@@ -214,13 +260,19 @@ extension Program {
 /// Builds the parameter list label and snippet for an arrow (function) type.
 ///
 /// The label looks like `(p1: t1, p2: t2)`; the snippet uses numbered placeholders.
-private func buildLabelAndSnippets(from a: Arrow, in p: Program, includeParenthesis: Bool = true)
+///
+/// The `self` input (present in the type of an *unbound* member, e.g. `Point.offset`) is dropped
+/// unless `includeSelf` is `true`, so a bound call (`p.offset(dx:)`) or a `self.`-qualified
+/// selection omits it while an unbound selection surfaces it as `offset(self:, dx:)`.
+private func buildLabelAndSnippets(
+  from a: Arrow, in p: Program, includeParenthesis: Bool = true, includeSelf: Bool = false
+)
   -> (label: String, snippet: String)
 {
   var label = "("
   var snippet = includeParenthesis ? "(" : ""
   var i = 0
-  for a in a.inputs where (a.label == nil || a.label != "self") {
+  for a in a.inputs where (includeSelf || a.label != "self") {
     if i != 0 {
       label += ", "
       snippet += ", "
@@ -246,6 +298,23 @@ private func buildLabelAndSnippets(from a: Arrow, in p: Program, includeParenthe
 
 extension CompletionItem {
 
+  /// Returns a copy of `self` with prioritized ranking iff `primary` is true.
+  /// 
+  /// `secondaryTag` is appended to the details iff the item is ranked secondary.
+  func reranked(asPrimary primary: Bool, secondaryTag: String) -> CompletionItem {
+    let bucket = primary ? "0" : "1"
+    let rankedDetail: String? =
+      primary
+      ? detail
+      : (detail.map { "\($0) (\(secondaryTag))" } ?? "(\(secondaryTag))")
+    return CompletionItem(
+      label: label, kind: kind, detail: rankedDetail, documentation: documentation,
+      deprecated: deprecated, preselect: preselect, sortText: bucket + (sortText ?? label),
+      filterText: filterText, insertText: insertText, insertTextFormat: insertTextFormat,
+      textEdit: textEdit, additionalTextEdits: additionalTextEdits,
+      commitCharacters: commitCharacters, command: command, data: data)
+  }
+
   /// Returns a copy of `self` whose inserted text is prefixed with `self.`, while keeping the
   /// bare member name as the filter text so prefix matching is unaffected.
   func selfQualified() -> CompletionItem {
@@ -259,7 +328,13 @@ extension CompletionItem {
   }
 
   /// Creates a completion item for `d`, or `nil` if `d` should not be offered.
-  static public func create(from d: DeclarationIdentity, in p: Program) -> CompletionItem? {
+  ///
+  /// Pass `includeSelf` when `d` is a member function offered as an *unbound* selection (an instance
+  /// method reached through its type, e.g. `Point.offset`): the inserted snippet then carries the
+  /// leading `self:` parameter the unbound call requires.
+  static public func create(
+    from d: DeclarationIdentity, in p: Program, includeSelf: Bool = false
+  ) -> CompletionItem? {
     switch p.tag(of: d) {
     case VariableDeclaration.self:
       return self.init(from: p.cast(d, to: VariableDeclaration.self)!, in: p)
@@ -269,7 +344,7 @@ extension CompletionItem {
       // (including initializers, which are offered as `new`).
       switch p[f].identifier.value {
       case .simple:
-        return self.init(from: f, in: p)
+        return self.init(from: f, in: p, includeSelf: includeSelf)
       case .operator:
         return nil
       case .lambda:
@@ -305,23 +380,25 @@ extension CompletionItem {
   }
 
   /// Creates a completion item for a function declaration, including a call snippet.
-  private init(from c: FunctionDeclaration.ID, in p: Program) {
+  ///
+  /// Pass `includeSelf` for an unbound member selection so the snippet keeps the leading `self:`
+  /// parameter (see `buildLabelAndSnippets`).
+  private init(from c: FunctionDeclaration.ID, in p: Program, includeSelf: Bool = false) {
     let d = p[c]
     // Initializers are invoked through the `new` member (e.g. `Point.new(x:, y:)`).
     let isInitializer = d.introducer.value.isInitializer
     let name = isInitializer ? "new" : d.identifier.value.description
-    let kind = isInitializer ? CompletionItemKind.constructor : CompletionItemKind.function
+    let kind: CompletionItemKind = isInitializer ? .constructor : .function
     var detail = d.modifiers.reduce("", { "\($0)\($1.description) " }) + name
     var snippet = name
 
     if let tid = p.type(maybeAssignedTo: c), let t = p.types[tid] as? Arrow {
-      let r = buildLabelAndSnippets(from: t, in: p)
+      let r = buildLabelAndSnippets(from: t, in: p, includeSelf: includeSelf)
       detail += r.label + " -> \(p.show(t.output))"
       snippet += r.snippet
     }
     self.init(
-      label: name, kind: kind, detail: detail, insertText: snippet,
-      insertTextFormat: InsertTextFormat.snippet)
+      label: name, kind: kind, detail: detail, insertText: snippet, insertTextFormat: .snippet)
   }
 
   /// Creates a completion item for a binding declaration (e.g. a stored property or local).
@@ -340,7 +417,7 @@ extension CompletionItem {
       detail += ": \(p.show(projectedType))"
     }
     detail = p[c].modifiers.reduce(detail, { "\($1) \($0)" })
-    self.init(label: label, kind: CompletionItemKind.variable, detail: detail)
+    self.init(label: label, kind: .variable, detail: detail)
   }
 
   /// Creates a completion item for a parameter declaration.
@@ -353,14 +430,13 @@ extension CompletionItem {
     if let defaultValue = d.defaultValue {
       detail += " = \(p.show(defaultValue))"
     }
-    self.init(
-      label: d.identifier.value.description, kind: CompletionItemKind.variable, detail: detail)
+    self.init(label: d.identifier.value, kind: .variable, detail: detail)
   }
 
   /// Creates a completion item for a variable declaration.
   private init(from d: VariableDeclaration.ID, in p: Program) {
     self.init(
-      label: p[d].identifier.value, kind: CompletionItemKind.variable,
+      label: p[d].identifier.value, kind: .variable,
       detail: "\(p[d].identifier.value): \(p.show(p.type(maybeAssignedTo: d) ?? .error))")
   }
 
