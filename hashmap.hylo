@@ -1,0 +1,59 @@
+// Hylo:
+struct UnsafeMutablePointer<T> is Deinitializable{
+  subscript unsafe_pointee() inout -> T {}
+}
+
+fun assert(c: Bool) {
+  precondition(c)
+}
+extension Optional {
+  public fun isEmpty() -> Bool {
+    return true
+  }
+}
+
+struct HashMap<Key, Value> {
+  // ...
+
+  /// Accesses an element at `key`.
+  /// 
+  /// Use if `Value` is not movable.
+  public subscript(key: Key) -> Optional<Remote<Value>> {
+    if contains(key) {
+      inout element: Value = buckets.trusted_first[where: keyEquals(key)] // todo actual logic
+      yield &element.optional_remote[]
+    } else {
+      var n: Optional<Remote<Value>> = Optional.none()
+      yield &n
+      assert(n.isEmpty())
+    }
+  }
+}
+
+
+/// A view with unique access to an instance of `Value`.
+public struct Remote<Value> is Deinitializable { // shouldn't be movable, that would allow leaking a dangling view
+  var unsafe_address: UnsafeMutablePointer<Value>
+
+  init(unique_address: sink UnsafeMutablePointer<Value>) {
+    &self.unsafe_address = unique_address
+  }
+  
+  /// The value this view accesses.
+  public subscript value() inout -> Value {
+    yield &self.unsafe_address.unsafe_pointee[] 
+  }
+}
+
+/// Extending all types.
+extension <T> T {
+
+  /// Yields a unique view of `self`.
+  public subscript optional_remote() inout -> Optional<Remote<T>> {
+    var v = Optional.some(Remote(uniqueAddress: address_of[&self]))
+    yield &v
+    assert(v.hasValue)
+    assert(v!.uniqueAddress == address_of[&self])
+  }
+
+}

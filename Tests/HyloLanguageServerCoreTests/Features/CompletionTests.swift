@@ -344,6 +344,95 @@ final class CompletionTests: XCTestCase {
   }
 
 
+  func testLeadingDotArgumentDisambiguatedByPrecedingArgument() async throws {
+    // The fixing argument comes *before* the hole — `a(A(), .)` can only select `a(x: A, y: A)` —
+    // so the hole is at argument index 1 and only A's static members should be offered. This
+    // exercises reading a non-hole argument that precedes the hole and aligning the hole index.
+    let source = try MarkedSource(
+      """
+      struct A {
+        memberwise init
+        static fun foo() -> A { .new() }
+      }
+
+      struct B {
+        memberwise init
+        static fun bar() -> B { .new() }
+      }
+
+      fun a(x: A, y: A) {}
+      fun a(x: B, y: B) {}
+
+      fun main() {
+        a(A(), .0️⃣)
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    assertContains(
+      items, ["foo", "new"], context: "static members of A (the surviving overload)")
+    assertDoesNotContain(
+      items, ["bar"], context: "B is not a candidate once `A()` fixes the overload")
+  }
+
+  func testLeadingDotArgumentConsidersOverloadReachableViaDefault() async throws {
+    // The hole is the only argument, but the surviving overload has a second, defaulted parameter
+    // (`a(x: B, y: B = ...)`). It is viable — the default fills `y` — so B's members must be offered.
+    // An exact-arity alignment would drop it and narrow the union, hiding valid completions.
+    let source = try MarkedSource(
+      """
+      struct A {
+        memberwise init
+        static fun foo() -> A { .new() }
+      }
+
+      struct B {
+        memberwise init
+        static fun bar() -> B { .new() }
+      }
+
+      fun a(x: A, y: A) {}
+      fun a(x: B, y: B = B()) {}
+
+      fun main() {
+        a(.0️⃣)
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    assertContains(
+      items, ["bar", "new"], context: "static members of B, reachable via the defaulted parameter")
+    assertDoesNotContain(
+      items, ["foo"], context: "the two-required-argument overload of `a` does not match one argument")
+  }
+
+  func testLeadingDotArgumentOnQualifiedCallee() async throws {
+    // The callee is a member of a value (`w.take(.)`), not a top-level function. Completion must
+    // resolve the member's overload, read its parameter type, and offer that type's static members.
+    let source = try MarkedSource(
+      """
+      struct A {
+        memberwise init
+        static fun foo() -> A { .new() }
+      }
+
+      struct Wrapper {
+        memberwise init
+        fun take(x: A) {}
+      }
+
+      fun main() {
+        let w = Wrapper()
+        w.take(.0️⃣)
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    XCTAssertFalse(
+      items.isEmpty, "expected leading-dot completions at `w.take(.)`, got none. \(labels(items))")
+    assertContains(items, ["foo", "new"], context: "static members of A on a qualified callee")
+  }
+
   // MARK: - `Self` in scope completion
 
   func testSelfCompletionInTypeScopeResolvesConcreteType() async throws {
@@ -417,6 +506,23 @@ final class CompletionTests: XCTestCase {
     assertContains(items, ["apple", "apricot"], context: "locals in scope")
   }
 
+  func testTupleBindingOffersIndividualVariables() async throws {
+    // A binding whose pattern destructures a tuple (`let (a, b) = ...`) introduces two variables.
+    // Completion must offer `a` and `b` individually, never the binding's `(a, b)` pattern.
+    let source = try MarkedSource(
+      """
+      public fun main() {
+        let (a, b) = (1, 2)
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    assertContains(items, ["a", "b"], context: "destructured variables of a tuple binding")
+    assertDoesNotContain(
+      items, ["(a, b)"], context: "the binding pattern itself is not a candidate")
+  }
+
   func testScopeCompletionShowsAllOverloads() async throws {
     // Overloaded functions are distinct declarations; scope completion must offer every overload,
     // not collapse them to the first-declared one. The scope dedup keys on the item label
@@ -452,6 +558,35 @@ final class CompletionTests: XCTestCase {
     let details = overloads.compactMap(\.detail).joined(separator: " | ")
     XCTAssertTrue(details.contains("A"), "expected an overload over A. details: \(details)")
     XCTAssertTrue(details.contains("B"), "expected an overload over B. details: \(details)")
+  }
+
+  func testScopeCompletionDistinguishesOverloadsByParameterDetail() async throws {
+    // All overloads of `a` must appear, and each item's `detail` must carry its parameter names so
+    // `a(x: Int)` and `a(xy: Int)` are distinguishable (the arrow type alone drops the names).
+    let source = try MarkedSource(
+      """
+      fun a() {}
+      fun a(x: Int) {}
+      fun a(xy: Int) {}
+      fun a(x: Bool) {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let overloads = items.filter { $0.label == "a" }
+    XCTAssertEqual(
+      overloads.count, 4, "expected all four overloads of `a`. \(labels(items))")
+    let details = overloads.compactMap(\.detail)
+    XCTAssertTrue(
+      details.contains("a(x: Int) -> Void"),
+      "expected an overload detailing `a(x: Int)`. details: \(details)")
+    XCTAssertTrue(
+      details.contains("a(xy: Int) -> Void"),
+      "expected an overload detailing `a(xy: Int)`. details: \(details)")
+    XCTAssertTrue(
+      details.contains("a(x: Bool) -> Void"),
+      "expected an overload detailing `a(x: Bool)`. details: \(details)")
   }
 
   func testTopLevelFunctionInScope() async throws {

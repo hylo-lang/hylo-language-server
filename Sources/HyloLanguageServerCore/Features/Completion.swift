@@ -56,14 +56,18 @@ extension HyloRequestHandler {
     let file = try p.requireSourceFile(at: url)
     let lookup = SourcePosition(lookupPosition, in: p[sourceFile: file])
 
-    guard
-      let node = p.innermostTree(
-        containing: lookup, reportingLogsTo: logger, in: file)
-    else {
+    let path = p.nodePath(containing: lookup, in: file)
+    guard let node = path.last else {
       // No syntax tree contains the cursor (e.g. the recovered program is too broken to locate a
       // node). Fall back to unqualified lookup from the file scope so we still offer everything in
       // scope at top level.
       return p.completions(atFileScopeOf: file)
+    }
+
+    // A leading-dot member in a call argument (`a(.|)`) has no single expected type; complete it
+    // against the union of the callee overloads' expected types at that argument.
+    if let list = p.argumentMemberCompletions(at: node, path: path, in: file.module) {
+      return list
     }
 
     return p.completions(at: node, in: file.module)
@@ -190,6 +194,70 @@ extension Program {
     return CompletionList(isIncomplete: false, items: items)
   }
 
+  /// Returns leading-dot completions for an implicit member at `node` sitting in a call argument, or
+  /// `nil` if `node` is not such a position.
+  ///
+  /// A bare `.member` in argument position (`a(.|)`) is never assigned an expected type by the
+  /// frontend — that would force a premature commitment to one overload of the callee. Instead we
+  /// ask the frontend for the union of the expected types at that argument across every viable
+  /// overload (`expectedArgumentTypes`) and offer the static members reachable on each. This
+  /// returns `nil` (so the normal member/scope path runs) whenever the implicit qualification
+  /// already has an expected type — e.g. `let x: T = .|`, handled by `memberCompletions`.
+  mutating func argumentMemberCompletions(
+    at node: AnySyntaxIdentity, path: [AnySyntaxIdentity], in m: Module.ID
+  ) -> CompletionList? {
+    guard
+      let e = castToExpression(node), let n = self[e] as? NameExpression,
+      let qualification = n.qualification, self[qualification] is ImplicitQualification
+    else { return nil }
+
+    // If the implicit qualification already resolved to a type, the normal member path handles it.
+    if let t = type(maybeAssignedTo: qualification), t != .error { return nil }
+
+    guard let (call, holeIndex) = enclosingCallArgument(in: path) else { return nil }
+
+    let scope = scope(at: node)
+    let expectedTypes = expectedArgumentTypes(
+      at: holeIndex, ofCall: call, in: m, visibleFrom: scope)
+    // The receiver still can't be typed (e.g. the callee is unresolved): nothing to offer, but the
+    // result may improve once the surrounding code is fixed.
+    if expectedTypes.isEmpty { return CompletionList(isIncomplete: true, items: []) }
+
+    var items: [CompletionItem] = []
+    var seen: Set<DeclarationIdentity> = []
+    for type in expectedTypes {
+      // Implicit-member access is a static selection (like `T.`); an instance member reached this
+      // way is an *unbound* selection whose snippet must carry the leading `self:` parameter.
+      for c in members(of: type, in: m, visibleFrom: scope, static: true) {
+        guard seen.insert(c.declaration).inserted else { continue }
+        let memberIsStatic = isStaticMember(c.declaration)
+        guard
+          let item = CompletionItem.create(
+            from: c.declaration, in: self, includeSelf: !memberIsStatic)
+        else { continue }
+        items.append(
+          item.reranked(
+            asPrimary: memberIsStatic, secondaryTag: memberIsStatic ? "static" : "unbound"))
+      }
+    }
+    return CompletionList(isIncomplete: false, items: items)
+  }
+
+  /// Returns the innermost `Call` in `path` (the outermost-to-innermost ancestor chain) one of whose
+  /// arguments is the next node on the path, together with that argument's index.
+  private func enclosingCallArgument(
+    in path: [AnySyntaxIdentity]
+  ) -> (call: Call.ID, holeIndex: Int)? {
+    for i in path.indices.reversed() {
+      guard let call = cast(path[i], to: Call.self), i + 1 < path.count else { continue }
+      let child = path[i + 1]
+      if let j = self[call].arguments.firstIndex(where: { $0.value.erased == child }) {
+        return (call, j)
+      }
+    }
+    return nil
+  }
+
   /// Returns `true` iff `d`'s own nature is static-like — a `static` member, an initializer
   /// (reached as `T.new`), or a nested type declaration (reached on the enclosing type).
   ///
@@ -238,23 +306,67 @@ extension Program {
           documentation: .optionA("Type of the enclosing declaration.")))
     }
 
+    // `scopes(from:)` runs inner to outer. A name bound in an inner scope shadows the same name in
+    // an outer one, but several declarations sharing a name *in the same scope* are overloads and
+    // must all be offered. So suppress a name only once an enclosing (inner) scope has introduced
+    // it — never within the scope that declares it.
     for s in scopes(from: scope) {
+      var introducedHere: Set<String> = []
       for d in declarations(lexicallyIn: s) {
-        guard var item = CompletionItem.create(from: d, in: self) else { continue }
         // Instance members reached without a qualifier must be inserted as `self.member`;
         // Hylo has no implicit `self`.
-        if isMember(d), !isStatic(d), !isInitializer(d) {
-          item = item.selfQualified()
-        }
-        // Keep the innermost binding for a given name (shadowing).
-        if seen.insert(item.label).inserted {
+        let qualify = isMember(d) && !isStatic(d) && !isInitializer(d)
+        for var item in completionItems(forScopeDeclaration: d) {
+          if qualify { item = item.selfQualified() }
+          if seen.contains(item.label) { continue }
           items.append(item)
+          introducedHere.insert(item.label)
         }
       }
+      seen.formUnion(introducedHere)
     }
     return CompletionList(isIncomplete: false, items: items)
   }
 
+  /// Returns the completion items for a declaration `d` directly contained in a scope.
+  ///
+  /// A `BindingDeclaration` is not itself a candidate — its pattern may bind several names (e.g.
+  /// `let (a, b) = ...`) or destructure one — so it is expanded into the individual variable
+  /// declarations it introduces. Every other declaration yields at most one item.
+  private mutating func completionItems(
+    forScopeDeclaration d: DeclarationIdentity
+  ) -> [CompletionItem] {
+    if let b = cast(d, to: BindingDeclaration.self) {
+      var items: [CompletionItem] = []
+      forEachVariable(introducedBy: b) { (v, _) in
+        if let item = CompletionItem.create(from: .init(v), in: self) { items.append(item) }
+      }
+      return items
+    }
+    return CompletionItem.create(from: d, in: self).map { [$0] } ?? []
+  }
+
+}
+
+/// Renders a parameter declaration for a completion `detail`: the argument label when it differs
+/// from the name, then the name, its type, and any default — e.g. `x: Int`, `to dst: Int`.
+///
+/// The type is `input`'s (the resolved arrow parameter, rendered cleanly) when given; otherwise it
+/// falls back to the declaration's written ascription.
+private func parameterDetail(
+  _ pd: ParameterDeclaration.ID, typedAs input: Parameter?, in p: Program
+) -> String {
+  let d = p[pd]
+  var s = ""
+  if let label = d.label?.value, label != d.identifier.value { s += "\(label) " }
+  s += d.identifier.value
+  if let input {
+    s += ": \(p.show(input.type))"
+  } else if let ascription = d.ascription {
+    s += ": \(p.show(ascription))"
+  }
+  if let defaultValue = d.defaultValue { s += " = \(p.show(defaultValue))" }
+  return s
 }
 
 /// Builds the parameter list label and snippet for an arrow (function) type.
@@ -355,7 +467,9 @@ extension CompletionItem {
     case StructDeclaration.self:
       return self.init(from: p.cast(d, to: StructDeclaration.self)!, in: p)
     case BindingDeclaration.self:
-      return self.init(from: p.cast(d, to: BindingDeclaration.self)!, in: p)
+      // A binding is not a candidate; the variables it introduces are (see
+      // `completionItems(forScopeDeclaration:)`). A binding's pattern may bind several names.
+      return nil
     case ExtensionDeclaration.self:
       return nil
     case ConformanceDeclaration.self:
@@ -391,33 +505,30 @@ extension CompletionItem {
     let kind: CompletionItemKind = isInitializer ? .constructor : .function
     var detail = d.modifiers.reduce("", { "\($0)\($1.description) " }) + name
     var snippet = name
+    let arrow = p.type(maybeAssignedTo: c).flatMap { p.types[$0] as? Arrow }
 
-    if let tid = p.type(maybeAssignedTo: c), let t = p.types[tid] as? Arrow {
-      let r = buildLabelAndSnippets(from: t, in: p, includeSelf: includeSelf)
-      detail += r.label + " -> \(p.show(t.output))"
-      snippet += r.snippet
+    // Render the parameter list for the detail with each parameter's name (kept by the declaration
+    // even when it has no argument label, which the arrow type drops) and its resolved type (kept by
+    // the arrow, rendered without the projection's access annotation). When the declared parameters
+    // can't be aligned to the arrow's inputs — e.g. a memberwise initializer, whose fields are
+    // synthesized into the type with no explicit declarations — fall back to the arrow's own labels.
+    let explicit = d.parameters.filter { p[$0].identifier.value != "self" }
+    let inputs = (arrow?.inputs ?? []).filter { $0.label != "self" }
+    if !explicit.isEmpty, explicit.count == inputs.count {
+      let rendered = zip(explicit, inputs).map { parameterDetail($0, typedAs: $1, in: p) }
+      detail += "(" + rendered.joined(separator: ", ") + ")"
+    } else if let t = arrow {
+      detail += buildLabelAndSnippets(from: t, in: p, includeSelf: includeSelf).label
+    } else {
+      detail += "(" + explicit.map { parameterDetail($0, typedAs: nil, in: p) }.joined(separator: ", ") + ")"
+    }
+
+    if let t = arrow {
+      detail += " -> \(p.show(t.output))"
+      snippet += buildLabelAndSnippets(from: t, in: p, includeSelf: includeSelf).snippet
     }
     self.init(
       label: name, kind: kind, detail: detail, insertText: snippet, insertTextFormat: .snippet)
-  }
-
-  /// Creates a completion item for a binding declaration (e.g. a stored property or local).
-  private init(from c: BindingDeclaration.ID, in p: Program) {
-    let b = p[p[c].pattern]
-    let label = p.show(b.pattern)
-    var detail = "\(b.introducer.description) \(label)"
-
-    if let type = p.type(maybeAssignedTo: b.pattern) {
-      let projectedType =
-        if let remote = p.types.cast(type, to: RemoteType.self) {
-          p.types[remote].projectee
-        } else {
-          type
-        }
-      detail += ": \(p.show(projectedType))"
-    }
-    detail = p[c].modifiers.reduce(detail, { "\($1) \($0)" })
-    self.init(label: label, kind: .variable, detail: detail)
   }
 
   /// Creates a completion item for a parameter declaration.
@@ -433,11 +544,18 @@ extension CompletionItem {
     self.init(label: d.identifier.value, kind: .variable, detail: detail)
   }
 
-  /// Creates a completion item for a variable declaration.
+  /// Creates a completion item for a variable declaration (a local, a destructured name, or a
+  /// stored property).
   private init(from d: VariableDeclaration.ID, in p: Program) {
-    self.init(
-      label: p[d].identifier.value, kind: .variable,
-      detail: "\(p[d].identifier.value): \(p.show(p.type(maybeAssignedTo: d) ?? .error))")
+    let name = p[d].identifier.value
+    // Unwrap the projection: a `let`/`inout` binding's variable has a remote type, whose access
+    // annotation is noise in the detail.
+    var detail = name
+    if let type = p.type(maybeAssignedTo: d) {
+      let projected = (p.types[type] as? RemoteType)?.projectee ?? type
+      detail += ": \(p.show(projected))"
+    }
+    self.init(label: name, kind: .variable, detail: detail)
   }
 
 }
