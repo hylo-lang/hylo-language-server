@@ -12,6 +12,18 @@ extension Program {
     return v.deepestMatch
   }
 
+  /// Returns the chain of nodes containing `position`, from outermost to innermost (the innermost
+  /// being `innermostTree(containing:)`).
+  ///
+  /// - Requires: The source file of `position` is present in `self`.
+  public func nodePath(
+    containing position: SourcePosition, in f: SourceFile.ID
+  ) -> [AnySyntaxIdentity] {
+    var v = PathFinder(position)
+    visit(topLevelDeclarations(in: f), calling: &v)
+    return v.deepestPath
+  }
+
 }
 
 /// Requires that the visiting happens in a depth-first order.
@@ -48,6 +60,37 @@ private struct NodeFinder: SyntaxVisitor {
 
   public mutating func willExit(_ node: AnySyntaxIdentity, in program: Program) {
     currentDepth -= 1
+  }
+
+}
+
+/// Records the chain of ancestor nodes whose sites contain a target position.
+///
+/// Requires that the visiting happens in a depth-first order.
+private struct PathFinder: SyntaxVisitor {
+
+  let targetPosition: SourcePosition
+  private var stack: [AnySyntaxIdentity] = []
+  private(set) var deepestPath: [AnySyntaxIdentity] = []
+
+  init(_ targetPosition: SourcePosition) {
+    self.targetPosition = targetPosition
+  }
+
+  mutating func willEnter(_ n: AnySyntaxIdentity, in program: Program) -> Bool {
+    if program[n].site.region.containsInclusive(targetPosition.index) {
+      stack.append(n)
+      // Containment nests, so the stack is always a root-to-`n` chain; keep the deepest one seen.
+      if stack.count > deepestPath.count { deepestPath = stack }
+    } else if program.isScope(n) {
+      // A scope that doesn't contain the position has no containing descendant.
+      return false
+    }
+    return true
+  }
+
+  mutating func willExit(_ n: AnySyntaxIdentity, in program: Program) {
+    if stack.last == n { stack.removeLast() }
   }
 
 }

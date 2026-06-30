@@ -79,7 +79,7 @@ public fun main() {
   let p1 = Point(x: 3, y: 4)
   let p2 = Point.new(x: 0, y: 0)
 
-  let s = p1.x * p1.x + p1.y * p1.y
+  let s = p1.x * p1.x +  + p1.x
 
   _ = add(a: 10, b: true)
   let a: A = (10, true)
@@ -98,3 +98,91 @@ public fun main() {
 
 type A = {Int, Bool}
 
+let a: Float32 = 3.4
+
+let rr = 1 + 2
+let h = -rr
+
+let (e, b, r) = (10, true, 20, 30)
+
+let aadf = 23
+
+let ref = 23
+
+struct Array{
+
+  memberwise init
+
+
+}
+
+
+extension Int {
+
+  public fun prefix&() inout -> Int {
+    return self.copy()
+    &self += 1
+  } 
+
+}
+
+fun f() {
+  var a = 1
+  let b = &a
+}
+
+
+// trait SetVariable {
+//   fun setNewValue(v: sink Int) inout -> Void
+// }
+
+// trait MyFunctor {
+//   /// Can be applied given the SetVariable implicit capability.
+//   fun apply<Target is SetVariable where inout target: Target>(v: sink Int) -> Void
+// }
+
+// /// A concrete implementation of MyFunctor.
+// struct B is MyFunctor & Movable {
+//   memberwise init
+
+//   fun apply<Target is SetVariable where inout target: Target>(v: sink Int) -> Void {
+//     &target.setNewValue(v)
+//   }
+// }
+
+// struct SimpleSetter<F> {
+//   let func: F
+
+//   /// Equivalent of `make_simple` in ref-lang.
+//   init<where F is MyFunctor, F is Movable>(func: sink F) {
+//     &self.func = func
+//   }
+// }
+
+// struct MutationTarget {
+//   var value: Int
+
+//   memberwise init
+// }
+
+// fun main() {
+
+//   let setter = SimpleSetter(B())
+
+//   var target = MutationTarget(value: 0)
+
+//   // setter.func.apply(42) // ERROR: no given instance of '<Self> SetVariable<Self>' in this scope
+
+//   given MutationTarget is SetVariable {
+//     fun setNewValue(v: sink Int) inout -> Void {
+//       &self.value = v
+//     }
+//   }
+
+//   given inout t = target
+  
+//   setter.func.apply(42)
+// }
+type Ads = {Int, Int}
+
+let aads: Ads = (1, 2)
