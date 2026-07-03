@@ -42,7 +42,7 @@ private struct CompilationHelper {
   var program: Program
 
   init() {
-    self.program = Program()
+    self.program = Program(allowPartialStandardLibrary: true)
   }
 
   /// Parses sources into a module
@@ -192,14 +192,25 @@ public actor DocumentProvider {
     return sources
   }
 
-  /// Builds a program with standard library loaded and typed
-  private func buildStandardLibraryProgram(from stdlibPath: AbsoluteURL) async throws
+  /// Builds a program with standard library loaded and typed.
+  ///
+  /// When `replacement` is given, its text is substituted for the on-disk contents of the source
+  /// file at its URL, so a library document's unsaved edits are reflected in the program.
+  private func buildStandardLibraryProgram(
+    from stdlibPath: AbsoluteURL, replacing replacement: (url: AbsoluteURL, text: String)? = nil
+  ) async throws
     -> StandardLibraryCache
   {
     logger.debug("Building standard library program from: \(stdlibPath)")
 
     // Load sources
-    let sources = try loadStandardLibrarySources(from: stdlibPath)
+    var sources = try loadStandardLibrarySources(from: stdlibPath)
+    if let replacement {
+      let name = FileName.local(replacement.url.url)
+      if let i = sources.firstIndex(where: { (s) in s.name == name }) {
+        sources[i] = SourceFile(name: name, contents: replacement.text)
+      }
+    }
 
     // Create program and helper
     var helper = CompilationHelper()
@@ -260,8 +271,15 @@ public actor DocumentProvider {
     let (standardLibrary, isStdlibDocument) = getStdlibPath(url)
 
     if isStdlibDocument {
-      // Document is part of standard library - just return the stdlib program
-      return try await getStandardLibraryProgram(root: standardLibrary).program
+      // The document is part of the standard library. The cached program reflects the on-disk
+      // sources; it can only be used while `text` matches them. Otherwise (unsaved edits, or the
+      // sentinel spliced by completion) the library is rebuilt with `text` substituted, uncached.
+      if (try? String(contentsOf: url.url, encoding: .utf8)) == text {
+        return try await getStandardLibraryProgram(root: standardLibrary).program
+      }
+      return try await buildStandardLibraryProgram(
+        from: standardLibrary, replacing: (url: url, text: text)
+      ).program
     }
 
     // Create a copy of the standard library program

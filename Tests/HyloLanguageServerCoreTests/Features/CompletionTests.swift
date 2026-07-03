@@ -1,3 +1,5 @@
+import Foundation
+import FrontEnd
 import JSONRPC
 import LanguageServerProtocol
 import Logging
@@ -170,7 +172,8 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    assertContains(items, ["tag", "greet", "extra"], context: "native + conformance + extension members")
+    assertContains(
+      items, ["tag", "greet", "extra"], context: "native + conformance + extension members")
   }
 
   func testMemberCompletionOnGenericBoundReceiver() async throws {
@@ -343,7 +346,6 @@ final class CompletionTests: XCTestCase {
       items, ["foo"], context: "A is not a candidate once `B()` fixes the overload")
   }
 
-
   func testLeadingDotArgumentDisambiguatedByPrecedingArgument() async throws {
     // The fixing argument comes *before* the hole — `a(A(), .)` can only select `a(x: A, y: A)` —
     // so the hole is at argument index 1 and only A's static members should be offered. This
@@ -403,7 +405,8 @@ final class CompletionTests: XCTestCase {
     assertContains(
       items, ["bar", "new"], context: "static members of B, reachable via the defaulted parameter")
     assertDoesNotContain(
-      items, ["foo"], context: "the two-required-argument overload of `a` does not match one argument")
+      items, ["foo"],
+      context: "the two-required-argument overload of `a` does not match one argument")
   }
 
   func testLeadingDotArgumentOnQualifiedCallee() async throws {
@@ -525,11 +528,11 @@ final class CompletionTests: XCTestCase {
 
   func testScopeCompletionShowsAllOverloads() async throws {
     // Overloaded functions are distinct declarations; scope completion must offer every overload,
-    // not collapse them to the first-declared one. The scope dedup keys on the item label
-    // (`seen.insert(item.label)`), which is the same string for every overload of `a`, so all but
-    // the first are dropped. Dedup should suppress genuine shadowing only, not overloads.
+    // not collapse them to the first-declared one. Dedup suppresses genuine shadowing only, never
+    // same-scope overloads.
     //
-    // Declaration order is deliberately B-then-A to show the surviving item is "first in source".
+    // Declaration order is deliberately B-then-A to catch a collapse keeping only "first in
+    // source".
     let source = try MarkedSource(
       """
       struct A {
@@ -603,6 +606,146 @@ final class CompletionTests: XCTestCase {
     assertContains(items, ["helper"], context: "top-level functions in scope")
   }
 
+  func testStandardLibraryTopLevelDeclarationsInScope() async throws {
+    // The standard library is imported implicitly; its top-level declarations must be offered by
+    // unqualified completion, not just the names declared in the current file.
+    let source = try MarkedSource(
+      """
+      public fun main() {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    assertContains(
+      items, ["Int", "Bool", "precondition"], context: "standard-library top-level declarations")
+  }
+
+  func testOuterScopeFunctionOverloadRemainsVisible() async throws {
+    // A method named like a top-level function does not shadow it — both are callable overloads
+    // (mirroring `Typer.lookup`, which keeps collecting across scopes while every match is
+    // overloadable). Only the inner one is a member and gets the `self.` insertion.
+    let source = try MarkedSource(
+      """
+      fun log(x: Int) {}
+
+      public struct S {
+        public memberwise init
+        public fun log() {}
+        public fun caller() {
+          let _ = 0️⃣
+        }
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let overloads = items.filter { $0.label == "log" }
+    XCTAssertEqual(
+      overloads.count, 2,
+      "expected the member and the top-level overload of `log`, got \(overloads.count). "
+        + labels(items))
+    XCTAssertTrue(
+      overloads.contains { $0.insertText?.hasPrefix("self.") ?? false },
+      "expected the member overload to insert `self.log...`")
+    XCTAssertTrue(
+      overloads.contains { !($0.insertText?.hasPrefix("self.") ?? false) },
+      "expected the top-level overload to insert a bare `log...`")
+  }
+
+  func testInnerBindingShadowsOuterFunction() async throws {
+    // A binding is not overloadable: it shadows a same-named declaration of any outer scope.
+    let source = try MarkedSource(
+      """
+      fun value() -> Int { return 1 }
+
+      public fun main() {
+        let value = 2
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let matches = items.filter { $0.label == "value" }
+    XCTAssertEqual(
+      matches.count, 1,
+      "expected the local to shadow the function: "
+        + matches.map { "\($0.kind.map(String.init(describing:)) ?? "?") \($0.detail ?? "?")" }
+        .joined(separator: " | "))
+    XCTAssertEqual(matches.first?.kind, .variable, "expected the surviving item to be the local")
+  }
+
+  func testSuppressedBindingStillShadowsOuterOverload() async throws {
+    // `Typer.lookup` stops a name's walk at the first group containing a non-overloadable
+    // declaration even when that declaration is itself not collected (an inner overloadable
+    // match already won). The middle `let f` is suppressed by the inner `fun f`, but it still
+    // makes the outer `fun f(x:)` unreachable.
+    let source = try MarkedSource(
+      """
+      fun f(x: Int) {}
+
+      public fun main() {
+        let f = 1
+        fun g() {
+          fun f() {}
+          let _ = 0️⃣
+        }
+        g()
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let matches = items.filter { $0.label == "f" }
+    XCTAssertEqual(
+      matches.count, 1,
+      "expected only the innermost `f`; the suppressed `let f` ends the lookup. " + labels(items))
+    XCTAssertEqual(matches.first?.kind, .function, "expected the surviving item to be `fun f()`")
+  }
+
+  func testDeclaredNameHidesPredefinedHomonym() async throws {
+    // Predefined names (`Never`, `Void`, ...) resolve only where lookup finds nothing, so a
+    // declared `Never` must hide the predefined item rather than duplicate it.
+    let source = try MarkedSource(
+      """
+      public struct Never {}
+
+      public fun main() {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let matches = items.filter { $0.label == "Never" }
+    XCTAssertEqual(matches.count, 1, "expected a single `Never`. " + labels(items))
+    XCTAssertNil(
+      matches.first?.documentation,
+      "expected the declared struct (no documentation), not the predefined item")
+  }
+
+  // MARK: - Snippet escaping
+
+  func testTupleTypedParameterEscapedInSnippet() async throws {
+    // A tuple type renders as `{Int, Int}`; its `}` must be escaped inside the snippet
+    // placeholder, or it closes the placeholder early. The label stays unescaped.
+    let source = try MarkedSource(
+      """
+      public fun f(pair: {Int, Int}) {}
+
+      public fun main() {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let f = try XCTUnwrap(
+      items.first { $0.label == "f" }, "expected `f` in scope. \(labels(items))")
+    let insert = try XCTUnwrap(f.insertText, "expected a call snippet for `f`")
+    XCTAssertTrue(
+      insert.contains("${1:{Int, Int\\}}"),
+      "expected the placeholder's closing brace escaped, got \(insert)")
+    let detail = try XCTUnwrap(f.detail, "expected a detail for `f`")
+    XCTAssertFalse(detail.contains("\\"), "the detail must stay unescaped, got \(detail)")
+  }
+
   // MARK: - `self.` qualification of members in scope
 
   func testInstanceMembersInScopeAreSelfQualified() async throws {
@@ -660,6 +803,215 @@ final class CompletionTests: XCTestCase {
       "locals must not be self-qualified, got \(local.insertText ?? "nil")")
   }
 
+  func testInstanceMembersNotOfferedInStaticFunction() async throws {
+    // No instance `self` exists in a static function, so instance members cannot be named there
+    // and must not be offered (inserting `self.value` would not type-check). Static members
+    // remain available.
+    let source = try MarkedSource(
+      """
+      public struct S {
+        var value: Int
+        public memberwise init
+        public fun m() {}
+        public static fun s() {
+          let _ = 0️⃣
+        }
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    assertDoesNotContain(
+      items, ["value", "m"], context: "instance members in a static function body")
+    assertContains(items, ["s"], context: "static members in a static function body")
+    for item in items {
+      XCTAssertEqual(
+        item.insertText?.hasPrefix("self.") ?? false, false,
+        "nothing may insert `self.` where no instance exists, got \(item.insertText ?? "nil")")
+    }
+  }
+
+  // MARK: - Defaulted parameters
+
+  func testDefaultedParameterKeepsDefaultInsidePlaceholder() async throws {
+    // A defaulted parameter renders as `name: Type = default` and the default stays inside the
+    // snippet placeholder, so accepting and overtyping the placeholder never leaves residue like
+    // `f(y: BB())` behind.
+    let source = try MarkedSource(
+      """
+      public struct B {
+        public memberwise init
+      }
+
+      public fun f(y: B = B()) {}
+
+      public fun main() {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let f = try XCTUnwrap(
+      items.first { $0.label == "f" }, "expected `f` in scope. \(labels(items))")
+    let insert = try XCTUnwrap(f.insertText, "expected a call snippet for `f`")
+    XCTAssertTrue(
+      insert.contains("${1:B = B.new()}"),
+      "expected the default inside the placeholder, got \(insert)")
+    let detail = try XCTUnwrap(f.detail, "expected a detail for `f`")
+    XCTAssertTrue(
+      detail.contains("y: B = B.new()"), "expected `= default` in the detail, got \(detail)")
+  }
+
+  // MARK: - Comments and string literals
+
+  func testNoCompletionInsideLineComment() async throws {
+    let source = try MarkedSource(
+      """
+      public fun main() {
+        // e.g.0️⃣
+        let x = 1
+        _ = x
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    XCTAssertTrue(items.isEmpty, "no completion inside a line comment. \(labels(items))")
+  }
+
+  func testNoCompletionInsideBlockComment() async throws {
+    let source = try MarkedSource(
+      """
+      public fun main() {
+        /* a /* nested */ block.0️⃣ */
+        let x = 1
+        _ = x
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    XCTAssertTrue(items.isEmpty, "no completion inside a block comment. \(labels(items))")
+  }
+
+  func testCompletionAfterClosedComment() async throws {
+    // The suppression must not extend past the end of a terminated comment.
+    let source = try MarkedSource(
+      """
+      public fun main() {
+        /* comment */ let apple = 1
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    assertContains(items, ["apple"], context: "completion after a closed comment")
+  }
+
+  // String literals cannot be exercised end-to-end (the frontend does not type-check them yet
+  // and traps on any document containing one), so the scanner is tested directly.
+
+  func testScannerDetectsStringLiterals() {
+    XCTAssertTrue(isInsideIgnored(#"let s = "file." + x"#, atOffset: 14), "inside the literal")
+    XCTAssertFalse(isInsideIgnored(#"let s = "file." + x"#, atOffset: 15), "right after the literal")
+    XCTAssertFalse(isInsideIgnored(#"let s = "file." + x"#, atOffset: 19), "past the literal")
+    XCTAssertTrue(
+      isInsideIgnored(#"let s = "a\"b." + x"#, atOffset: 14), "an escaped quote does not terminate")
+    XCTAssertTrue(
+      isInsideIgnored(#"let s = "unterminated"#, atOffset: 21),
+      "an unterminated literal extends to the end")
+  }
+
+  func testScannerDetectsComments() {
+    XCTAssertTrue(isInsideIgnored("// e.g. x\ny", atOffset: 8), "inside a line comment")
+    XCTAssertFalse(isInsideIgnored("// e.g. x\ny", atOffset: 10), "the next line is code")
+    XCTAssertTrue(isInsideIgnored("/* a /* b */ c */ x", atOffset: 9), "inside a nested block comment")
+    XCTAssertTrue(isInsideIgnored("/* a /* b */ c */ x", atOffset: 14), "between nested closers")
+    XCTAssertFalse(isInsideIgnored("/* a /* b */ c */ x", atOffset: 18), "after the block comment")
+    XCTAssertTrue(
+      isInsideIgnored("/* unterminated x", atOffset: 16),
+      "an unterminated comment extends to the end")
+  }
+
+  /// Returns `true` iff the scanner classifies the position `offset` characters into `text` as
+  /// inside a comment or string literal.
+  private func isInsideIgnored(_ text: String, atOffset offset: Int) -> Bool {
+    isInCommentOrStringLiteral(text, at: text.index(text.startIndex, offsetBy: offset))
+  }
+
+  // MARK: - Namespace qualification
+
+  func testBuiltinMemberCompletionIsMarkedIncomplete() async throws {
+    // `Builtin`'s members (machine types, literal types, intrinsics) are recognized by name
+    // rather than declared, so they cannot be enumerated. The empty result must be marked
+    // incomplete so the client re-queries instead of caching the emptiness.
+    let source = try MarkedSource(
+      """
+      public fun main() {
+        let _ = Builtin.0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let list = try await context.completionList(uri: uri, at: source.markers[0])
+    XCTAssertTrue(
+      list.items.isEmpty, "builtin members cannot be enumerated, got \(list.items.map(\.label))")
+    XCTAssertTrue(list.isIncomplete, "an unenumerable result must be marked incomplete")
+  }
+
+  func testModuleNamespaceMembersAreItsTopLevelDeclarations() async throws {
+    // A module namespace offers the module's top-level declarations. Exercised directly on the
+    // enumeration because the frontend currently rejects an explicit `import Hylo`, so a
+    // module-qualified name cannot be typed end-to-end yet.
+    let source = try MarkedSource(
+      """
+      public fun main() {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let document = try await context.documentProvider.getDocumentContext(
+      at: AbsoluteURL(fromUrlString: uri.absoluteString))
+    var program = document.program
+    let stdlib = try XCTUnwrap(program.identity(module: Module.standardLibraryName))
+    let list = program.namespaceMemberCompletions(of: Namespace(identifier: .module(stdlib)))
+    assertContains(
+      list.items, ["Int", "Bool", "precondition"], context: "top-level declarations of a module")
+  }
+
+  // MARK: - Standard-library documents
+
+  func testCompletionInStandardLibraryDocument() async throws {
+    // A document under a directory recognized as a standard-library root (an ancestor contains
+    // Core/Void.hylo) is compiled as part of the library itself. Completion must still honor the
+    // in-memory contents — the sentinel splice happens in the library build.
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory
+      .appendingPathComponent("HyloFakeStdlib-\(UUID().uuidString)")
+      .resolvingSymlinksInPath()
+    try fileManager.createDirectory(
+      at: root.appendingPathComponent("Core"), withIntermediateDirectories: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    try "public struct Marker { public memberwise init }".write(
+      to: root.appendingPathComponent("Core/Void.hylo"), atomically: true, encoding: .utf8)
+
+    let source = try MarkedSource(
+      """
+      public struct Box {
+        public memberwise init
+        public fun get() { }
+      }
+
+      public fun test() {
+        let b = Box()
+        let _ = b.0️⃣
+      }
+      """)
+    let documentURL = root.appendingPathComponent("Fixture.hylo")
+    try source.source.write(to: documentURL, atomically: true, encoding: .utf8)
+
+    let uri = try await context.openDocument(source, uri: documentURL.absoluteString)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    assertContains(items, ["get", "new"], context: "members in a standard-library document")
+  }
+
   func testOperatorMembersAreNotOfferedInScope() async throws {
     // Operator members can't be invoked through name completion (`self.infix+` is invalid),
     // so they must not be offered.
@@ -700,7 +1052,8 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    assertContains(items, ["helper", "Widget"], context: "top-level declarations via file-scope fallback")
+    assertContains(
+      items, ["helper", "Widget"], context: "top-level declarations via file-scope fallback")
   }
 
   func testCompletionDoesNotCrashOnDanglingMemberAccess() async throws {
@@ -779,6 +1132,22 @@ extension LSPTestContext {
     switch await requestHandler.completion(id: .numericId(1), params: params) {
     case .success(let value):
       return value?.items ?? []
+    case .failure(let error):
+      throw TestFailure(error.message)
+    }
+  }
+
+  /// Performs a completion request in the document and returns the full completion list,
+  /// including its `isIncomplete` flag.
+  public func completionList(uri: URL, at position: Position) async throws -> CompletionList {
+    let params = CompletionParams(
+      uri: uri.absoluteString, position: position, triggerKind: .invoked, triggerCharacter: nil)
+    switch await requestHandler.completion(id: .numericId(1), params: params) {
+    case .success(let value):
+      guard case .optionB(let list)? = value else {
+        throw TestFailure("expected a CompletionList, got \(String(describing: value))")
+      }
+      return list
     case .failure(let error):
       throw TestFailure(error.message)
     }
