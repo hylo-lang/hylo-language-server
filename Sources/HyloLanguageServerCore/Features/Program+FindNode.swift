@@ -31,9 +31,16 @@ private struct NodeFinder: SyntaxVisitor {
 
   // todo use binary search for efficiency if we can assume AST entries are sorted by position (probably they aren't though)
 
+  /// The position whose innermost containing node is looked for.
   let targetPosition: SourcePosition
+
+  /// The deepest node seen so far whose site contains `targetPosition`, if any.
   private(set) var deepestMatch: AnySyntaxIdentity?
+
+  /// The depth at which `deepestMatch` was found.
   private var deepestMatchDepth: Int = -1
+
+  /// The depth of the node currently being visited.
   private var currentDepth: Int = 0
 
   public init(_ targetPosition: SourcePosition) {
@@ -69,8 +76,13 @@ private struct NodeFinder: SyntaxVisitor {
 /// Requires that the visiting happens in a depth-first order.
 private struct PathFinder: SyntaxVisitor {
 
+  /// The position whose containing ancestor chain is recorded.
   let targetPosition: SourcePosition
+
+  /// The chain of nodes containing `targetPosition` on the path to the node being visited.
   private var stack: [AnySyntaxIdentity] = []
+
+  /// The longest containing chain seen so far, from outermost to innermost.
   private(set) var deepestPath: [AnySyntaxIdentity] = []
 
   init(_ targetPosition: SourcePosition) {

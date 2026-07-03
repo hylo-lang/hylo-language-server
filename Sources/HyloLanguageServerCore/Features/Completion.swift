@@ -41,6 +41,12 @@ extension HyloRequestHandler {
     guard let cursor = position.stringIndex(in: text) else {
       return CompletionList(isIncomplete: false, items: [])
     }
+
+    // No autocomplete within strings and comments
+    if isInCommentOrStringLiteral(text, at: cursor) {
+      return CompletionList(isIncomplete: false, items: [])
+    }
+
     let token = identifierTokenBounds(in: text, around: cursor)
     var modifiedText = text
     modifiedText.replaceSubrange(token.start ..< token.end, with: completionSentinel)
@@ -82,6 +88,8 @@ extension HyloRequestHandler {
 private func identifierTokenBounds(
   in text: String, around cursor: String.Index
 ) -> (start: String.Index, end: String.Index) {
+  // todo: reconsider this after we support the ``-style escaped identifiers.
+  // also, consult the real parser to see if this is accurate.  
   func isIdentifierCharacter(_ c: Character) -> Bool {
     c == "_" || c.isLetter || c.isNumber
   }
@@ -96,6 +104,64 @@ private func identifierTokenBounds(
     end = text.index(after: end)
   }
   return (start, end)
+}
+
+/// Returns `true` iff inserting text at `cursor` in `text` lands inside a comment or a string
+/// literal.
+///
+/// Mirrors the lexer's rules: `//` runs to the end of the line, `/* */` nests, and a string
+/// literal runs between unescaped double quotes. An unterminated block comment or string literal
+/// extends to the end of `text`. Runs in O(n) time where n is the length of `text`.
+func isInCommentOrStringLiteral(_ text: String, at cursor: String.Index) -> Bool {
+  // todo get rid of this and get this from the real frontend instead
+  var i = text.startIndex
+  while i < cursor {
+    if text[i...].hasPrefix("//") {
+      // The cursor is inside iff it is at most at the terminating newline (or the end of input).
+      var end = i
+      while end < text.endIndex, !text[end].isNewline { end = text.index(after: end) }
+      if cursor <= end { return true }
+      i = end
+    } else if text[i...].hasPrefix("/*") {
+      var openedBlocks = 1
+      var end = text.index(i, offsetBy: 2)
+      while end < text.endIndex, openedBlocks > 0 {
+        if text[end...].hasPrefix("/*") {
+          openedBlocks += 1
+          end = text.index(end, offsetBy: 2)
+        } else if text[end...].hasPrefix("*/") {
+          openedBlocks -= 1
+          end = text.index(end, offsetBy: 2)
+        } else {
+          end = text.index(after: end)
+        }
+      }
+      // `end` is past the closing delimiter; inserting exactly there is outside the comment. An
+      // unterminated comment extends to the end of input, and the cursor is necessarily inside.
+      if openedBlocks > 0 || cursor < end { return true }
+      i = end
+    } else if text[i] == "\"" {
+      var end = text.index(after: i)
+      var terminated = false
+      while end < text.endIndex {
+        if text[end] == "\\" {
+          end = text.index(after: end)
+          if end < text.endIndex { end = text.index(after: end) }
+        } else if text[end] == "\"" {
+          end = text.index(after: end)
+          terminated = true
+          break
+        } else {
+          end = text.index(after: end)
+        }
+      }
+      if !terminated || cursor < end { return true }
+      i = end
+    } else {
+      i = text.index(after: i)
+    }
+  }
+  return false
 }
 
 extension Program {
@@ -129,12 +195,13 @@ extension Program {
   private mutating func completions(
     forName n: NameExpression, at node: AnySyntaxIdentity, in m: Module.ID
   ) -> CompletionList {
-    guard let qualification = n.qualification else {
+    if let qualification = n.qualification {
+      let isImplicit = self[qualification] is ImplicitQualification
+      return memberCompletions(
+        ofQualification: qualification, isImplicitQualification: isImplicit, in: m)
+    } else {
       return scopeCompletions(visibleFrom: parent(containing: node))
     }
-    let isImplicit = self[qualification] is ImplicitQualification
-    return memberCompletions(
-      ofQualification: qualification, isImplicitQualification: isImplicit, in: m)
   }
 
   /// Returns the members reachable through `qualification`.
@@ -165,33 +232,66 @@ extension Program {
     // Unwrap a projection (the type of a `let`/`inout` binding is a remote type).
     if let remote = types[type] as? RemoteType { type = remote.projectee }
 
+    // A namespace qualification (a module name, or `Builtin`) is not a metatype; its members are
+    // the namespace's top-level declarations.
+    if let namespace = types[type] as? Namespace {
+      return namespaceMemberCompletions(of: namespace)
+    }
+
     var wantsStatic = isImplicitQualification
     if let metatype = types[type] as? Metatype {
       type = metatype.inhabitant
       wantsStatic = true
     }
 
+    // The receiver's type did not resolve (possibly behind a projection or metatype); the result
+    // may improve once the code is fixed.
+    if type == .error { return CompletionList(isIncomplete: true, items: []) }
+
     let scope = scope(at: qualification.erased)
     let items = members(of: type, in: m, visibleFrom: scope, static: wantsStatic)
-      .compactMap { (c) -> CompletionItem? in
-        // A member is "in position" when its own nature matches the access. Off-position members
-        // are still valid (unbound instance selection on a type, or a static member reached on a
-        // value) — we rank them last and tag them rather than dropping them.
-        let memberIsStatic = isStaticMember(c.declaration)
-        // An instance member reached through a type is an *unbound* selection: its snippet must
-        // carry the leading `self:` parameter (e.g. `Point.offset(self:, dx:)`).
-        let isUnboundMember = wantsStatic && !memberIsStatic
-        guard
-          let item = CompletionItem.create(
-            from: c.declaration, in: self, includeSelf: isUnboundMember)
-        else { return nil }
-        return item.reranked(
-          asPrimary: memberIsStatic == wantsStatic,
-          secondaryTag: memberIsStatic ? "static" : "unbound")
-      }
+      .compactMap { (c) in completionItem(forMember: c, selectedStatically: wantsStatic) }
     // The result is the complete member set and is not prefix-filtered, so the client may filter it
     // locally without re-querying on every keystroke.
     return CompletionList(isIncomplete: false, items: items)
+  }
+
+  /// Returns the members of `namespace`.
+  ///
+  /// A module namespace offers the module's top-level declarations. The `Builtin` namespace's
+  /// members (machine types, literal types, and compiler intrinsics) are recognized by name rather
+  /// than declared, so they cannot be enumerated; the empty result is marked incomplete so the
+  /// client re-queries rather than caching the emptiness.
+  mutating func namespaceMemberCompletions(of namespace: Namespace) -> CompletionList {
+    switch namespace.identifier {
+    case .builtin:
+      return CompletionList(isIncomplete: true, items: [])
+    case .module(let m):
+      let items = self[m].topLevelDeclarations
+        .flatMap { (d) in completionItems(forScopeDeclaration: d) }
+      return CompletionList(isIncomplete: false, items: items)
+    }
+  }
+
+  /// Returns the completion item for the member candidate `c` reached through a selection whose
+  /// static-ness is `selectionIsStatic`, or `nil` if the member cannot be offered.
+  ///
+  /// A member is "in position" when its own nature matches the access. Off-position members are
+  /// still valid (unbound instance selection on a type, or a static member reached on a value) —
+  /// they are ranked last and tagged rather than dropped. An instance member reached through a
+  /// type is an *unbound* selection: its snippet must carry the leading `self:` parameter (e.g.
+  /// `Point.offset(self:, dx:)`).
+  private mutating func completionItem(
+    forMember c: MemberCandidate, selectedStatically selectionIsStatic: Bool
+  ) -> CompletionItem? {
+    let memberIsStatic = isStaticMember(c.declaration)
+    let isUnboundMember = selectionIsStatic && !memberIsStatic
+    guard
+      let item = CompletionItem.create(from: c.declaration, in: self, includeSelf: isUnboundMember)
+    else { return nil }
+    return item.reranked(
+      asPrimary: memberIsStatic == selectionIsStatic,
+      secondaryTag: memberIsStatic ? "static" : "unbound")
   }
 
   /// Returns leading-dot completions for an implicit member at `node` sitting in a call argument, or
@@ -230,14 +330,9 @@ extension Program {
       // way is an *unbound* selection whose snippet must carry the leading `self:` parameter.
       for c in members(of: type, in: m, visibleFrom: scope, static: true) {
         guard seen.insert(c.declaration).inserted else { continue }
-        let memberIsStatic = isStaticMember(c.declaration)
-        guard
-          let item = CompletionItem.create(
-            from: c.declaration, in: self, includeSelf: !memberIsStatic)
-        else { continue }
-        items.append(
-          item.reranked(
-            asPrimary: memberIsStatic, secondaryTag: memberIsStatic ? "static" : "unbound"))
+        if let item = completionItem(forMember: c, selectedStatically: true) {
+          items.append(item)
+        }
       }
     }
     return CompletionList(isIncomplete: false, items: items)
@@ -280,10 +375,33 @@ extension Program {
 
   /// Returns the declarations visible from `scope` and its enclosing scopes.
   private mutating func scopeCompletions(visibleFrom scope: ScopeIdentity) -> CompletionList {
+    // Instance members reached without a qualifier are inserted as `self.member` (Hylo has no
+    // implicit `self`), which is only possible where an instance `self` exists.
+    let selfIsAvailable = hasInstanceSelfValue(at: scope)
+
+    var items: [CompletionItem] = []
+
+    // Identifiers unqualified lookup can reach, offered or not: any of them hides the predefined
+    // name it spells.
     var seen: Set<String> = []
 
+    for d in declarations(visibleFrom: scope, in: scope.file.module) {
+      if let n = name(of: d) { seen.insert(n.identifier) }
+      // A variable's member-ness and static-ness are decided by its containing binding
+      // (`static` is spelled on the binding, not the variable).
+      let owner = declarationDecidingNature(of: d)
+      let requiresSelf = isMember(owner) && !isInitializer(owner)
+      if requiresSelf && !selfIsAvailable { continue }
+      for var item in completionItems(forScopeDeclaration: d) {
+        if requiresSelf { item = item.selfQualified() }
+        items.append(item)
+      }
+    }
+
+    // Predefined names resolve only where lookup finds nothing (`Typer.resolve(predefined:)` is
+    // the fallback), so a declared name hides its predefined homonym rather than duplicating it.
     // TODO: keep these descriptions in sync with the Hover request handler documentation.
-    var items: [CompletionItem] = [
+    var predefined: [CompletionItem] = [
       .init(
         label: "Metatype", kind: .struct, documentation: .optionA("Type of a type."),
         insertText: "Metatype<$0>", insertTextFormat: .snippet),
@@ -299,51 +417,52 @@ extension Program {
 
     if let selfType = typeOfSelf(in: scope) {
       let resolved = show(selfType)
-      items.append(
+      predefined.append(
         .init(
           label: "Self", kind: .struct,
           detail: resolved == "Self" ? nil : resolved,
           documentation: .optionA("Type of the enclosing declaration.")))
     }
 
-    // `scopes(from:)` runs inner to outer. A name bound in an inner scope shadows the same name in
-    // an outer one, but several declarations sharing a name *in the same scope* are overloads and
-    // must all be offered. So suppress a name only once an enclosing (inner) scope has introduced
-    // it — never within the scope that declares it.
-    for s in scopes(from: scope) {
-      var introducedHere: Set<String> = []
-      for d in declarations(lexicallyIn: s) {
-        // Instance members reached without a qualifier must be inserted as `self.member`;
-        // Hylo has no implicit `self`.
-        let qualify = isMember(d) && !isStatic(d) && !isInitializer(d)
-        for var item in completionItems(forScopeDeclaration: d) {
-          if qualify { item = item.selfQualified() }
-          if seen.contains(item.label) { continue }
-          items.append(item)
-          introducedHere.insert(item.label)
-        }
-      }
-      seen.formUnion(introducedHere)
-    }
+    items.append(contentsOf: predefined.filter { (p) in !seen.contains(p.label) })
+
     return CompletionList(isIncomplete: false, items: items)
   }
 
-  /// Returns the completion items for a declaration `d` directly contained in a scope.
+  /// Returns `true` iff an instance `self` value is available at `scope`.
   ///
-  /// A `BindingDeclaration` is not itself a candidate — its pattern may bind several names (e.g.
-  /// `let (a, b) = ...`) or destructure one — so it is expanded into the individual variable
-  /// declarations it introduces. Every other declaration yields at most one item.
+  /// `self` exists inside the body of a non-static member function, bundle, variant, or
+  /// initializer. It does not exist in a static function, directly in a type's body, or in a
+  /// local function nested in a method (Hylo has no implicit capture of the enclosing `self`).
+  private func hasInstanceSelfValue(at scope: ScopeIdentity) -> Bool {
+    for s in scopes(from: scope) {
+      guard let n = s.node else { return false }
+      let t = tag(of: n)
+      if t == FunctionDeclaration.self || t == FunctionBundleDeclaration.self
+        || t == VariantDeclaration.self
+      {
+        return isMember(n)
+      }
+      if isTypeDeclaration(n) || isTypeExtendingDeclaration(n) { return false }
+    }
+    return false
+  }
+
+  /// Returns the completion items for a declaration `d` directly contained in a scope.
   private mutating func completionItems(
     forScopeDeclaration d: DeclarationIdentity
   ) -> [CompletionItem] {
-    if let b = cast(d, to: BindingDeclaration.self) {
-      var items: [CompletionItem] = []
-      forEachVariable(introducedBy: b) { (v, _) in
-        if let item = CompletionItem.create(from: .init(v), in: self) { items.append(item) }
-      }
-      return items
-    }
-    return CompletionItem.create(from: d, in: self).map { [$0] } ?? []
+    CompletionItem.create(from: d, in: self).map { [$0] } ?? []
+  }
+
+  /// Returns the declaration deciding `d`'s member-ness and static-ness: the containing binding
+  /// if `d` is a variable introduced by one, `d` itself otherwise.
+  private func declarationDecidingNature(of d: DeclarationIdentity) -> DeclarationIdentity { // todo find a better name
+    guard
+      let v = cast(d, to: VariableDeclaration.self),
+      let b = bindingDeclaration(containing: v)
+    else { return d }
+    return DeclarationIdentity(b)
   }
 
 }
@@ -353,7 +472,11 @@ extension Program {
 ///
 /// The type is `input`'s (the resolved arrow parameter, rendered cleanly) when given; otherwise it
 /// falls back to the declaration's written ascription.
-private func parameterDetail(
+private func parameterDetail( // todo: the detail should read similarly to the function declaration, including the _ when parameter name and argument label equal. Note: this is exactly the opposite of Swift's default.
+// fun a(x: Int) {} // under the hood: - x
+// fun b(xy z: Int) {} // under the hood: xy z 
+// fun c(_ g: Int) {} // under the hood: g g
+// also add tests for these cases 
   _ pd: ParameterDeclaration.ID, typedAs input: Parameter?, in p: Program
 ) -> String {
   let d = p[pd]
@@ -371,18 +494,18 @@ private func parameterDetail(
 
 /// Builds the parameter list label and snippet for an arrow (function) type.
 ///
-/// The label looks like `(p1: t1, p2: t2)`; the snippet uses numbered placeholders.
+/// The label looks like `(p1: t1, p2: t2 = d2)`; the snippet uses numbered placeholders. A
+/// defaulted parameter's default is part of its placeholder, so overtyping the placeholder
+/// removes it along with the type.
 ///
 /// The `self` input (present in the type of an *unbound* member, e.g. `Point.offset`) is dropped
 /// unless `includeSelf` is `true`, so a bound call (`p.offset(dx:)`) or a `self.`-qualified
 /// selection omits it while an unbound selection surfaces it as `offset(self:, dx:)`.
 private func buildLabelAndSnippets(
-  from a: Arrow, in p: Program, includeParenthesis: Bool = true, includeSelf: Bool = false
-)
-  -> (label: String, snippet: String)
-{
+  from a: Arrow, in p: Program, includeSelf: Bool = false
+) -> (label: String, snippet: String) {
   var label = "("
-  var snippet = includeParenthesis ? "(" : ""
+  var snippet = "("
   var i = 0
   for a in a.inputs where (includeSelf || a.label != "self") {
     if i != 0 {
@@ -393,25 +516,37 @@ private func buildLabelAndSnippets(
       label += "\(l): "
       snippet += "\(l): "
     }
-    label += p.show(a.type)
-    snippet += "${\(i + 1):\(p.show(a.type))}"
+    var placeholder = p.show(a.type)
     if let d = a.defaultValue {
-      label += p.show(d)
-      snippet += p.show(d)
+      placeholder += " = \(p.show(d))"
     }
+    label += placeholder
+    snippet += "${\(i + 1):\(escapedForSnippetPlaceholder(placeholder))}"
     i += 1
   }
-  if includeParenthesis {
-    snippet += ")$0"
-  }
+  snippet += ")$0"
   label += ")"
   return (label: label, snippet: snippet)
+}
+
+/// Returns `s` with the characters meaningful to the LSP snippet grammar escaped, so it can sit
+/// verbatim inside a placeholder (`${n:...}`).
+///
+/// Without this a tuple type breaks the snippet: it renders as `{Int, Bool}`, whose `}` would
+/// close the placeholder early. `$` and `\` must not start an unintended tab stop or escape.
+private func escapedForSnippetPlaceholder(_ s: String) -> String {
+  var escaped = ""
+  for c in s {
+    if c == "\\" || c == "$" || c == "}" { escaped.append("\\") }
+    escaped.append(c)
+  }
+  return escaped
 }
 
 extension CompletionItem {
 
   /// Returns a copy of `self` with prioritized ranking iff `primary` is true.
-  /// 
+  ///
   /// `secondaryTag` is appended to the details iff the item is ranked secondary.
   func reranked(asPrimary primary: Bool, secondaryTag: String) -> CompletionItem {
     let bucket = primary ? "0" : "1"
@@ -444,7 +579,7 @@ extension CompletionItem {
   /// Pass `includeSelf` when `d` is a member function offered as an *unbound* selection (an instance
   /// method reached through its type, e.g. `Point.offset`): the inserted snippet then carries the
   /// leading `self:` parameter the unbound call requires.
-  static public func create(
+  public static func create(
     from d: DeclarationIdentity, in p: Program, includeSelf: Bool = false
   ) -> CompletionItem? {
     switch p.tag(of: d) {
@@ -467,8 +602,8 @@ extension CompletionItem {
     case StructDeclaration.self:
       return self.init(from: p.cast(d, to: StructDeclaration.self)!, in: p)
     case BindingDeclaration.self:
-      // A binding is not a candidate; the variables it introduces are (see
-      // `completionItems(forScopeDeclaration:)`). A binding's pattern may bind several names.
+      // A binding is not a candidate: its pattern may bind several names (`let (a, b) = ...`),
+      // and each variable it introduces is registered in the same scope and offered individually.
       return nil
     case ExtensionDeclaration.self:
       return nil
@@ -478,14 +613,6 @@ extension CompletionItem {
       let name = p.name(of: d)?.identifier ?? p.nameOrTag(of: d)
       return self.init(label: name)
     }
-  }
-
-  /// Creates a function-typed completion item from an arrow.
-  public init(from a: Arrow, in p: Program) {
-    let (label, snippet) = buildLabelAndSnippets(from: a, in: p)
-    self.init(
-      label: label, kind: CompletionItemKind.function, insertText: snippet,
-      insertTextFormat: InsertTextFormat.snippet)
   }
 
   /// Creates a completion item for a struct declaration.
@@ -512,20 +639,24 @@ extension CompletionItem {
     // the arrow, rendered without the projection's access annotation). When the declared parameters
     // can't be aligned to the arrow's inputs — e.g. a memberwise initializer, whose fields are
     // synthesized into the type with no explicit declarations — fall back to the arrow's own labels.
+
+    // todo make the argument labels also display for functions in the main autocomplete menu, like f(x:y:). When there are overloads with the same labels, also display the types of the parameters that differ at least at one overload.
     let explicit = d.parameters.filter { p[$0].identifier.value != "self" }
     let inputs = (arrow?.inputs ?? []).filter { $0.label != "self" }
+    let call = arrow.map { buildLabelAndSnippets(from: $0, in: p, includeSelf: includeSelf) }
     if !explicit.isEmpty, explicit.count == inputs.count {
       let rendered = zip(explicit, inputs).map { parameterDetail($0, typedAs: $1, in: p) }
       detail += "(" + rendered.joined(separator: ", ") + ")"
-    } else if let t = arrow {
-      detail += buildLabelAndSnippets(from: t, in: p, includeSelf: includeSelf).label
+    } else if let call {
+      detail += call.label
     } else {
-      detail += "(" + explicit.map { parameterDetail($0, typedAs: nil, in: p) }.joined(separator: ", ") + ")"
+      let rendered = explicit.map { parameterDetail($0, typedAs: nil, in: p) }
+      detail += "(" + rendered.joined(separator: ", ") + ")"
     }
 
-    if let t = arrow {
+    if let t = arrow, let call {
       detail += " -> \(p.show(t.output))"
-      snippet += buildLabelAndSnippets(from: t, in: p, includeSelf: includeSelf).snippet
+      snippet += call.snippet
     }
     self.init(
       label: name, kind: kind, detail: detail, insertText: snippet, insertTextFormat: .snippet)
