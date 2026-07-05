@@ -31,10 +31,14 @@ public actor LSPTestContext {
   }
 
   /// Creates a fully initialized test context with the given workspace configuration.
+  ///
+  /// Pass `supportsCompletionLabelDetails` to handshake as a client that renders
+  /// `CompletionItem.labelDetails`.
   public static func make(
     tag: String,
     rootUri: String? = nil,
-    workspaceFolders: [WorkspaceFolder] = []
+    workspaceFolders: [WorkspaceFolder] = [],
+    supportsCompletionLabelDetails: Bool = false
   ) async throws -> LSPTestContext {
     var logger = Logger(label: tag)
     logger.logLevel = .debug
@@ -42,8 +46,15 @@ public actor LSPTestContext {
     let dataChannel = DataChannel.stdioPipe()
     let connection = JSONRPCClientConnection(dataChannel)
 
+    let textDocument: TextDocumentClientCapabilities? =
+      supportsCompletionLabelDetails
+      ? TextDocumentClientCapabilities(
+        completion: CompletionClientCapabilities(
+          completionItem: .init(labelDetailsSupport: true)))
+      : nil
+
     let capabilities = ClientCapabilities(
-      workspace: nil, textDocument: nil, window: nil, general: nil, experimental: nil)
+      workspace: nil, textDocument: textDocument, window: nil, general: nil, experimental: nil)
     let params = InitializeParams(
       processId: nil,
       locale: nil,

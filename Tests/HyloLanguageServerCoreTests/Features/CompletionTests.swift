@@ -88,9 +88,9 @@ final class CompletionTests: XCTestCase {
     // Instance members are still offered in static position as *unbound* selections (Hylo permits
     // `Box.value`), but ranked after the static members and tagged in `detail`.
     let new = try XCTUnwrap(
-      items.first { $0.label == "new" }, "expected `new` in static position. \(labels(items))")
+      items.first { itemName($0) == "new" }, "expected `new` in static position. \(labels(items))")
     let value = try XCTUnwrap(
-      items.first { $0.label == "value" },
+      items.first { itemName($0) == "value" },
       "expected the unbound instance member `value` in static position. \(labels(items))")
     XCTAssertEqual(
       value.detail?.contains("unbound") ?? false, true,
@@ -118,7 +118,7 @@ final class CompletionTests: XCTestCase {
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
     let get = try XCTUnwrap(
-      items.first { $0.label == "get" },
+      items.first { itemName($0) == "get" },
       "expected the unbound instance method `get` in static position. \(labels(items))")
     XCTAssertEqual(
       get.insertText?.contains("self:") ?? false, true,
@@ -229,7 +229,7 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    let shared = items.filter { $0.label == "shared" }
+    let shared = items.filter { itemName($0) == "shared" }
     XCTAssertEqual(
       shared.count, 2,
       "expected both same-named trait members, got \(shared.count). \(labels(items))")
@@ -409,6 +409,35 @@ final class CompletionTests: XCTestCase {
       context: "the two-required-argument overload of `a` does not match one argument")
   }
 
+  func testLeadingDotArgumentWithLabelAlignsToLabeledParameter() async throws {
+    // A labeled hole (`f(y: .)`) binds the parameter carrying that label, not the one at its
+    // position: the first parameter is defaulted, so the single written argument sits at position
+    // 0 but must be completed against the second parameter's type.
+    let source = try MarkedSource(
+      """
+      struct A {
+        memberwise init
+        static fun foo() -> A { .new() }
+      }
+
+      struct B {
+        memberwise init
+        static fun bar() -> B { .new() }
+      }
+
+      fun f(_ x: A = A(), _ y: B) {}
+
+      fun main() {
+        f(y: .0️⃣)
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    assertContains(items, ["bar"], context: "static members of the labeled parameter's type")
+    assertDoesNotContain(
+      items, ["foo"], context: "the defaulted first parameter is not the labeled hole's target")
+  }
+
   func testLeadingDotArgumentOnQualifiedCallee() async throws {
     // The callee is a member of a value (`w.take(.)`), not a top-level function. Completion must
     // resolve the member's overload, read its parameter type, and offer that type's static members.
@@ -454,7 +483,7 @@ final class CompletionTests: XCTestCase {
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
     let zelf = try XCTUnwrap(
-      items.first { $0.label == "Self" }, "expected `Self` in a type scope. \(labels(items))")
+      items.first { itemName($0) == "Self" }, "expected `Self` in a type scope. \(labels(items))")
     XCTAssertEqual(
       zelf.detail?.contains("Box") ?? false, true,
       "`Self` should resolve to the concrete type `Box`, got \(zelf.detail ?? "nil")")
@@ -552,7 +581,7 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    let overloads = items.filter { $0.label == "a" }
+    let overloads = items.filter { itemName($0) == "a" }
     XCTAssertEqual(
       overloads.count, 2,
       "expected both overloads of `a` in scope, got \(overloads.count): "
@@ -577,7 +606,7 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    let overloads = items.filter { $0.label == "a" }
+    let overloads = items.filter { itemName($0) == "a" }
     XCTAssertEqual(
       overloads.count, 4, "expected all four overloads of `a`. \(labels(items))")
     let details = overloads.compactMap(\.detail)
@@ -639,7 +668,7 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    let overloads = items.filter { $0.label == "log" }
+    let overloads = items.filter { itemName($0) == "log" }
     XCTAssertEqual(
       overloads.count, 2,
       "expected the member and the top-level overload of `log`, got \(overloads.count). "
@@ -665,7 +694,7 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    let matches = items.filter { $0.label == "value" }
+    let matches = items.filter { itemName($0) == "value" }
     XCTAssertEqual(
       matches.count, 1,
       "expected the local to shadow the function: "
@@ -694,7 +723,7 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    let matches = items.filter { $0.label == "f" }
+    let matches = items.filter { itemName($0) == "f" }
     XCTAssertEqual(
       matches.count, 1,
       "expected only the innermost `f`; the suppressed `let f` ends the lookup. " + labels(items))
@@ -714,7 +743,7 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    let matches = items.filter { $0.label == "Never" }
+    let matches = items.filter { itemName($0) == "Never" }
     XCTAssertEqual(matches.count, 1, "expected a single `Never`. " + labels(items))
     XCTAssertNil(
       matches.first?.documentation,
@@ -737,7 +766,7 @@ final class CompletionTests: XCTestCase {
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
     let f = try XCTUnwrap(
-      items.first { $0.label == "f" }, "expected `f` in scope. \(labels(items))")
+      items.first { itemName($0) == "f" }, "expected `f` in scope. \(labels(items))")
     let insert = try XCTUnwrap(f.insertText, "expected a call snippet for `f`")
     XCTAssertTrue(
       insert.contains("${1:{Int, Int\\}}"),
@@ -767,14 +796,14 @@ final class CompletionTests: XCTestCase {
     let items = try await context.completion(uri: uri, at: source.markers[0])
 
     let helper = try XCTUnwrap(
-      items.first { $0.label == "helper" }, "expected `helper` in scope. \(labels(items))")
+      items.first { itemName($0) == "helper" }, "expected `helper` in scope. \(labels(items))")
     XCTAssertEqual(
       helper.insertText?.hasPrefix("self.helper") ?? false, true,
       "expected `helper` to insert `self.helper...`, got \(helper.insertText ?? "nil")")
     XCTAssertEqual(helper.filterText, "helper", "filterText should match the bare member name")
 
     let value = try XCTUnwrap(
-      items.first { $0.label == "value" }, "expected `value` in scope. \(labels(items))")
+      items.first { itemName($0) == "value" }, "expected `value` in scope. \(labels(items))")
     XCTAssertEqual(
       value.insertText?.hasPrefix("self.value") ?? false, true,
       "expected `value` to insert `self.value`, got \(value.insertText ?? "nil")")
@@ -797,7 +826,7 @@ final class CompletionTests: XCTestCase {
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
     let local = try XCTUnwrap(
-      items.first { $0.label == "local" }, "expected `local` in scope. \(labels(items))")
+      items.first { itemName($0) == "local" }, "expected `local` in scope. \(labels(items))")
     XCTAssertEqual(
       local.insertText?.hasPrefix("self.") ?? false, false,
       "locals must not be self-qualified, got \(local.insertText ?? "nil")")
@@ -851,7 +880,7 @@ final class CompletionTests: XCTestCase {
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
     let f = try XCTUnwrap(
-      items.first { $0.label == "f" }, "expected `f` in scope. \(labels(items))")
+      items.first { itemName($0) == "f" }, "expected `f` in scope. \(labels(items))")
     let insert = try XCTUnwrap(f.insertText, "expected a call snippet for `f`")
     XCTAssertTrue(
       insert.contains("${1:B = B.new()}"),
@@ -859,6 +888,118 @@ final class CompletionTests: XCTestCase {
     let detail = try XCTUnwrap(f.detail, "expected a detail for `f`")
     XCTAssertTrue(
       detail.contains("y: B = B.new()"), "expected `= default` in the detail, got \(detail)")
+  }
+
+  // MARK: - Parameter rendering
+
+  func testParameterDetailReadsLikeTheDeclaration() async throws {
+    // Hylo's labeling is the opposite of Swift's: a lone name declares an unlabeled parameter,
+    // `_` gives the parameter its own name as label, and two names read label-then-name. The
+    // detail must render each parameter the way the declaration spells it.
+    let source = try MarkedSource(
+      """
+      public fun a(x: Int) {}
+      public fun b(xy z: Int) {}
+      public fun c(_ g: Int) {}
+
+      public fun main() {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+
+    let a = try XCTUnwrap(items.first { itemName($0) == "a" }, labels(items))
+    XCTAssertTrue(a.detail?.contains("(x: Int)") ?? false, "unlabeled: got \(a.detail ?? "nil")")
+    let b = try XCTUnwrap(items.first { itemName($0) == "b" }, labels(items))
+    XCTAssertTrue(b.detail?.contains("(xy z: Int)") ?? false, "labeled: got \(b.detail ?? "nil")")
+    let c = try XCTUnwrap(items.first { itemName($0) == "c" }, labels(items))
+    XCTAssertTrue(
+      c.detail?.contains("(_ g: Int)") ?? false, "self-labeled: got \(c.detail ?? "nil")")
+  }
+
+  // MARK: - Argument labels in the menu
+
+  func testFunctionLabelsShowArgumentLabels() async throws {
+    // A function's menu label spells the call's argument labels (`_` for an unlabeled position);
+    // the filter text stays the bare name so prefix matching is unaffected.
+    let source = try MarkedSource(
+      """
+      public fun f(x: Int, _ y: Int) {}
+      public fun g() {}
+
+      public fun main() {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+
+    let f = try XCTUnwrap(items.first { itemName($0) == "f" }, labels(items))
+    XCTAssertEqual(f.label, "f(_:y:)")
+    XCTAssertEqual(f.filterText, "f")
+    let g = try XCTUnwrap(items.first { itemName($0) == "g" }, labels(items))
+    XCTAssertEqual(g.label, "g()")
+  }
+
+  func testLabelDetailsClientGetsSignatureInLabelDetails() async throws {
+    // A client that declares `labelDetailsSupport` gets a bare label with the call signature in
+    // `labelDetails` instead of embedded in the label; disambiguating types move with it.
+    // Non-callable items are unaffected. (The default test context declares no support, so every
+    // other test exercises the embedded-label fallback.)
+    let detailed = try await LSPTestContext.make(
+      tag: "CompletionTests.labelDetails", rootUri: "file:///test",
+      supportsCompletionLabelDetails: true)
+    let source = try MarkedSource(
+      """
+      public struct A { public memberwise init }
+      public struct B { public memberwise init }
+
+      public fun f(_ x: A) {}
+      public fun f(_ x: B) {}
+
+      public fun main() {
+        let v = A()
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await detailed.openDocument(source)
+    let items = try await detailed.completion(uri: uri, at: source.markers[0])
+
+    let overloads = items.filter { itemName($0) == "f" }
+    XCTAssertEqual(overloads.map(\.label), ["f", "f"], labels(items))
+    XCTAssertEqual(
+      Set(overloads.compactMap(\.labelDetails?.detail)), ["(x: A)", "(x: B)"], labels(items))
+
+    let variable = try XCTUnwrap(items.first { itemName($0) == "v" }, labels(items))
+    XCTAssertNil(variable.labelDetails, "a non-callable item carries no label details")
+    XCTAssertEqual(variable.label, "v")
+  }
+
+  func testCollidingOverloadLabelsShowDifferingParameterTypes() async throws {
+    // Overloads whose labels collide additionally show the types at the positions where they
+    // differ — and only at those positions.
+    let source = try MarkedSource(
+      """
+      public struct A { public memberwise init }
+      public struct B { public memberwise init }
+
+      public fun f(_ x: A) {}
+      public fun f(_ x: B) {}
+      public fun g(_ x: A, _ y: A) {}
+      public fun g(_ x: A, _ y: B) {}
+
+      public fun main() {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+
+    let fLabels = Set(items.filter { itemName($0) == "f" }.map(\.label))
+    XCTAssertEqual(fLabels, ["f(x: A)", "f(x: B)"], labels(items))
+    let gLabels = Set(items.filter { itemName($0) == "g" }.map(\.label))
+    XCTAssertEqual(gLabels, ["g(x:, y: A)", "g(x:, y: B)"], labels(items))
   }
 
   // MARK: - Comments and string literals
@@ -933,7 +1074,9 @@ final class CompletionTests: XCTestCase {
   /// Returns `true` iff the scanner classifies the position `offset` characters into `text` as
   /// inside a comment or string literal.
   private func isInsideIgnored(_ text: String, atOffset offset: Int) -> Bool {
-    isInCommentOrStringLiteral(text, at: text.index(text.startIndex, offsetBy: offset))
+    let source = SourceFile(stringLiteral: text)
+    let t = source.text
+    return isInCommentOrStringLiteral(source, at: t.index(t.startIndex, offsetBy: offset))
   }
 
   // MARK: - Namespace qualification
@@ -1086,12 +1229,18 @@ final class CompletionTests: XCTestCase {
       """)
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
-    let synthesized = items.filter { $0.label.hasPrefix("$") }
+    let synthesized = items.filter { itemName($0).hasPrefix("$") }
     XCTAssertTrue(
       synthesized.isEmpty, "synthesized members leaked into completion: \(labels(synthesized))")
   }
 
   // MARK: - Assertion helpers
+
+  /// Returns the name `item` completes: its filter text when set (a function's label carries the
+  /// argument labels, e.g. `f(x:)`, while its filter text is the bare `f`), its label otherwise.
+  private func itemName(_ item: CompletionItem) -> String {
+    item.filterText ?? item.label
+  }
 
   private func labels(_ items: [CompletionItem]) -> String {
     "labels: [\(items.map(\.label).joined(separator: ", "))]"
@@ -1101,7 +1250,7 @@ final class CompletionTests: XCTestCase {
     _ items: [CompletionItem], _ expected: [String], context: String,
     file: StaticString = #filePath, line: UInt = #line
   ) {
-    let present = Set(items.map(\.label))
+    let present = Set(items.map(itemName))
     for e in expected where !present.contains(e) {
       XCTFail(
         "Expected completion '\(e)' (\(context)) but it was missing. \(labels(items))",
@@ -1113,7 +1262,7 @@ final class CompletionTests: XCTestCase {
     _ items: [CompletionItem], _ unexpected: [String], context: String,
     file: StaticString = #filePath, line: UInt = #line
   ) {
-    let present = Set(items.map(\.label))
+    let present = Set(items.map(itemName))
     for u in unexpected where present.contains(u) {
       XCTFail(
         "Did not expect completion '\(u)' (\(context)) but it was present. \(labels(items))",

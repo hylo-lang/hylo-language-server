@@ -1,0 +1,15 @@
+struct Point {
+  let x: Int
+  let y: Int
+
+  memberwise init
+
+  init(_ all: Int) {
+    self.x = all.copy()
+    self.y = all.copy()
+  }
+}
+
+fun main() {
+  let p = Point| // [ Point(x:y:), Point(all:) ]
+}

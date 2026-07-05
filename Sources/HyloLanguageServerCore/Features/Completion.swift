@@ -20,7 +20,16 @@ extension HyloRequestHandler {
     await reportingLSPError {
       let url = try AbsoluteURL(fromUrlString: params.textDocument.uri)
       let document = try await documentProvider.getDocumentContext(at: url)
-      let list = try await self.completionList(in: document, at: params.position, url: url)
+      var list = try await self.completionList(in: document, at: params.position, url: url)
+
+      // A callable's label carries its call signature (`f(x:)`). A client that renders label
+      // details gets the signature there instead, next to the bare name; embedding it in the
+      // label is the fallback for clients that don't.
+      if await documentProvider.clientSupportsCompletionLabelDetails {
+        list = CompletionList(
+          isIncomplete: list.isIncomplete,
+          items: list.items.map { (i) in i.movingCallSignatureToLabelDetails() })
+      }
       return .optionB(list)
     }
   }
@@ -31,9 +40,10 @@ extension HyloRequestHandler {
     in document: DocumentContext, at position: Position, url: AbsoluteURL
   ) async throws -> CompletionList {
     let originalFileId = try document.program.requireSourceFile(at: url)
+    let sourceFile = document.program[sourceFile: originalFileId]
     // Capture the text once: `SourceFile.text` yields a fresh `String` per access, and a
     // `String.Index` from one such value is not valid against another.
-    let text = document.program[sourceFile: originalFileId].text
+    let text = sourceFile.text
 
     // Replace the identifier token surrounding the cursor with the sentinel so the cursor
     // always lands on a well-formed name expression (member access, implicit member, or a
@@ -43,7 +53,7 @@ extension HyloRequestHandler {
     }
 
     // No autocomplete within strings and comments
-    if isInCommentOrStringLiteral(text, at: cursor) {
+    if isInCommentOrStringLiteral(sourceFile, at: cursor) {
       return CompletionList(isIncomplete: false, items: [])
     }
 
@@ -88,44 +98,76 @@ extension HyloRequestHandler {
 private func identifierTokenBounds(
   in text: String, around cursor: String.Index
 ) -> (start: String.Index, end: String.Index) {
-  // todo: reconsider this after we support the ``-style escaped identifiers.
-  // also, consult the real parser to see if this is accurate.  
-  func isIdentifierCharacter(_ c: Character) -> Bool {
-    c == "_" || c.isLetter || c.isNumber
-  }
-
+  // todo: reconsider this if the language gains ``-style escaped identifiers.
   var start = cursor
   while start > text.startIndex {
     let previous = text.index(before: start)
-    if isIdentifierCharacter(text[previous]) { start = previous } else { break }
+    if text[previous].isIdentifierTail { start = previous } else { break }
   }
   var end = cursor
-  while end < text.endIndex, isIdentifierCharacter(text[end]) {
+  while end < text.endIndex, text[end].isIdentifierTail {
     end = text.index(after: end)
   }
   return (start, end)
 }
 
-/// Returns `true` iff inserting text at `cursor` in `text` lands inside a comment or a string
+/// Returns `true` iff inserting text at `cursor` in `source` lands inside a comment or a string
 /// literal.
 ///
-/// Mirrors the lexer's rules: `//` runs to the end of the line, `/* */` nests, and a string
-/// literal runs between unescaped double quotes. An unterminated block comment or string literal
-/// extends to the end of `text`. Runs in O(n) time where n is the length of `text`.
-func isInCommentOrStringLiteral(_ text: String, at cursor: String.Index) -> Bool {
-  // todo get rid of this and get this from the real frontend instead
-  var i = text.startIndex
+/// The classification is the real lexer's, not a reimplementation: `source` is tokenized with
+/// `Lexer`, so a cursor inside a string literal (whose escaping and termination rules live in
+/// `Lexer.takeStringLiteral`) or inside an unterminated construct lands in a token that names its
+/// nature. Terminated comments are the one construct the lexer discards rather than tokenizes, so
+/// the gaps between consecutive tokens — which contain only whitespace and comments — are scanned
+/// for the comment spans locally (see `isInComment`).
+func isInCommentOrStringLiteral(_ source: SourceFile, at cursor: SourceFile.Index) -> Bool {
+  let text = source.text
+  var previousEnd = text.startIndex
+  var lexer = Lexer(tokenizing: source)
+
+  while let token = lexer.next() {
+    let region = token.site.region
+    if cursor <= region.lowerBound {
+      return isInComment(text, within: previousEnd ..< region.lowerBound, at: cursor)
+    }
+    if cursor < region.upperBound {
+      return token.tag == .stringLiteral
+        || token.tag == .unterminatedStringLiteral
+        || token.tag == .unterminatedBlockComment
+    }
+    // An unterminated construct extends to the end of the input, inclusive.
+    if cursor == region.upperBound,
+      token.tag == .unterminatedStringLiteral || token.tag == .unterminatedBlockComment
+    {
+      return true
+    }
+    previousEnd = region.upperBound
+  }
+  return isInComment(text, within: previousEnd ..< text.endIndex, at: cursor)
+}
+
+/// Returns `true` iff `cursor` lies inside a comment within `gap` in `text`.
+///
+/// `gap` is a trivia region between two of the lexer's tokens (or between a token and an end of
+/// the file), so it contains only whitespace and comments: a `//` comment runs to the end of its
+/// line, a `/* */` comment nests, and no string logic is ever needed. A block comment left open
+/// at the gap's end is the head of the lexer's unterminated-comment error token and extends to
+/// the end of the input.
+private func isInComment(
+  _ text: String, within gap: Range<String.Index>, at cursor: String.Index
+) -> Bool {
+  var i = gap.lowerBound
   while i < cursor {
     if text[i...].hasPrefix("//") {
       // The cursor is inside iff it is at most at the terminating newline (or the end of input).
       var end = i
-      while end < text.endIndex, !text[end].isNewline { end = text.index(after: end) }
+      while end < gap.upperBound, !text[end].isNewline { end = text.index(after: end) }
       if cursor <= end { return true }
       i = end
     } else if text[i...].hasPrefix("/*") {
       var openedBlocks = 1
       var end = text.index(i, offsetBy: 2)
-      while end < text.endIndex, openedBlocks > 0 {
+      while end < gap.upperBound, openedBlocks > 0 {
         if text[end...].hasPrefix("/*") {
           openedBlocks += 1
           end = text.index(end, offsetBy: 2)
@@ -136,26 +178,8 @@ func isInCommentOrStringLiteral(_ text: String, at cursor: String.Index) -> Bool
           end = text.index(after: end)
         }
       }
-      // `end` is past the closing delimiter; inserting exactly there is outside the comment. An
-      // unterminated comment extends to the end of input, and the cursor is necessarily inside.
+      // `end` is past the closing delimiter; inserting exactly there is outside the comment.
       if openedBlocks > 0 || cursor < end { return true }
-      i = end
-    } else if text[i] == "\"" {
-      var end = text.index(after: i)
-      var terminated = false
-      while end < text.endIndex {
-        if text[end] == "\\" {
-          end = text.index(after: end)
-          if end < text.endIndex { end = text.index(after: end) }
-        } else if text[end] == "\"" {
-          end = text.index(after: end)
-          terminated = true
-          break
-        } else {
-          end = text.index(after: end)
-        }
-      }
-      if !terminated || cursor < end { return true }
       i = end
     } else {
       i = text.index(after: i)
@@ -249,11 +273,11 @@ extension Program {
     if type == .error { return CompletionList(isIncomplete: true, items: []) }
 
     let scope = scope(at: qualification.erased)
-    let items = members(of: type, in: m, visibleFrom: scope, static: wantsStatic)
-      .compactMap { (c) in completionItem(forMember: c, selectedStatically: wantsStatic) }
+    let candidates = members(of: type, in: m, visibleFrom: scope, static: wantsStatic)
+      .compactMap { (c) in completionCandidate(forMember: c, selectedStatically: wantsStatic) }
     // The result is the complete member set and is not prefix-filtered, so the client may filter it
     // locally without re-querying on every keystroke.
-    return CompletionList(isIncomplete: false, items: items)
+    return CompletionList(isIncomplete: false, items: disambiguatedItems(candidates))
   }
 
   /// Returns the members of `namespace`.
@@ -267,31 +291,33 @@ extension Program {
     case .builtin:
       return CompletionList(isIncomplete: true, items: [])
     case .module(let m):
-      let items = self[m].topLevelDeclarations
-        .flatMap { (d) in completionItems(forScopeDeclaration: d) }
-      return CompletionList(isIncomplete: false, items: items)
+      let candidates = self[m].topLevelDeclarations
+        .flatMap { (d) in completionCandidates(forScopeDeclaration: d) }
+      return CompletionList(isIncomplete: false, items: disambiguatedItems(candidates))
     }
   }
 
-  /// Returns the completion item for the member candidate `c` reached through a selection whose
-  /// static-ness is `selectionIsStatic`, or `nil` if the member cannot be offered.
+  /// Returns the completion candidate for the member candidate `c` reached through a selection
+  /// whose static-ness is `selectionIsStatic`, or `nil` if the member cannot be offered.
   ///
   /// A member is "in position" when its own nature matches the access. Off-position members are
   /// still valid (unbound instance selection on a type, or a static member reached on a value) —
   /// they are ranked last and tagged rather than dropped. An instance member reached through a
   /// type is an *unbound* selection: its snippet must carry the leading `self:` parameter (e.g.
   /// `Point.offset(self:, dx:)`).
-  private mutating func completionItem(
+  private mutating func completionCandidate(
     forMember c: MemberCandidate, selectedStatically selectionIsStatic: Bool
-  ) -> CompletionItem? {
+  ) -> CompletionCandidate? {
     let memberIsStatic = isStaticMember(c.declaration)
     let isUnboundMember = selectionIsStatic && !memberIsStatic
     guard
-      let item = CompletionItem.create(from: c.declaration, in: self, includeSelf: isUnboundMember)
+      var candidate = CompletionCandidate(
+        from: c.declaration, in: self, includeSelf: isUnboundMember)
     else { return nil }
-    return item.reranked(
+    candidate.item = candidate.item.reranked(
       asPrimary: memberIsStatic == selectionIsStatic,
       secondaryTag: memberIsStatic ? "static" : "unbound")
+    return candidate
   }
 
   /// Returns leading-dot completions for an implicit member at `node` sitting in a call argument, or
@@ -323,19 +349,19 @@ extension Program {
     // result may improve once the surrounding code is fixed.
     if expectedTypes.isEmpty { return CompletionList(isIncomplete: true, items: []) }
 
-    var items: [CompletionItem] = []
+    var candidates: [CompletionCandidate] = []
     var seen: Set<DeclarationIdentity> = []
     for type in expectedTypes {
       // Implicit-member access is a static selection (like `T.`); an instance member reached this
       // way is an *unbound* selection whose snippet must carry the leading `self:` parameter.
       for c in members(of: type, in: m, visibleFrom: scope, static: true) {
         guard seen.insert(c.declaration).inserted else { continue }
-        if let item = completionItem(forMember: c, selectedStatically: true) {
-          items.append(item)
+        if let candidate = completionCandidate(forMember: c, selectedStatically: true) {
+          candidates.append(candidate)
         }
       }
     }
-    return CompletionList(isIncomplete: false, items: items)
+    return CompletionList(isIncomplete: false, items: disambiguatedItems(candidates))
   }
 
   /// Returns the innermost `Call` in `path` (the outermost-to-innermost ancestor chain) one of whose
@@ -379,7 +405,7 @@ extension Program {
     // implicit `self`), which is only possible where an instance `self` exists.
     let selfIsAvailable = hasInstanceSelfValue(at: scope)
 
-    var items: [CompletionItem] = []
+    var candidates: [CompletionCandidate] = []
 
     // Identifiers unqualified lookup can reach, offered or not: any of them hides the predefined
     // name it spells.
@@ -389,31 +415,26 @@ extension Program {
       if let n = name(of: d) { seen.insert(n.identifier) }
       // A variable's member-ness and static-ness are decided by its containing binding
       // (`static` is spelled on the binding, not the variable).
-      let owner = declarationDecidingNature(of: d)
+      let owner = governingDeclaration(of: d)
       let requiresSelf = isMember(owner) && !isInitializer(owner)
       if requiresSelf && !selfIsAvailable { continue }
-      for var item in completionItems(forScopeDeclaration: d) {
-        if requiresSelf { item = item.selfQualified() }
-        items.append(item)
+      for var candidate in completionCandidates(forScopeDeclaration: d) {
+        if requiresSelf { candidate.item = candidate.item.selfQualified() }
+        candidates.append(candidate)
       }
     }
 
+    var items = disambiguatedItems(candidates)
+
     // Predefined names resolve only where lookup finds nothing (`Typer.resolve(predefined:)` is
     // the fallback), so a declared name hides its predefined homonym rather than duplicating it.
-    // TODO: keep these descriptions in sync with the Hover request handler documentation.
-    var predefined: [CompletionItem] = [
-      .init(
-        label: "Metatype", kind: .struct, documentation: .optionA("Type of a type."),
-        insertText: "Metatype<$0>", insertTextFormat: .snippet),
-      .init(
-        label: "Never", kind: .struct,
-        documentation: .optionA("Type that has no instance, i.e. cannot be inhabited.")),
-      .init(
-        label: "Void", kind: .struct, detail: "()", documentation: .optionA("Empty tuple.")),
-      .init(
-        label: "Builtin", kind: .module,
-        documentation: .optionA("Namespace of Hylo compiler intrinsics.")),
-    ]
+    var predefined = PredefinedName.all.map { (n) in
+      CompletionItem(
+        label: n.label, kind: n.kind, detail: n.detail,
+        documentation: .optionA(n.documentation),
+        insertText: n.insertSnippet,
+        insertTextFormat: n.insertSnippet.map { (_) in .snippet })
+    }
 
     if let selfType = typeOfSelf(in: scope) {
       let resolved = show(selfType)
@@ -421,7 +442,7 @@ extension Program {
         .init(
           label: "Self", kind: .struct,
           detail: resolved == "Self" ? nil : resolved,
-          documentation: .optionA("Type of the enclosing declaration.")))
+          documentation: .optionA(PredefinedName.selfDocumentation)))
     }
 
     items.append(contentsOf: predefined.filter { (p) in !seen.contains(p.label) })
@@ -448,16 +469,16 @@ extension Program {
     return false
   }
 
-  /// Returns the completion items for a declaration `d` directly contained in a scope.
-  private mutating func completionItems(
+  /// Returns the completion candidates for a declaration `d` directly contained in a scope.
+  private mutating func completionCandidates(
     forScopeDeclaration d: DeclarationIdentity
-  ) -> [CompletionItem] {
-    CompletionItem.create(from: d, in: self).map { [$0] } ?? []
+  ) -> [CompletionCandidate] {
+    CompletionCandidate(from: d, in: self).map { [$0] } ?? []
   }
 
-  /// Returns the declaration deciding `d`'s member-ness and static-ness: the containing binding
+  /// Returns the declaration governing `d`'s member-ness and static-ness: the containing binding
   /// if `d` is a variable introduced by one, `d` itself otherwise.
-  private func declarationDecidingNature(of d: DeclarationIdentity) -> DeclarationIdentity { // todo find a better name
+  private func governingDeclaration(of d: DeclarationIdentity) -> DeclarationIdentity {
     guard
       let v = cast(d, to: VariableDeclaration.self),
       let b = bindingDeclaration(containing: v)
@@ -467,21 +488,24 @@ extension Program {
 
 }
 
-/// Renders a parameter declaration for a completion `detail`: the argument label when it differs
-/// from the name, then the name, its type, and any default — e.g. `x: Int`, `to dst: Int`.
+/// Renders a parameter declaration for a completion `detail` the way it reads in the function
+/// declaration: the label (if any), the name, its type, and any default.
+///
+/// Hylo's default is the opposite of Swift's: a lone name (`fun a(x: Int)`) declares an
+/// *unlabeled* parameter and renders `x: Int`, while `_` (`fun c(_ g: Int)`) gives the parameter
+/// its own name as label — the parser stores `label == identifier` — and renders `_ g: Int`.
+/// A distinct label (`fun b(xy z: Int)`) renders `xy z: Int`.
 ///
 /// The type is `input`'s (the resolved arrow parameter, rendered cleanly) when given; otherwise it
 /// falls back to the declaration's written ascription.
-private func parameterDetail( // todo: the detail should read similarly to the function declaration, including the _ when parameter name and argument label equal. Note: this is exactly the opposite of Swift's default.
-// fun a(x: Int) {} // under the hood: - x
-// fun b(xy z: Int) {} // under the hood: xy z 
-// fun c(_ g: Int) {} // under the hood: g g
-// also add tests for these cases 
+private func parameterDetail(
   _ pd: ParameterDeclaration.ID, typedAs input: Parameter?, in p: Program
 ) -> String {
   let d = p[pd]
   var s = ""
-  if let label = d.label?.value, label != d.identifier.value { s += "\(label) " }
+  if let label = d.label?.value {
+    s += (label == d.identifier.value ? "_" : label) + " "
+  }
   s += d.identifier.value
   if let input {
     s += ": \(p.show(input.type))"
@@ -543,64 +567,187 @@ private func escapedForSnippetPlaceholder(_ s: String) -> String {
   return escaped
 }
 
+/// A completion item together with the shape of the call it inserts, when it is callable.
+struct CompletionCandidate {
+
+  /// The presented item.
+  var item: CompletionItem
+
+  /// One (argument label, shown type) per parameter of the inserted call, or `nil` if the item
+  /// is not callable. Used to disambiguate same-labeled overloads.
+  var callParameters: [(label: String?, type: String)]? = nil
+
+}
+
+/// Returns the items of `candidates`, rewriting the labels of callable overloads that collide on
+/// the same label so they also show the types at the parameter positions where the overloads
+/// differ — e.g. `a(x: A)` and `a(x: B)` instead of `a(x:)` twice.
+///
+/// Colliding labels imply equal arities (the label spells one `label:` per parameter), so the
+/// types can be compared positionwise. Positions on which every overload agrees stay untyped.
+func disambiguatedItems(_ candidates: [CompletionCandidate]) -> [CompletionItem] {
+  var groups: [String: [Int]] = [:]
+  for (i, c) in candidates.enumerated() where c.callParameters != nil {
+    groups[c.item.label, default: []].append(i)
+  }
+
+  var items = candidates.map(\.item)
+  for indices in groups.values where indices.count > 1 {
+    // Equal labels imply equal arities: the label spells one `label:` per parameter.
+    let signatures = indices.map { (i) in candidates[i].callParameters! }
+    let arity = signatures[0].count
+    assert(signatures.allSatisfy { (s) in s.count == arity })
+    let differs = (0 ..< arity).map { (j) in
+      Set(signatures.map { (s) in s[j].type }).count > 1
+    }
+    guard differs.contains(true) else { continue }
+
+    for (i, s) in zip(indices, signatures) {
+      let pieces = s.enumerated().map { (j, p) in
+        "\(p.label ?? "_"):" + (differs[j] ? " \(p.type)" : "")
+      }
+      let base = items[i].filterText ?? items[i].label
+      items[i] = items[i].withLabel("\(base)(\(pieces.joined(separator: ", ")))")
+    }
+  }
+  return items
+}
+
 extension CompletionItem {
+
+  /// Returns a copy of `self` with the given fields replaced (`nil` keeps the current value);
+  /// every other field — including `labelDetails` — is carried over.
+  ///
+  /// This is the single copy helper every item transformation goes through, so a field added to
+  /// `CompletionItem` needs threading in exactly one place.
+  private func updating(
+    label: String? = nil,
+    labelDetails: CompletionItemLabelDetails? = nil,
+    detail: String? = nil,
+    sortText: String? = nil,
+    filterText: String? = nil,
+    insertText: String? = nil,
+    insertTextFormat: InsertTextFormat? = nil
+  ) -> CompletionItem {
+    CompletionItem(
+      label: label ?? self.label,
+      labelDetails: labelDetails ?? self.labelDetails,
+      kind: kind,
+      detail: detail ?? self.detail,
+      documentation: documentation,
+      deprecated: deprecated,
+      preselect: preselect,
+      sortText: sortText ?? self.sortText,
+      filterText: filterText ?? self.filterText,
+      insertText: insertText ?? self.insertText,
+      insertTextFormat: insertTextFormat ?? self.insertTextFormat,
+      textEdit: textEdit,
+      additionalTextEdits: additionalTextEdits,
+      commitCharacters: commitCharacters,
+      command: command,
+      data: data)
+  }
+
+  /// Returns a copy of `self` with `label` as its label.
+  func withLabel(_ label: String) -> CompletionItem {
+    updating(label: label)
+  }
+
+  /// Returns a copy of `self` whose call signature, if the label embeds one, is moved into
+  /// `labelDetails` — a callable's label `f(x: Int)` becomes the bare `f` with `(x: Int)` as the
+  /// details rendered next to it. Items whose label is just the completed name are unchanged.
+  ///
+  /// A callable's filter text is the bare name and its label is that name followed by the
+  /// signature (see `CompletionCandidate.init(from:in:includeSelf:)`), so the signature is
+  /// exactly the label's remainder after the filter text.
+  func movingCallSignatureToLabelDetails() -> CompletionItem {
+    guard let base = filterText, base.count < label.count, label.hasPrefix(base) else {
+      return self
+    }
+    return updating(
+      label: base, labelDetails: .init(detail: String(label.dropFirst(base.count))))
+  }
 
   /// Returns a copy of `self` with prioritized ranking iff `primary` is true.
   ///
   /// `secondaryTag` is appended to the details iff the item is ranked secondary.
   func reranked(asPrimary primary: Bool, secondaryTag: String) -> CompletionItem {
     let bucket = primary ? "0" : "1"
-    let rankedDetail: String? =
-      primary
-      ? detail
-      : (detail.map { "\($0) (\(secondaryTag))" } ?? "(\(secondaryTag))")
-    return CompletionItem(
-      label: label, kind: kind, detail: rankedDetail, documentation: documentation,
-      deprecated: deprecated, preselect: preselect, sortText: bucket + (sortText ?? label),
-      filterText: filterText, insertText: insertText, insertTextFormat: insertTextFormat,
-      textEdit: textEdit, additionalTextEdits: additionalTextEdits,
-      commitCharacters: commitCharacters, command: command, data: data)
+    return updating(
+      detail: primary ? nil : (detail.map { "\($0) (\(secondaryTag))" } ?? "(\(secondaryTag))"),
+      sortText: bucket + (sortText ?? label))
   }
 
   /// Returns a copy of `self` whose inserted text is prefixed with `self.`, while keeping the
   /// bare member name as the filter text so prefix matching is unaffected.
   func selfQualified() -> CompletionItem {
-    CompletionItem(
-      label: label, kind: kind, detail: detail, documentation: documentation,
-      deprecated: deprecated, preselect: preselect, sortText: sortText,
-      filterText: filterText ?? label, insertText: "self." + (insertText ?? label),
-      insertTextFormat: insertTextFormat ?? .plaintext, textEdit: textEdit,
-      additionalTextEdits: additionalTextEdits, commitCharacters: commitCharacters,
-      command: command, data: data)
+    updating(
+      filterText: filterText ?? label,
+      insertText: "self." + (insertText ?? label),
+      insertTextFormat: insertTextFormat ?? .plaintext)
   }
 
-  /// Creates a completion item for `d`, or `nil` if `d` should not be offered.
+  /// Creates a completion item for a struct declaration.
+  fileprivate init(from d: StructDeclaration.ID, in p: Program) {
+    self.init(label: p[d].identifier.value, kind: CompletionItemKind.struct)
+  }
+
+  /// Creates a completion item for a parameter declaration.
+  fileprivate init(from c: ParameterDeclaration.ID, in p: Program) {
+    let d = p[c]
+    var detail = "\(d.identifier.value)"
+    if let ascription = d.ascription {
+      detail += ": \(p.show(p[ascription]))"
+    }
+    if let defaultValue = d.defaultValue {
+      detail += " = \(p.show(defaultValue))"
+    }
+    self.init(label: d.identifier.value, kind: .variable, detail: detail)
+  }
+
+  /// Creates a completion item for a variable declaration (a local, a destructured name, or a
+  /// stored property).
+  fileprivate init(from d: VariableDeclaration.ID, in p: Program) {
+    let name = p[d].identifier.value
+    // Unwrap the projection: a `let`/`inout` binding's variable has a remote type, whose access
+    // annotation is noise in the detail.
+    var detail = name
+    if let type = p.type(maybeAssignedTo: d) {
+      let projected = (p.types[type] as? RemoteType)?.projectee ?? type
+      detail += ": \(p.show(projected))"
+    }
+    self.init(label: name, kind: .variable, detail: detail)
+  }
+
+}
+
+extension CompletionCandidate {
+
+  /// Creates a completion candidate for `d`, or `nil` if `d` should not be offered.
   ///
   /// Pass `includeSelf` when `d` is a member function offered as an *unbound* selection (an instance
   /// method reached through its type, e.g. `Point.offset`): the inserted snippet then carries the
   /// leading `self:` parameter the unbound call requires.
-  public static func create(
-    from d: DeclarationIdentity, in p: Program, includeSelf: Bool = false
-  ) -> CompletionItem? {
+  init?(from d: DeclarationIdentity, in p: Program, includeSelf: Bool = false) {
     switch p.tag(of: d) {
     case VariableDeclaration.self:
-      return self.init(from: p.cast(d, to: VariableDeclaration.self)!, in: p)
+      self.init(item: .init(from: p.cast(d, to: VariableDeclaration.self)!, in: p))
     case FunctionDeclaration.self:
       let f = p.cast(d, to: FunctionDeclaration.self)!
       // Operators and lambdas can't be invoked through name completion; only simple names
       // (including initializers, which are offered as `new`).
       switch p[f].identifier.value {
       case .simple:
-        return self.init(from: f, in: p, includeSelf: includeSelf)
+        self.init(from: f, in: p, includeSelf: includeSelf)
       case .operator:
         return nil
       case .lambda:
         return nil
       }
     case ParameterDeclaration.self:
-      return self.init(from: p.cast(d, to: ParameterDeclaration.self)!, in: p)
+      self.init(item: .init(from: p.cast(d, to: ParameterDeclaration.self)!, in: p))
     case StructDeclaration.self:
-      return self.init(from: p.cast(d, to: StructDeclaration.self)!, in: p)
+      self.init(item: .init(from: p.cast(d, to: StructDeclaration.self)!, in: p))
     case BindingDeclaration.self:
       // A binding is not a candidate: its pattern may bind several names (`let (a, b) = ...`),
       // and each variable it introduces is registered in the same scope and offered individually.
@@ -611,19 +758,16 @@ extension CompletionItem {
       return nil
     default:
       let name = p.name(of: d)?.identifier ?? p.nameOrTag(of: d)
-      return self.init(label: name)
+      self.init(item: CompletionItem(label: name))
     }
   }
 
-  /// Creates a completion item for a struct declaration.
-  private init(from d: StructDeclaration.ID, in p: Program) {
-    self.init(label: p[d].identifier.value, kind: CompletionItemKind.struct)
-  }
-
-  /// Creates a completion item for a function declaration, including a call snippet.
+  /// Creates a completion candidate for a function declaration: an item labeled with the call's
+  /// argument labels (`f(x:y:)`), a call snippet, and the parameters used to disambiguate
+  /// same-labeled overloads.
   ///
-  /// Pass `includeSelf` for an unbound member selection so the snippet keeps the leading `self:`
-  /// parameter (see `buildLabelAndSnippets`).
+  /// Pass `includeSelf` for an unbound member selection so the label and snippet keep the leading
+  /// `self:` parameter (see `buildLabelAndSnippets`).
   private init(from c: FunctionDeclaration.ID, in p: Program, includeSelf: Bool = false) {
     let d = p[c]
     // Initializers are invoked through the `new` member (e.g. `Point.new(x:, y:)`).
@@ -639,8 +783,6 @@ extension CompletionItem {
     // the arrow, rendered without the projection's access annotation). When the declared parameters
     // can't be aligned to the arrow's inputs — e.g. a memberwise initializer, whose fields are
     // synthesized into the type with no explicit declarations — fall back to the arrow's own labels.
-
-    // todo make the argument labels also display for functions in the main autocomplete menu, like f(x:y:). When there are overloads with the same labels, also display the types of the parameters that differ at least at one overload.
     let explicit = d.parameters.filter { p[$0].identifier.value != "self" }
     let inputs = (arrow?.inputs ?? []).filter { $0.label != "self" }
     let call = arrow.map { buildLabelAndSnippets(from: $0, in: p, includeSelf: includeSelf) }
@@ -658,35 +800,25 @@ extension CompletionItem {
       detail += " -> \(p.show(t.output))"
       snippet += call.snippet
     }
+
+    // The call's parameters, for the menu label: the resolved arrow's inputs when the function
+    // could be typed, the written parameter list otherwise.
+    let parameters: [(label: String?, type: String)] =
+      if let t = arrow {
+        t.inputs.filter({ (a) in includeSelf || a.label != "self" })
+          .map { (a) in (label: a.label, type: p.show(a.type)) }
+      } else {
+        explicit.map { (pd) in
+          (label: p[pd].label?.value, type: p[pd].ascription.map { (a) in p.show(a) } ?? "_")
+        }
+      }
+    let label = name + "(" + parameters.map { (a) in "\(a.label ?? "_"):" }.joined() + ")"
+
     self.init(
-      label: name, kind: kind, detail: detail, insertText: snippet, insertTextFormat: .snippet)
-  }
-
-  /// Creates a completion item for a parameter declaration.
-  private init(from c: ParameterDeclaration.ID, in p: Program) {
-    let d = p[c]
-    var detail = "\(d.identifier.value)"
-    if let ascription = d.ascription {
-      detail += ": \(p.show(p[ascription]))"
-    }
-    if let defaultValue = d.defaultValue {
-      detail += " = \(p.show(defaultValue))"
-    }
-    self.init(label: d.identifier.value, kind: .variable, detail: detail)
-  }
-
-  /// Creates a completion item for a variable declaration (a local, a destructured name, or a
-  /// stored property).
-  private init(from d: VariableDeclaration.ID, in p: Program) {
-    let name = p[d].identifier.value
-    // Unwrap the projection: a `let`/`inout` binding's variable has a remote type, whose access
-    // annotation is noise in the detail.
-    var detail = name
-    if let type = p.type(maybeAssignedTo: d) {
-      let projected = (p.types[type] as? RemoteType)?.projectee ?? type
-      detail += ": \(p.show(projected))"
-    }
-    self.init(label: name, kind: .variable, detail: detail)
+      item: CompletionItem(
+        label: label, kind: kind, detail: detail, filterText: name, insertText: snippet,
+        insertTextFormat: .snippet),
+      callParameters: parameters)
   }
 
 }

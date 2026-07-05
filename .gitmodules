@@ -4,3 +4,7 @@
 [submodule "vscode-hylo"]
 	path = vscode-hylo
 	url = https://github.com/hylo-lang/vscode-hylo/
+[submodule "LanguageServerProtocol"]
+	path = LanguageServerProtocol
+	url = https://github.com/tothambrus11/LanguageServerProtocol
+	branch = completion-item-label-details
