@@ -1,0 +1,25 @@
+extension Bool {
+  static fun the_bool() -> Bool {
+    true
+  }
+}
+extension Int {
+  static fun the_int() -> Int {
+    3
+  }
+}
+
+fun a() {}
+fun a(x: Int, y: Int) { }
+fun a(x: Bool, y: Bool) { }
+
+// a(.|, .the_bool())  // -> .the_bool(), no .the_int()
+// a(.the_bool(), .|)  // -> .the_bool(), no .the_int()
+// a(.the_int(), .|)  // -> .the_int(), no .the_bool()
+// a(.|, .the_int())  // -> .the_int(), no .the_bool()
+// a(.|<placeholder>, <placeholder>) // -> [.the_int(), .the_bool()]
+// a(<placeholder>, .|<placeholder>) // -> [.the_int(), .the_bool()]
+
+fun main() {
+  a(. , Int.new())
+}

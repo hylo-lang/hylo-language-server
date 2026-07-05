@@ -38,6 +38,11 @@ let package = Package(
     .package(
       url: "https://github.com/ChimeHQ/LanguageServer",
       revision: "2bbf9508fdf6f7a17b2c34776b7485af73de338a"),
+    // A submodule of our LanguageServerProtocol fork, overriding the transitive dependency of
+    // `LanguageServer` to add `CompletionItem.labelDetails` (LSP 3.17). Drop the submodule and
+    // this entry once https://github.com/ChimeHQ/LanguageServerProtocol/pull/38 is merged and
+    // released; `LanguageServer`'s own `from: 0.13.4` requirement then picks it up.
+    .package(path: "./LanguageServerProtocol"),
     .package(path: "./hylo-new"),
   ],
   targets: [

@@ -105,6 +105,11 @@ public actor DocumentProvider {
   let connection: JSONRPCClientConnection
   var workspaceFolders: [WorkspaceFolder] = []
 
+  /// Whether the connected client can render `CompletionItem.labelDetails` (LSP 3.17).
+  ///
+  /// Declared by the client in the `initialize` handshake; `false` until then.
+  public private(set) var clientSupportsCompletionLabelDetails = false
+
   // Standard library caching
   private var stdlibCache: [AbsoluteURL: StandardLibraryCache] = [:]
   public let defaultStdlibRoot: URL
@@ -141,6 +146,9 @@ public actor DocumentProvider {
     if let w = params.workspaceFolders {
       self.workspaceFolders = w
     }
+
+    clientSupportsCompletionLabelDetails =
+      params.capabilities.textDocument?.completion?.completionItem?.labelDetailsSupport ?? false
 
     logger.info(
       "Initialize in working directory: \(FileManager.default.currentDirectoryPath), with workspace folders: \(workspaceFolders)"
