@@ -64,7 +64,7 @@ jobs:
       - name: Set up Swift
         uses: SwiftyLab/setup-swift@latest
         with:
-          swift-version: "6.2"
+          swift-version: "6.3.0"
 
       - name: Build distributable
         run: swift build -c release --verbose --product hylo-language-server --static-swift-stdlib
