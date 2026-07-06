@@ -1,0 +1,34 @@
+
+extension Bool {
+  static fun the_bool() -> Bool { .new() }
+}
+extension Int {
+  static fun the_int() -> Int { .new() }
+}
+
+fun a(x: Int, y: Int) {}
+fun a(x: Bool, y: Bool) {}
+
+extension <T> T {
+  // Use as: ?Bool
+  static subscript prefix? () -> Self {
+    Builtin.trap()
+  }
+
+  // Use as: Bool.todo()
+  static subscript todo() -> Self {
+    Builtin.trap()
+  }
+}
+
+// Use as: todo[Bool]
+subscript todo<T>(t: Metatype<T>) -> T {
+  Builtin.trap()
+}
+
+fun main() {
+  // a(., todo[Bool]) // [ .the_bool() ]
+
+  let r = a(?Bool, .new())
+  let x = asd(todo[Int])
+}
