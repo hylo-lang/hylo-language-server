@@ -416,10 +416,22 @@ extension Program {
       // A variable's member-ness and static-ness are decided by its containing binding
       // (`static` is spelled on the binding, not the variable).
       let owner = governingDeclaration(of: d)
-      let requiresSelf = isMember(owner) && !isInitializer(owner)
-      if requiresSelf && !selfIsAvailable { continue }
+      // A static-like member is named plainly wherever lookup reaches it; only an instance
+      // member needs a receiver.
+      let isInstanceMember = isMember(owner) && !isStaticMember(owner)
+      if isInstanceMember && !selfIsAvailable {
+        // Without an instance `self` the member is still nameable unqualified, but only through
+        // an *unbound* call carrying an explicit `self:` argument — a form only callables have.
+        guard
+          var candidate = CompletionCandidate(from: d, in: self, includeSelf: true),
+          candidate.callParameters != nil
+        else { continue }
+        candidate.item = candidate.item.reranked(asPrimary: false, secondaryTag: "unbound")
+        candidates.append(candidate)
+        continue
+      }
       for var candidate in completionCandidates(forScopeDeclaration: d) {
-        if requiresSelf { candidate.item = candidate.item.selfQualified() }
+        if isInstanceMember { candidate.item = candidate.item.selfQualified() }
         candidates.append(candidate)
       }
     }
@@ -470,10 +482,31 @@ extension Program {
   }
 
   /// Returns the completion candidates for a declaration `d` directly contained in a scope.
+  ///
+  /// A struct is offered both as its bare name and as one call per initializer spelled through
+  /// the type name (`Point(x:y:)`), the sugar for `Point.new(x:y:)`.
   private mutating func completionCandidates(
     forScopeDeclaration d: DeclarationIdentity
   ) -> [CompletionCandidate] {
-    CompletionCandidate(from: d, in: self).map { [$0] } ?? []
+    var result = CompletionCandidate(from: d, in: self).map { [$0] } ?? []
+    if let s = cast(d, to: StructDeclaration.self) {
+      result.append(contentsOf: constructorCandidates(of: s))
+    }
+    return result
+  }
+
+  /// Returns one call candidate per initializer of `s`, labeled with `s`'s name.
+  private mutating func constructorCandidates(
+    of s: StructDeclaration.ID
+  ) -> [CompletionCandidate] {
+    let name = self[s].identifier.value
+    return declarations(lexicallyIn: ScopeIdentity(node: s)).compactMap {
+      (m) -> CompletionCandidate? in
+      guard
+        let f = cast(m, to: FunctionDeclaration.self), self[f].introducer.value.isInitializer
+      else { return nil }
+      return CompletionCandidate(from: f, in: self, calledAs: name)
+    }
   }
 
   /// Returns the declaration governing `d`'s member-ness and static-ness: the containing binding
@@ -516,11 +549,12 @@ private func parameterDetail(
   return s
 }
 
-/// Builds the parameter list label and snippet for an arrow (function) type.
+/// Builds the parameter list label and snippet for an arrow (function or subscript) type.
 ///
-/// The label looks like `(p1: t1, p2: t2 = d2)`; the snippet uses numbered placeholders. A
-/// defaulted parameter's default is part of its placeholder, so overtyping the placeholder
-/// removes it along with the type.
+/// The label looks like `(p1: t1, p2: t2 = d2)` — with the delimiters of `a`'s call style, so a
+/// subscript renders `[p1: t1]`; the snippet uses numbered placeholders. A defaulted parameter's
+/// default is part of its placeholder, so overtyping the placeholder removes it along with the
+/// type.
 ///
 /// The `self` input (present in the type of an *unbound* member, e.g. `Point.offset`) is dropped
 /// unless `includeSelf` is `true`, so a bound call (`p.offset(dx:)`) or a `self.`-qualified
@@ -528,8 +562,9 @@ private func parameterDetail(
 private func buildLabelAndSnippets(
   from a: Arrow, in p: Program, includeSelf: Bool = false
 ) -> (label: String, snippet: String) {
-  var label = "("
-  var snippet = "("
+  let (open, close) = a.style.delimiters
+  var label = open
+  var snippet = open
   var i = 0
   for a in a.inputs where (includeSelf || a.label != "self") {
     if i != 0 {
@@ -548,9 +583,21 @@ private func buildLabelAndSnippets(
     snippet += "${\(i + 1):\(escapedForSnippetPlaceholder(placeholder))}"
     i += 1
   }
-  snippet += ")$0"
-  label += ")"
+  snippet += close + "$0"
+  label += close
   return (label: label, snippet: snippet)
+}
+
+extension Call.Style {
+
+  /// The delimiters wrapping the arguments of a call in this style.
+  var delimiters: (open: String, close: String) {
+    switch self {
+    case .parenthesized: ("(", ")")
+    case .bracketed: ("[", "]")
+    }
+  }
+
 }
 
 /// Returns `s` with the characters meaningful to the LSP snippet grammar escaped, so it can sit
@@ -576,6 +623,9 @@ struct CompletionCandidate {
   /// One (argument label, shown type) per parameter of the inserted call, or `nil` if the item
   /// is not callable. Used to disambiguate same-labeled overloads.
   var callParameters: [(label: String?, type: String)]? = nil
+
+  /// The style of the inserted call — parentheses for a function, brackets for a subscript.
+  var callStyle: Call.Style = .parenthesized
 
 }
 
@@ -607,7 +657,8 @@ func disambiguatedItems(_ candidates: [CompletionCandidate]) -> [CompletionItem]
         "\(p.label ?? "_"):" + (differs[j] ? " \(p.type)" : "")
       }
       let base = items[i].filterText ?? items[i].label
-      items[i] = items[i].withLabel("\(base)(\(pieces.joined(separator: ", ")))")
+      let (open, close) = candidates[i].callStyle.delimiters
+      items[i] = items[i].withLabel("\(base)\(open)\(pieces.joined(separator: ", "))\(close)")
     }
   }
   return items
@@ -744,6 +795,9 @@ extension CompletionCandidate {
       case .lambda:
         return nil
       }
+    case FunctionBundleDeclaration.self:
+      self.init(
+        from: p.cast(d, to: FunctionBundleDeclaration.self)!, in: p, includeSelf: includeSelf)
     case ParameterDeclaration.self:
       self.init(item: .init(from: p.cast(d, to: ParameterDeclaration.self)!, in: p))
     case StructDeclaration.self:
@@ -762,38 +816,78 @@ extension CompletionCandidate {
     }
   }
 
-  /// Creates a completion candidate for a function declaration: an item labeled with the call's
-  /// argument labels (`f(x:y:)`), a call snippet, and the parameters used to disambiguate
-  /// same-labeled overloads.
+  /// Creates a completion candidate for a function or subscript declaration: an item labeled with
+  /// the call's argument labels (`f(x:y:)`, `m[x:]`), a call snippet, and the parameters used to
+  /// disambiguate same-labeled overloads.
   ///
   /// Pass `includeSelf` for an unbound member selection so the label and snippet keep the leading
-  /// `self:` parameter (see `buildLabelAndSnippets`).
-  private init(from c: FunctionDeclaration.ID, in p: Program, includeSelf: Bool = false) {
+  /// `self:` parameter (see `buildLabelAndSnippets`). Pass `calledAs` to spell an initializer
+  /// through its type's name (`Point(x:y:)`, the sugar for `Point.new(x:y:)`) instead of `new`.
+  fileprivate init(
+    from c: FunctionDeclaration.ID, in p: Program, includeSelf: Bool = false,
+    calledAs sugaredName: String? = nil
+  ) {
     let d = p[c]
     // Initializers are invoked through the `new` member (e.g. `Point.new(x:, y:)`).
     let isInitializer = d.introducer.value.isInitializer
-    let name = isInitializer ? "new" : d.identifier.value.description
-    let kind: CompletionItemKind = isInitializer ? .constructor : .function
-    var detail = d.modifiers.reduce("", { "\($0)\($1.description) " }) + name
+    let name = sugaredName ?? (isInitializer ? "new" : d.identifier.value.description)
+    self.init(
+      callableNamed: name,
+      ofKind: isInitializer ? .constructor : .function,
+      withModifiers: d.modifiers,
+      declaring: d.parameters,
+      typedAs: p.type(maybeAssignedTo: c),
+      calledIn: Call.Style(d.introducer.value),
+      in: p, includeSelf: includeSelf)
+  }
+
+  /// Creates a completion candidate for a function or subscript bundle declaration.
+  private init(from c: FunctionBundleDeclaration.ID, in p: Program, includeSelf: Bool = false) {
+    let d = p[c]
+    self.init(
+      callableNamed: d.identifier.value,
+      ofKind: .function,
+      withModifiers: d.modifiers,
+      declaring: d.parameters,
+      typedAs: p.type(maybeAssignedTo: c),
+      calledIn: Call.Style(d.introducer.value),
+      in: p, includeSelf: includeSelf)
+  }
+
+  /// Creates a completion candidate for a callable named `name` declared with `parameters`, whose
+  /// type is `t` (a possibly generic arrow or bundle) and whose applications are spelled in
+  /// `style` — `f(x:)` for a function, `m[x:]` for a subscript.
+  private init(
+    callableNamed name: String, ofKind kind: CompletionItemKind,
+    withModifiers modifiers: [Parsed<DeclarationModifier>],
+    declaring parameters: [ParameterDeclaration.ID],
+    typedAs t: AnyTypeIdentity?,
+    calledIn style: Call.Style,
+    in p: Program, includeSelf: Bool
+  ) {
+    var detail = modifiers.reduce("", { "\($0)\($1.description) " }) + name
     var snippet = name
-    let arrow = p.type(maybeAssignedTo: c).flatMap { p.types[$0] as? Arrow }
+    // The shape of the callable: unwraps a bundle to the arrow its variants share and a generic
+    // callable to its head.
+    let arrow = t.flatMap { (u) in p.types.seenAsTermAbstraction(u) }.map { (a) in p.types[a] }
+    let (open, close) = style.delimiters
 
     // Render the parameter list for the detail with each parameter's name (kept by the declaration
     // even when it has no argument label, which the arrow type drops) and its resolved type (kept by
     // the arrow, rendered without the projection's access annotation). When the declared parameters
     // can't be aligned to the arrow's inputs — e.g. a memberwise initializer, whose fields are
     // synthesized into the type with no explicit declarations — fall back to the arrow's own labels.
-    let explicit = d.parameters.filter { p[$0].identifier.value != "self" }
+    let explicit = parameters.filter { p[$0].identifier.value != "self" }
     let inputs = (arrow?.inputs ?? []).filter { $0.label != "self" }
     let call = arrow.map { buildLabelAndSnippets(from: $0, in: p, includeSelf: includeSelf) }
     if !explicit.isEmpty, explicit.count == inputs.count {
       let rendered = zip(explicit, inputs).map { parameterDetail($0, typedAs: $1, in: p) }
-      detail += "(" + rendered.joined(separator: ", ") + ")"
+      detail += open + rendered.joined(separator: ", ") + close
     } else if let call {
       detail += call.label
     } else {
       let rendered = explicit.map { parameterDetail($0, typedAs: nil, in: p) }
-      detail += "(" + rendered.joined(separator: ", ") + ")"
+      detail += open + rendered.joined(separator: ", ") + close
     }
 
     if let t = arrow, let call {
@@ -801,9 +895,9 @@ extension CompletionCandidate {
       snippet += call.snippet
     }
 
-    // The call's parameters, for the menu label: the resolved arrow's inputs when the function
+    // The call's parameters, for the menu label: the resolved arrow's inputs when the callable
     // could be typed, the written parameter list otherwise.
-    let parameters: [(label: String?, type: String)] =
+    let callParameters: [(label: String?, type: String)] =
       if let t = arrow {
         t.inputs.filter({ (a) in includeSelf || a.label != "self" })
           .map { (a) in (label: a.label, type: p.show(a.type)) }
@@ -812,13 +906,14 @@ extension CompletionCandidate {
           (label: p[pd].label?.value, type: p[pd].ascription.map { (a) in p.show(a) } ?? "_")
         }
       }
-    let label = name + "(" + parameters.map { (a) in "\(a.label ?? "_"):" }.joined() + ")"
+    let label = name + open + callParameters.map { (a) in "\(a.label ?? "_"):" }.joined() + close
 
     self.init(
       item: CompletionItem(
         label: label, kind: kind, detail: detail, filterText: name, insertText: snippet,
         insertTextFormat: .snippet),
-      callParameters: parameters)
+      callParameters: callParameters,
+      callStyle: style)
   }
 
 }

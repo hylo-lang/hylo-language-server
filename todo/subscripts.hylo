@@ -49,10 +49,13 @@ extension Int {
 
 
 struct P {
-  subscript m(x: Int) -> Int {
-    
+  memberwise init
+
+  subscript m(y x: Int) -> Int {  
     yield 5
   }
 }
+
+let p = P().m[y: 3]
 
 // P().m| // m[_:] 

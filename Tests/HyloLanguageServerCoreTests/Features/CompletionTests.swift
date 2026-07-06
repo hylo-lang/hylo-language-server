@@ -832,10 +832,11 @@ final class CompletionTests: XCTestCase {
       "locals must not be self-qualified, got \(local.insertText ?? "nil")")
   }
 
-  func testInstanceMembersNotOfferedInStaticFunction() async throws {
-    // No instance `self` exists in a static function, so instance members cannot be named there
-    // and must not be offered (inserting `self.value` would not type-check). Static members
-    // remain available.
+  func testStaticFunctionBodyOffersStaticAndUnboundMembers() async throws {
+    // No instance `self` exists in a static function, but the type's members are still nameable
+    // unqualified: a static member plainly, an instance *method* through an unbound call with an
+    // explicit `self:` argument. A stored property has no such call form and must not be offered
+    // (inserting `self.value` would not type-check).
     let source = try MarkedSource(
       """
       public struct S {
@@ -850,13 +851,178 @@ final class CompletionTests: XCTestCase {
     let uri = try await context.openDocument(source)
     let items = try await context.completion(uri: uri, at: source.markers[0])
     assertDoesNotContain(
-      items, ["value", "m"], context: "instance members in a static function body")
-    assertContains(items, ["s"], context: "static members in a static function body")
+      items, ["value"], context: "stored properties in a static function body")
     for item in items {
       XCTAssertEqual(
         item.insertText?.hasPrefix("self.") ?? false, false,
         "nothing may insert `self.` where no instance exists, got \(item.insertText ?? "nil")")
     }
+
+    let s = try XCTUnwrap(
+      items.first { itemName($0) == "s" },
+      "expected the static member `s` in a static function body. \(labels(items))")
+    XCTAssertEqual(
+      s.insertText?.hasPrefix("s(") ?? false, true,
+      "a static member must be inserted plainly, got \(s.insertText ?? "nil")")
+
+    let m = try XCTUnwrap(
+      items.first { itemName($0) == "m" },
+      "expected the unbound instance method `m` in a static function body. \(labels(items))")
+    XCTAssertEqual(
+      m.insertText?.contains("self:") ?? false, true,
+      "an unbound member snippet must carry the `self:` parameter, got \(m.insertText ?? "nil")")
+    XCTAssertEqual(
+      m.detail?.contains("unbound") ?? false, true,
+      "an unbound member should be tagged in `detail`, got \(m.detail ?? "nil")")
+    XCTAssertLessThan(
+      s.sortText ?? "", m.sortText ?? "",
+      "static members must rank before unbound instance members")
+  }
+
+  func testStaticMemberInInstanceMethodIsNotSelfQualified() async throws {
+    // A static member reached from a method body is accessed through the type, not the instance,
+    // so it must be inserted plainly rather than as `self.s`.
+    let source = try MarkedSource(
+      """
+      public struct S {
+        public static fun s() {}
+        public fun m() {
+          let _ = 0️⃣
+        }
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let s = try XCTUnwrap(
+      items.first { itemName($0) == "s" },
+      "expected the static member `s` in a method body. \(labels(items))")
+    XCTAssertEqual(
+      s.insertText?.hasPrefix("s(") ?? false, true,
+      "a static member must not be self-qualified, got \(s.insertText ?? "nil")")
+  }
+
+  // MARK: - Constructor calls through the type name
+
+  func testStructInScopeOffersConstructorCalls() async throws {
+    // A struct in scope is offered both as its bare name and as one call per initializer spelled
+    // through the type name — `Point(x:y:)` is the sugar for `Point.new(x:y:)`.
+    let source = try MarkedSource(
+      """
+      public struct Point {
+        let x: Int
+        let y: Int
+
+        public memberwise init
+
+        public init(_ all: Int) {
+          self.x = all.copy()
+          self.y = all.copy()
+        }
+      }
+
+      public fun main() {
+        let p = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+
+    let point = items.filter { itemName($0) == "Point" }
+    XCTAssertTrue(
+      point.contains { $0.kind == .struct && $0.insertText == nil },
+      "the bare type name must still be offered. \(labels(point))")
+
+    let memberwise = try XCTUnwrap(
+      point.first { $0.label == "Point(x:y:)" },
+      "expected the memberwise initializer as `Point(x:y:)`. \(labels(point))")
+    XCTAssertEqual(memberwise.kind, .constructor)
+    XCTAssertEqual(
+      memberwise.insertText, "Point(x: ${1:Int}, y: ${2:Int})$0",
+      "expected a call snippet through the type name")
+
+    let custom = try XCTUnwrap(
+      point.first { $0.label == "Point(all:)" },
+      "expected the custom initializer as `Point(all:)`. \(labels(point))")
+    XCTAssertEqual(custom.kind, .constructor)
+    XCTAssertEqual(
+      custom.insertText?.hasPrefix("Point(") ?? false, true,
+      "expected a call snippet through the type name, got \(custom.insertText ?? "nil")")
+  }
+
+  // MARK: - Subscripts
+
+  func testMemberSubscriptCompletesWithBrackets() async throws {
+    // A subscript's applications are spelled with brackets, so its label and snippet must use
+    // them: `m[_:]`, inserting `m[...]`.
+    let source = try MarkedSource(
+      """
+      public struct P {
+        public memberwise init
+        public subscript m(x: Int) -> Int {
+          yield x
+        }
+      }
+
+      public fun main() {
+        let p = P()
+        let _ = p.0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let m = try XCTUnwrap(
+      items.first { itemName($0) == "m" }, "expected the subscript `m`. \(labels(items))")
+    XCTAssertEqual(m.label, "m[_:]", "a subscript label must use brackets")
+    XCTAssertEqual(
+      m.insertText, "m[${1:Int}]$0", "a subscript snippet must use brackets")
+  }
+
+  func testTopLevelSubscriptInScopeCompletesWithBrackets() async throws {
+    let source = try MarkedSource(
+      """
+      public subscript a(x y: Int) -> Int {
+        yield y
+      }
+
+      public fun main() {
+        let _ = 0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let a = try XCTUnwrap(
+      items.first { itemName($0) == "a" }, "expected the subscript `a`. \(labels(items))")
+    XCTAssertEqual(a.label, "a[x:]", "a subscript label must use brackets and its labels")
+    XCTAssertEqual(
+      a.insertText, "a[x: ${1:Int}]$0", "a subscript snippet must use brackets")
+  }
+
+  func testSubscriptBundleCompletes() async throws {
+    // A subscript declared with variant bodies is a *bundle* declaration whose type wraps the
+    // arrow its variants share; it must complete like a plain subscript.
+    let source = try MarkedSource(
+      """
+      public struct P {
+        var total: Int
+        public memberwise init
+        public subscript m(x: Int) auto -> Int {
+          let { yield x }
+        }
+      }
+
+      public fun main() {
+        let p = P(total: 0)
+        let _ = p.0️⃣
+      }
+      """)
+    let uri = try await context.openDocument(source)
+    let items = try await context.completion(uri: uri, at: source.markers[0])
+    let m = try XCTUnwrap(
+      items.first { itemName($0) == "m" },
+      "expected the bundle subscript `m`. \(labels(items))")
+    XCTAssertEqual(m.label, "m[_:]", "a subscript bundle label must use brackets")
+    XCTAssertEqual(
+      m.insertText, "m[${1:Int}]$0", "a subscript bundle snippet must use brackets")
   }
 
   // MARK: - Defaulted parameters
@@ -1051,7 +1217,8 @@ final class CompletionTests: XCTestCase {
 
   func testScannerDetectsStringLiterals() {
     XCTAssertTrue(isInsideIgnored(#"let s = "file." + x"#, atOffset: 14), "inside the literal")
-    XCTAssertFalse(isInsideIgnored(#"let s = "file." + x"#, atOffset: 15), "right after the literal")
+    XCTAssertFalse(
+      isInsideIgnored(#"let s = "file." + x"#, atOffset: 15), "right after the literal")
     XCTAssertFalse(isInsideIgnored(#"let s = "file." + x"#, atOffset: 19), "past the literal")
     XCTAssertTrue(
       isInsideIgnored(#"let s = "a\"b." + x"#, atOffset: 14), "an escaped quote does not terminate")
@@ -1063,7 +1230,8 @@ final class CompletionTests: XCTestCase {
   func testScannerDetectsComments() {
     XCTAssertTrue(isInsideIgnored("// e.g. x\ny", atOffset: 8), "inside a line comment")
     XCTAssertFalse(isInsideIgnored("// e.g. x\ny", atOffset: 10), "the next line is code")
-    XCTAssertTrue(isInsideIgnored("/* a /* b */ c */ x", atOffset: 9), "inside a nested block comment")
+    XCTAssertTrue(
+      isInsideIgnored("/* a /* b */ c */ x", atOffset: 9), "inside a nested block comment")
     XCTAssertTrue(isInsideIgnored("/* a /* b */ c */ x", atOffset: 14), "between nested closers")
     XCTAssertFalse(isInsideIgnored("/* a /* b */ c */ x", atOffset: 18), "after the block comment")
     XCTAssertTrue(
