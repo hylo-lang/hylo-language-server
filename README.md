@@ -34,7 +34,7 @@ Returns:
 
 ## Developing
 
-The project only requires Swift 6.2 and NodeJS for the VSCode extension. You can use the development container to set up a development environment easily.
+The project only requires Swift 6.3 and NodeJS for the VSCode extension. You can use the development container to set up a development environment easily.
 
 To build and install a local dev version of the LSP + VSCode extension that has the LSP executables bundled:
 
