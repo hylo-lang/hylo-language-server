@@ -1,0 +1,23 @@
+trait FFF {
+  init(_ x: Int)
+
+  static fun do_init() -> Self
+}
+
+
+fun generic_input<T is FFF>(t: Metatype<T>, x: T) -> T {
+  x
+}
+
+struct X is FFF {
+  init(_ x: Int) {
+  }
+
+  static fun do_init() -> Self {
+    .new(x: 0)
+  }
+}
+
+fun fFF(){
+  generic_input(X, X.new(x: Int.new())) // [ .do_init(), .new(x:) ] should be no duplication
+}

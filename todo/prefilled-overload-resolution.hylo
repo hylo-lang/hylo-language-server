@@ -26,9 +26,20 @@ subscript todo<T>(t: Metatype<T>) -> T {
   Builtin.trap()
 }
 
+fun f<T is Movable>(x: T, y: Int) -> T {
+  x
+}
+fun f(x: Bool, y: Bool) -> Bool {
+  x
+}
+extension Movable {
+  static fun mov() {
+  }
+}
+
 fun main() {
   // a(., todo[Bool]) // [ .the_bool() ]
 
-  let r = a(?Bool, .new())
-  let x = asd(todo[Int])
+  // let r = a(?Bool, .new())
+  let x = f(todo[T], .)
 }
