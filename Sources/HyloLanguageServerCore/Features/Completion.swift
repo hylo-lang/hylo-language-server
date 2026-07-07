@@ -18,9 +18,10 @@ extension HyloRequestHandler {
     id: JSONId, params: CompletionParams
   ) async -> Response<CompletionResponse> {
     await reportingLSPError {
-      let url = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let document = try await documentProvider.getDocumentContext(at: url)
-      var list = try await self.completionList(in: document, at: params.position, url: url)
+      let document = try await documentProvider.getDocumentContext(
+        forUri: params.textDocument.uri)
+      var list = try await self.completionList(
+        in: document, at: params.position, url: document.url)
 
       // A callable's label carries its call signature (`f(x:)`). A client that renders label
       // details gets the signature there instead, next to the bare name; embedding it in the

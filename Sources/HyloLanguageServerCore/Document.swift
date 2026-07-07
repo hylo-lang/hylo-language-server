@@ -6,23 +6,34 @@ import LanguageServerProtocol
 public struct Document: Sendable {
 
   public let uri: AbsoluteURL
+
+  /// `true` iff the client opened this document with `textDocument/didOpen`.
+  public let isOpenedByClient: Bool
+
   public var version: Int?
   public var text: String
 
-  /// Creates an instance from its parts.
-  public init(uri: AbsoluteURL, version: Int?, text: String) {
+  private init(uri: AbsoluteURL, isOpenedByClient: Bool, version: Int?, text: String) {
     self.uri = uri
+    self.isOpenedByClient = isOpenedByClient
     self.version = version
     self.text = text
   }
 
-  /// Creates an instance from the given `textDocument`.
+  /// Creates a document the server read from disk, without the client having opened it.
+  public static func openedByServer(uri: AbsoluteURL, version: Int?, text: String) -> Document {
+    Document(uri: uri, isOpenedByClient: false, version: version, text: text)
+  }
+
+  /// Creates a document the client opened with `textDocument/didOpen`.
   ///
   /// - Throws iff the url is invalid.
-  public init(textDocument: TextDocumentItem) throws {
-    uri = try AbsoluteURL(fromUrlString: textDocument.uri)
-    version = textDocument.version
-    text = textDocument.text
+  public static func openedByClient(_ textDocument: TextDocumentItem) throws -> Document {
+    Document(
+      uri: try AbsoluteURL(fromUrlString: textDocument.uri),
+      isOpenedByClient: true,
+      version: textDocument.version,
+      text: textDocument.text)
   }
 
   /// Applies `changes` sequentially and sets the version of `self` to `version`.

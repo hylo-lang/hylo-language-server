@@ -1277,8 +1277,7 @@ final class CompletionTests: XCTestCase {
       }
       """)
     let uri = try await context.openDocument(source)
-    let document = try await context.documentProvider.getDocumentContext(
-      at: AbsoluteURL(fromUrlString: uri.absoluteString))
+    let document = try await context.documentProvider.getDocumentContext(forUri: uri.absoluteString)
     var program = document.program
     let stdlib = try XCTUnwrap(program.identity(module: Module.standardLibraryName))
     let list = program.namespaceMemberCompletions(of: Namespace(identifier: .module(stdlib)))
@@ -1295,7 +1294,6 @@ final class CompletionTests: XCTestCase {
     let fileManager = FileManager.default
     let root = fileManager.temporaryDirectory
       .appendingPathComponent("HyloFakeStdlib-\(UUID().uuidString)")
-      .resolvingSymlinksInPath()
     try fileManager.createDirectory(
       at: root.appendingPathComponent("Core"), withIntermediateDirectories: true)
     defer { try? fileManager.removeItem(at: root) }

@@ -10,26 +10,30 @@ extension HyloRequestHandler {
     DefinitionResponse
   > {
     await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let doc = try await documentProvider.getDocumentContext(at: source)
+      let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
 
       let p = doc.program
-      let url = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let s = try p.requireSourceFile(at: url)
+      let s = try p.requireSourceFile(at: doc.url)
       let cursor = SourcePosition(params.position, in: p[sourceFile: s])
-      return resolveDefinition(cursor, in: doc.program, logger: logger, in: s)
+
+      return if let site = resolveDefinitionSite(cursor, in: doc.program, logger: logger, in: s) {
+        .optionA(Location(site))
+      } else {
+        nil
+      }
     }
   }
 
 }
 
-func resolveDefinition(
+/// Returns the site of the declaration referred to at `p` in `f`, if any.
+func resolveDefinitionSite(
   _ p: SourcePosition, in program: Program, logger: Logger, in f: SourceFile.ID
-) -> DefinitionResponse {
+) -> SourceSpan? {
   if let d = program.innermostTree(containing: p, reportingLogsTo: logger, in: f),
     let decl = program.resolveDefinition(d, visibleFrom: program.scope(at: d))
   {
-    .optionA(Location(program[decl].site))
+    program[decl].site
   } else {
     nil
   }

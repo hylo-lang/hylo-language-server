@@ -10,9 +10,9 @@ extension HyloRequestHandler {
     DocumentSymbolResponse
   > {
     await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let p = try await documentProvider.getDocumentContext(at: source).program
-      let s = try p.requireSourceFile(at: source)
+      let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
+      let p = doc.program
+      let s = try p.requireSourceFile(at: doc.url)
 
       return .optionA(p.lspSymbols(for: p.topLevelDeclarations(in: s)))
     }
