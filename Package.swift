@@ -22,7 +22,7 @@ let package = Package(
   name: "hylo-lsp",
 
   platforms: [
-    .macOS(.v15)
+    .macOS(.v26)
   ],
 
   products: [
