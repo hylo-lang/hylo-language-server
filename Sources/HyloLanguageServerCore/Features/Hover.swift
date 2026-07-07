@@ -10,11 +10,10 @@ extension HyloRequestHandler {
     id: JSONId, params: TextDocumentPositionParams
   ) async -> Response<HoverResponse> {
     await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let doc = try await documentProvider.getDocumentContext(at: source)
+      let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
       let p = doc.program
 
-      let s = try p.requireSourceFile(at: source)
+      let s = try p.requireSourceFile(at: doc.url)
       let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard

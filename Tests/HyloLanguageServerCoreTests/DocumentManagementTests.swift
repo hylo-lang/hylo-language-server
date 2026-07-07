@@ -56,7 +56,7 @@ final class DocumentManagementTests: XCTestCase {
 
     let textDocument = TextDocumentItem(uri: uri, languageId: "hylo", version: 0, text: beforeEdit)
 
-    var doc = try Document(textDocument: textDocument)
+    var doc = try Document.openedByClient(textDocument)
 
     let changes = [
       TextDocumentContentChangeEvent(

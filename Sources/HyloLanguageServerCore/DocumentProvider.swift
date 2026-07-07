@@ -188,14 +188,15 @@ public actor DocumentProvider {
 
   // MARK: - Standard Library Management
 
-  /// Loads standard library sources from the given path
+  /// Returns the standard library sources under `stdlibPath`.
   private func loadStandardLibrarySources(from stdlibPath: AbsoluteURL) throws -> [SourceFile] {
-    var sources: [SourceFile] = []
-
-    try SourceFile.forEach(in: stdlibPath.url) { sourceFile in
-      sources.append(sourceFile)
+    let hyloFiles = try FileManager.default.files(
+      under: stdlibPath.url, where: { $0.pathExtension == "hylo" })
+    return try hyloFiles.map { (f) in
+      SourceFile(
+        name: AbsoluteURL(f).localFileName,
+        contents: try String(contentsOf: f, encoding: .utf8))
     }
-    return sources
   }
 
   /// Builds a program with standard library loaded and typed.
@@ -375,8 +376,16 @@ public actor DocumentProvider {
   /// not read the document from disk until the next `textDocument/didClose` corresponding to this document.
   ///
   /// If the document has been implicitly registered before, this will override the existing context.
+  ///
+  /// - Requires: The document is not already open in the client.
   public func registerDocument(_ params: DidOpenTextDocumentParams) async throws {
-    let doc = try Document(textDocument: params.textDocument)
+    let doc = try Document.openedByClient(params.textDocument)
+
+    // Two client buffers would race one server document and drift; `didOpen` is a notification,
+    // so the violation cannot be reported back.
+    if let existing = documents[doc.uri], existing.doc.isOpenedByClient {
+      preconditionFailure("Document \(params.textDocument.uri) is already open in the client.")
+    }
 
     // Build program for the document
     let program = try await buildProgramForDocument(url: doc.uri, text: doc.text)
@@ -389,12 +398,9 @@ public actor DocumentProvider {
   ///
   /// When further queries are invoked on this document, the server must read the contents from disk.
   public func unregisterDocument(_ params: DidCloseTextDocumentParams) throws {
-    guard let validUrl = URL(string: params.textDocument.uri) else {
-      throw DocumentProviderError(
-        "Could not find opened document to remove at: \(params.textDocument.uri)")
-    }
-    guard let _ = documents.removeValue(forKey: AbsoluteURL(validUrl)) else {
-      throw DocumentProviderError("Could not find opened document to remove at: \(validUrl)")
+    let url = try AbsoluteURL(fromUrlString: params.textDocument.uri)
+    if documents.removeValue(forKey: url) == nil {
+      throw DocumentProviderError("Could not find opened document to remove at: \(url)")
     }
   }
 
@@ -408,7 +414,7 @@ public actor DocumentProvider {
       throw GetDocumentContextError.documentNotOpened(url)
     }
 
-    let document = Document(uri: url, version: 0, text: text)
+    let document = Document.openedByServer(uri: url, version: 0, text: text)
 
     do {
       let program = try await buildProgramForDocument(url: url, text: text)
@@ -424,12 +430,15 @@ public actor DocumentProvider {
     }
   }
 
-  public func getDocumentContext(at: AbsoluteURL) async throws -> DocumentContext {
-    if let d = documents[at] {
+  /// Returns the context of the document addressed by `uri`, reading it from disk if the client
+  /// hasn't opened it.
+  public func getDocumentContext(forUri uri: DocumentUri) async throws -> DocumentContext {
+    let url = try AbsoluteURL(fromUrlString: uri)
+    if let d = documents[url] {
       return d
     }
 
-    return try await implicitlyRegisterDocument(url: at)
+    return try await implicitlyRegisterDocument(url: url)
   }
 
 }

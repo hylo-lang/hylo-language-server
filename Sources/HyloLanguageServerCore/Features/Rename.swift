@@ -12,10 +12,9 @@ extension HyloRequestHandler {
     PrepareRenameResponse
   > {
     await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let doc = try await documentProvider.getDocumentContext(at: source)
+      let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
       let p = doc.program
-      let s = try p.requireSourceFile(at: source)
+      let s = try p.requireSourceFile(at: doc.url)
       let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
@@ -53,11 +52,10 @@ extension HyloRequestHandler {
     // todo validate new name
 
     await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let doc = try await documentProvider.getDocumentContext(at: source)
+      let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
       let p = doc.program
 
-      let s = try p.requireSourceFile(at: source)
+      let s = try p.requireSourceFile(at: doc.url)
       let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
@@ -93,14 +91,14 @@ extension HyloRequestHandler {
 
 }
 
+/// Returns a workspace edit renaming each span in `renaming` to `to`.
 func workspaceEdits(renaming: [SourceSpan], to: String) -> WorkspaceEdit {
   var changes: [DocumentUri: [TextEdit]] = [:]
   for span in renaming {
-    let uri = DocumentUri(span.source.name.absoluteUrl.url.absoluteString)
     let edit = TextEdit(
       range: LSPRange(span),
       newText: to)
-    changes[uri, default: []].append(edit)
+    changes[span.absoluteURL.description, default: []].append(edit)
   }
   return WorkspaceEdit(changes: changes, documentChanges: nil)
 }
