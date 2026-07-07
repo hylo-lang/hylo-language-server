@@ -39,7 +39,7 @@ private struct StandardLibraryCache {
 /// A simple compilation helper for LSP document processing
 private struct CompilationHelper {
 
-  var program = Program()
+  var program = Program(forTesting: true)
 
   init() {}
 
