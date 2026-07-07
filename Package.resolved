@@ -1,12 +1,12 @@
 {
-  "originHash" : "8932895a712c769bde2194f2599f85cdeb5484c6e62f98f750c73639d376114d",
+  "originHash" : "f323909d112f11ef54871d1eb5483fa736efbde3513767c7b217902605ccc0a7",
   "pins" : [
     {
       "identity" : "archivist",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kyouko-taiga/Archivist.git",
       "state" : {
-        "revision" : "0b66ecdb3a0da5a94af49274e2751e3332f12b90"
+        "revision" : "9d5540fe2b7143c4ee1bb40e0f578a29bbfdf86f"
       }
     },
     {
@@ -33,15 +33,6 @@
       "location" : "https://github.com/ChimeHQ/LanguageServer",
       "state" : {
         "revision" : "2bbf9508fdf6f7a17b2c34776b7485af73de338a"
-      }
-    },
-    {
-      "identity" : "languageserverprotocol",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ChimeHQ/LanguageServerProtocol",
-      "state" : {
-        "revision" : "f7879c782c0845af9c576de7b8baedd946237286",
-        "version" : "0.14.0"
       }
     },
     {

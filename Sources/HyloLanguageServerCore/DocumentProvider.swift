@@ -39,11 +39,9 @@ private struct StandardLibraryCache {
 /// A simple compilation helper for LSP document processing
 private struct CompilationHelper {
 
-  var program: Program
+  var program = Program(forTesting: true)
 
-  init() {
-    self.program = Program()
-  }
+  init() {}
 
   /// Parses sources into a module
   @discardableResult
@@ -105,6 +103,11 @@ public actor DocumentProvider {
   let connection: JSONRPCClientConnection
   var workspaceFolders: [WorkspaceFolder] = []
 
+  /// Whether the connected client can render `CompletionItem.labelDetails` (LSP 3.17).
+  ///
+  /// Declared by the client in the `initialize` handshake; `false` until then.
+  public private(set) var clientSupportsCompletionLabelDetails = false
+
   // Standard library caching
   private var stdlibCache: [AbsoluteURL: StandardLibraryCache] = [:]
   public let defaultStdlibRoot: URL
@@ -141,6 +144,9 @@ public actor DocumentProvider {
     if let w = params.workspaceFolders {
       self.workspaceFolders = w
     }
+
+    clientSupportsCompletionLabelDetails =
+      params.capabilities.textDocument?.completion?.completionItem?.labelDetailsSupport ?? false
 
     logger.info(
       "Initialize in working directory: \(FileManager.default.currentDirectoryPath), with workspace folders: \(workspaceFolders)"
@@ -192,14 +198,25 @@ public actor DocumentProvider {
     return sources
   }
 
-  /// Builds a program with standard library loaded and typed
-  private func buildStandardLibraryProgram(from stdlibPath: AbsoluteURL) async throws
+  /// Builds a program with standard library loaded and typed.
+  ///
+  /// When `replacement` is given, its text is substituted for the on-disk contents of the source
+  /// file at its URL, so a library document's unsaved edits are reflected in the program.
+  private func buildStandardLibraryProgram(
+    from stdlibPath: AbsoluteURL, replacing replacement: (url: AbsoluteURL, text: String)? = nil
+  ) async throws
     -> StandardLibraryCache
   {
     logger.debug("Building standard library program from: \(stdlibPath)")
 
     // Load sources
-    let sources = try loadStandardLibrarySources(from: stdlibPath)
+    var sources = try loadStandardLibrarySources(from: stdlibPath)
+    if let replacement {
+      let name = FileName.local(replacement.url.url)
+      if let i = sources.firstIndex(where: { (s) in s.name == name }) {
+        sources[i] = SourceFile(name: name, contents: replacement.text)
+      }
+    }
 
     // Create program and helper
     var helper = CompilationHelper()
@@ -260,8 +277,15 @@ public actor DocumentProvider {
     let (standardLibrary, isStdlibDocument) = getStdlibPath(url)
 
     if isStdlibDocument {
-      // Document is part of standard library - just return the stdlib program
-      return try await getStandardLibraryProgram(root: standardLibrary).program
+      // The document is part of the standard library. The cached program reflects the on-disk
+      // sources; it can only be used while `text` matches them. Otherwise (unsaved edits, or the
+      // sentinel spliced by completion) the library is rebuilt with `text` substituted, uncached.
+      if (try? String(contentsOf: url.url, encoding: .utf8)) == text {
+        return try await getStandardLibraryProgram(root: standardLibrary).program
+      }
+      return try await buildStandardLibraryProgram(
+        from: standardLibrary, replacing: (url: url, text: text)
+      ).program
     }
 
     // Create a copy of the standard library program
@@ -302,6 +326,15 @@ public actor DocumentProvider {
     }
 
     return helper.program
+  }
+
+  /// Builds a `Program` for the document at `url` as if its contents were `text`.
+  ///
+  /// Used by completion to recover a parseable, type-checked program after splicing a sentinel
+  /// identifier at the cursor.
+  func buildProgram(at url: AbsoluteURL, replacingContentsWith text: String) async throws -> Program
+  {
+    try await buildProgramForDocument(url: url, text: text)
   }
 
   /// Renders the diagnostics in `ds` to a newline-separated string.

@@ -29,6 +29,12 @@ let serverCapabilities: ServerCapabilities = {
   c.referencesProvider = .optionA(true)
   c.documentHighlightProvider = .optionA(true)
   c.renameProvider = .optionB(RenameOptions(prepareProvider: true))
+  c.completionProvider = CompletionOptions(
+    workDoneProgress: false, triggerCharacters: ["."], allCommitCharacters: nil,
+    resolveProvider: false,
+    // The server can render a callable's signature in `labelDetails` (when the client also
+    // supports it; see `HyloRequestHandler.completion`).
+    completionItem: CompletionOptions.CompletionItem(labelDetailsSupport: true))
 
   return c
 }()

@@ -1,0 +1,18 @@
+struct P {
+  let member: Int64
+  memberwise init
+  
+  fun asd() {
+    bsd()
+  }
+
+  static fun bsd() {
+    
+    asd(self: .new(member: .new()))
+
+    // unqualified autocomplete should list `Self.*` and should autocomplete them (without inserting `Self.`)
+    //  - asd(self: ...)  // no explicit qualification is needed
+    //  - b(bsd)  // no explicit qualification is needed
+  }
+}
+

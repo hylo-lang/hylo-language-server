@@ -1,0 +1,61 @@
+struct Point {
+  var x: Int
+  var y: Int
+
+  memberwise init
+
+  fun infix+(other: Self) -> Self {
+    .new(x: x + other.x, y: y + other.y)
+  }
+
+  fun abs() -> Self {
+    .new(x: x.absolute(), y: y.absolute())
+  }
+
+  fun infix+=(other: Self) inout {
+    &self.x = x + other.x
+    &self.y = y + other.y
+  }
+
+  subscript negated() inout -> Point {
+    self.x = -self.x
+    self.y = -self.y
+    yield self
+    self.x = -self.x
+    self.y = -self.y
+  }
+}
+
+fun m() {
+    var p = Point(x: 1, y: 7)
+
+    &p.negated[] += .new(x: 2, y: 23)
+
+    // last use
+
+
+}
+
+extension Int {
+  fun prefix-() -> Int {
+    0 - self
+  }
+  fun absolute() -> Int {
+    if self < 0 { -self } else { self }
+  }
+}
+
+// a| // a[x:]
+
+
+struct P {
+  memberwise init
+
+  subscript m(y x: Int) -> Int {  
+    yield 5
+  }
+}
+
+let p = P().m[y: 3]
+
+// P().m| // m[_:] 
