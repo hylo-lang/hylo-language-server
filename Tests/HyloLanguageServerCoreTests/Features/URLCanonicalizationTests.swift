@@ -29,7 +29,7 @@ final class URLCanonicalizationTests: XCTestCase {
     let alias = base.appendingPathComponent("alias")
     try fm.createDirectory(at: real, withIntermediateDirectories: true)
     try fm.createSymbolicLink(at: alias, withDestinationURL: real)
-    addTeardownBlock { try? fm.removeItem(at: base) }
+    addTeardownBlock { try? FileManager.default.removeItem(at: base) }
     return (real, alias)
   }
 
@@ -175,7 +175,7 @@ final class URLCanonicalizationTests: XCTestCase {
       try fm.createDirectory(at: v1, withIntermediateDirectories: true)
       try fm.createDirectory(at: v2, withIntermediateDirectories: true)
       try fm.createSymbolicLink(at: alias, withDestinationURL: v1)
-      addTeardownBlock { try? fm.removeItem(at: base) }
+      addTeardownBlock { try? FileManager.default.removeItem(at: base) }
 
       let source = try MarkedSource(
         """
