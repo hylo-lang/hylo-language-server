@@ -274,7 +274,7 @@ extension Program {
     if type == .error { return CompletionList(isIncomplete: true, items: []) }
 
     let scope = scope(at: qualification.erased)
-    let candidates = members(of: type, in: m, visibleFrom: scope, static: wantsStatic)
+    let candidates = members(of: type, in: m, visibleFrom: scope, resolvedStatically: wantsStatic)
       .compactMap { (c) in completionCandidate(forMember: c, selectedStatically: wantsStatic) }
     // The result is the complete member set and is not prefix-filtered, so the client may filter it
     // locally without re-querying on every keystroke.
@@ -309,11 +309,12 @@ extension Program {
   private mutating func completionCandidate(
     forMember c: MemberCandidate, selectedStatically selectionIsStatic: Bool
   ) -> CompletionCandidate? {
-    let memberIsStatic = isStaticMember(c.declaration)
+    guard let d = c.declaration.target else { return nil }
+    let memberIsStatic = isStaticMember(d)
     let isUnboundMember = selectionIsStatic && !memberIsStatic
     guard
       var candidate = CompletionCandidate(
-        from: c.declaration, in: self, includeSelf: isUnboundMember)
+        from: d, in: self, includeSelf: isUnboundMember)
     else { return nil }
     candidate.item = candidate.item.reranked(
       asPrimary: memberIsStatic == selectionIsStatic,
@@ -355,8 +356,8 @@ extension Program {
     for type in expectedTypes {
       // Implicit-member access is a static selection (like `T.`); an instance member reached this
       // way is an *unbound* selection whose snippet must carry the leading `self:` parameter.
-      for c in members(of: type, in: m, visibleFrom: scope, static: true) {
-        guard seen.insert(c.declaration).inserted else { continue }
+      for c in members(of: type, in: m, visibleFrom: scope, resolvedStatically: true) {
+        guard let d = c.declaration.target, seen.insert(d).inserted else { continue }
         if let candidate = completionCandidate(forMember: c, selectedStatically: true) {
           candidates.append(candidate)
         }
