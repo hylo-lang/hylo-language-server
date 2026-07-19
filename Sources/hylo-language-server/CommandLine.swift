@@ -17,8 +17,8 @@ struct HyloLspCommand: AsyncParsableCommand {
   // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#implementationConsiderations
   // These are VS Code compatible transport flags:
 
-  @Flag(help: "Stdio transport")
-  var stdio: Bool = true  // Obsolete, kept for compatibility
+  @Flag(help: "Stdio transport (deprecated, always using stdio)")
+  var stdio: Bool = false  // Obsolete, kept for compatibility
 
   @Option(help: "Path to the Hylo standard library")
   var stdlibPath: String = bundledStandardLibrarySources.path
