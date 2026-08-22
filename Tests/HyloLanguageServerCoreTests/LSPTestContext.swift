@@ -73,6 +73,11 @@ public actor LSPTestContext {
       parameters: params
     )
 
+    // Deterministic by default: debounced publishes never fire mid-test, and publishes go
+    // nowhere. Push-pipeline tests reconfigure with a recorder and flush explicitly.
+    await documentProvider.configureDiagnosticsForTesting(
+      debounce: .seconds(3600), sink: { _ in })
+
     let requestHandler = HyloRequestHandler(
       connection: connection, logger: logger, documentProvider: documentProvider)
 
@@ -155,6 +160,15 @@ public actor LSPTestContext {
     )
 
     return try await requestHandler.definition(id: .numericId(1), params: params).get()
+  }
+
+  public func declaration(uri: URL, at position: Position) async throws -> DeclarationResponse {
+    let params = TextDocumentPositionParams(
+      textDocument: TextDocumentIdentifier(uri: uri.absoluteString),
+      position: position
+    )
+
+    return try await requestHandler.declaration(id: .numericId(1), params: params).get()
   }
 
   public func references(

@@ -53,27 +53,17 @@ extension HyloRequestHandler {
 
     await reportingLSPError {
       let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
-      let p = doc.program
-
-      let s = try p.requireSourceFile(at: doc.url)
-      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
 
       guard
-        let node = p.innermostTree(
-          containing: cursor, reportingLogsTo: logger, in: s)
+        let renamee = doc.program.declaration(
+          at: params.position, of: doc.url, reportingLogsTo: logger)
       else { return nil }
 
-      if let name = p.cast(node, to: NameExpression.self) {
-        guard let renamee = p.declaration(maybeReferredToBy: name)?.target
-        else { return nil }  // No target to rename for related declaration.
-
-        return workspaceEditsForRenaming(declaration: renamee, to: params.newName, in: p)
-      }
-
-      if let declaration = p.castToDeclaration(node) {
-        return workspaceEditsForRenaming(declaration: declaration, to: params.newName, in: p)
-      }
-      return nil
+      // Scan the declaring module's closure so uses in dependents are renamed too.
+      let (scanProgram, scanTarget) = try await documentProvider.closure(
+        potentiallyReferencing: renamee, resolvedIn: doc, at: params.position)
+      return workspaceEditsForRenaming(
+        declaration: scanTarget, to: params.newName, in: scanProgram)
     }
   }
 

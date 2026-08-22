@@ -12,8 +12,12 @@ sources on the current branch and against the LSP 3.17 specification. File and l
 references are accurate as of writing but will drift; treat them as starting points,
 not guarantees.
 
-Companion documents, for the one feature this guide treats only in summary:
+Companion documents:
 
+- `LSP-BUILD-SYSTEM-INTEGRATION.md` — the project model: how the server learns the
+  workspace's module graph (manifests, discovery, `ProjectModel`).
+- `LSP-PROGRAM-LIFECYCLE.md` — which program each query is answered from, caching and
+  invalidation, and how diagnostics are scheduled and published.
 - `docs/research/autocompletion/SYNTHESIS.md` — how mature language servers implement
   completion (rust-analyzer, Swift/SourceKit, Scala Metals, Merlin, TypeScript,
   Roslyn, HLS), fact-checked against the upstream sources.
@@ -38,15 +42,18 @@ know what is there.
   `HyloNotificationHandler` (structs conforming to ChimeHQ's handler protocols),
   with each feature implemented as an extension method.
 - **State is held in one actor**, `DocumentProvider` (`DocumentProvider.swift`),
-  which owns the open documents, their built `Program`s, and the cached standard
-  library. Swift's actor isolation serializes all access; there is no manual
+  which owns the open documents, the resolved workspace plans, and the program
+  caches (per-module archives, per-scope program memos, the memoized standard
+  library). Swift's actor isolation serializes all access; there is no manual
   locking. (`Utils/MVS.swift` is value-mutation sugar, not a concurrency tool.)
   Note that `-strict-concurrency=complete` is currently commented out in
   `Package.swift`, so the compiler is not verifying isolation for you.
-- **Features already implemented**, most of them substantially: diagnostics (pull
-  model), hover, definition, references, document highlight, rename (with
-  `prepareRename`), document symbols, semantic tokens (full-document), and
-  completion. There is also a custom `givens` command (`Commands/ListGivens.swift`)
+- **Features already implemented**, most of them substantially: diagnostics
+  (pushed, debounced; see `LSP-PROGRAM-LIFECYCLE.md` §6), hover, definition,
+  declaration, references, document highlight, rename (with `prepareRename`),
+  document symbols, semantic tokens (full-document), and completion. The project
+  model (`hylo-project.json`) gives multi-file and multi-module analysis with file
+  watching (`LSP-BUILD-SYSTEM-INTEGRATION.md`). There is also a custom `givens` command (`Commands/ListGivens.swift`)
   that reports the in-scope givens at a position — useful for understanding Hylo's
   implicit resolution while debugging.
 
@@ -201,11 +208,11 @@ re-learning the hard way:
   capability flags. Emitting the rich shape to a client that didn't advertise it is a
   classic interop bug.
 
-This server handles the lifecycle (`exit` is gated through an `AsyncSemaphore`), but
-several lifecycle and workspace notifications are empty stubs: `initialized`,
-`didSave`, `didChangeConfiguration`, `didChangeWatchedFiles`, and the workspace-folder
-and file-operation events. That is fine for a single-file editing experience and a
-gap for project-wide behavior (§9).
+This server handles the lifecycle (`exit` is gated through an `AsyncSemaphore`).
+`initialized` starts file watching; `didChangeWatchedFiles` and workspace-folder
+changes are wired into cache invalidation and diagnostics refresh
+(`DocumentProvider.handleWatchedFileChanges`, `changeWorkspaceFolders`). `didSave`,
+`didChangeConfiguration`, and the file-operation events remain stubs.
 
 ### 5.2 Text sync
 
@@ -238,22 +245,20 @@ Two delivery models exist:
   `resultId`" to avoid recomputation. Needs a 3.17 client and is gated by a server
   `diagnosticProvider` capability.
 
-**Where this server stands.** It uses **pull**, advertising `DiagnosticOptions` with
-`interFileDependencies = false` and `workspaceDiagnostics = false`
-(`Features/Diagnostics.swift`, `ServerCapabilities.swift`). On a
-`textDocument/diagnostic` request it reads the cached `Program`'s diagnostics for the
-file (`Program.diagnostics(in:)`), partitions them into this-document versus related,
-and returns a `RelatedDocumentDiagnosticReport`. Severity maps cleanly (note →
-information, warning, error), and notes become `relatedInformation`.
+**Where this server stands.** It uses **push**: a debounced, bucket-based publisher
+(`DocumentProvider+PushDiagnostics.swift`) rebuilds a changed document's module after
+quiescence and publishes per-file diagnostics for it and every affected open document —
+so an edit in one file *does* refresh stale errors in open dependents. The design (the
+store, the drain, versioning, clearing rules) is specified in
+`LSP-PROGRAM-LIFECYCLE.md` §6. No `diagnosticProvider` is advertised — running both
+models double-renders squiggles — but the pull handler
+(`Features/Diagnostics.swift`) remains implemented for clients that request it anyway;
+it partitions `Program.diagnostics(in:)` into this-document versus related and returns
+a `RelatedDocumentDiagnosticReport`. Severity maps cleanly (note → information,
+warning, error), and notes become `relatedInformation`.
 
-This is a reasonable choice and well-supported by the frontend (the diagnostic
-pipeline is complete: `Diagnostic`, `DiagnosticSet`, per-module accumulation, and
-`Program.diagnostics`). Two things to be aware of. First, the ChimeHQ
-`LanguageServerProtocol` package does **not** model `workspace/diagnostic`, so the
-workspace-wide pull is not available to you off the shelf even if you wanted it.
-Second, with `interFileDependencies = false`, an edit in one file will not refresh
-stale errors in another that depends on it; given Hylo's whole-module typing this is a
-real limitation for multi-file projects, not just a nicety.
+One package caveat: ChimeHQ `LanguageServerProtocol` does **not** model
+`workspace/diagnostic`, so workspace-wide pull is not available off the shelf.
 
 ---
 
@@ -264,7 +269,7 @@ provides. "Frontend" entries are the load-bearing APIs. Detail follows the table
 
 | Feature | Server status | Frontend support | The catch |
 |---|---|---|---|
-| Diagnostics | Done (pull) | Complete (`Program.diagnostics`) | No inter-file refresh; no workspace pull |
+| Diagnostics | Done (push; pull handler kept) | Complete (`Program.diagnostics`) | Closed dependents refresh only via the planned background tier |
 | Hover | Done | Partial: type via `Program.type(assignedTo:)`, signature via `TreePrinter`/`Program.show` | **No doc comments** (discarded by lexer) |
 | Definition | Done | Partial: `Program.declaration(referredToBy:)` → `DeclarationReference.target` → `Program[id].site` | Must re-resolve; resolution not persisted as a map |
 | Document symbols | Done | Complete: `declarations(lexicallyIn:)`, `name(of:)`, `tag(of:)`, `.site` | — |
@@ -368,10 +373,11 @@ The pieces that are not features but make features behave well:
 - **Progress and partial results** (`$/progress`): `workDoneToken` reports long
   operations (initial indexing) to the UI; `partialResultToken` streams large list
   responses (references, workspace symbols) incrementally instead of in one payload.
-- **File watching** (`workspace/didChangeWatchedFiles`): the *client* watches the
-  filesystem; you register globs and react to changes in files that are not open in an
-  editor (a dependency `.hylo`, a project file). Do not roll your own watcher. This is
-  a stub today.
+- **File watching** (`workspace/didChangeWatchedFiles`): implemented, partitioned —
+  a client supporting dynamic registration watches the workspace folders, and a
+  server-side watcher (`FileSystemWatcher.swift`) covers the roots outside them (or
+  everything, for bare clients). Both funnel into one handler; see
+  `LSP-PROGRAM-LIFECYCLE.md` §6b.
 - **Configuration** (`workspace/configuration` to pull settings after `initialized`;
   `workspace/didChangeConfiguration` to be told they changed). Both stubs today.
 - **The `data` resolve round-trip.** Several requests (`completionItem/resolve`,

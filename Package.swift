@@ -38,12 +38,16 @@ let package = Package(
     .package(
       url: "https://github.com/ChimeHQ/LanguageServer",
       revision: "2bbf9508fdf6f7a17b2c34776b7485af73de338a"),
-    // A submodule of our LanguageServerProtocol fork, overriding the transitive dependency of
-    // `LanguageServer` to add `CompletionItem.labelDetails` (LSP 3.17). Drop the submodule and
-    // this entry once https://github.com/ChimeHQ/LanguageServerProtocol/pull/38 is merged and
-    // released; `LanguageServer`'s own `from: 0.13.4` requirement then picks it up.
-    .package(path: "./LanguageServerProtocol"),
+    .package(
+      url: "https://github.com/ChimeHQ/LanguageServerProtocol.git", 
+      revision: "82be567879ade4d904c81bff1006c5de6f78babb"),
     .package(path: "./hylo-new"),
+    .package(
+      url: "https://github.com/kyouko-taiga/Archivist.git",
+      revision: "9d5540fe2b7143c4ee1bb40e0f578a29bbfdf86f"),
+    .package(
+      url: "https://github.com/tothambrus11/SwiftyFileSystemWatcher",
+      revision: "0d715c535b4d2325031fa49922ceb806beb335a6"),
   ],
   targets: [
 
@@ -57,6 +61,8 @@ let package = Package(
         "LanguageServer",
         .product(name: "HyloStandardLibrary", package: "hylo-new"),
         .product(name: "HyloFrontEnd", package: "hylo-new"),
+        .product(name: "Archivist", package: "archivist"),
+        "SwiftyFileSystemWatcher",
       ],
       swiftSettings: commonCompileSettings
     ),

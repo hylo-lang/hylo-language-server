@@ -1,5 +1,5 @@
 {
-  "originHash" : "fceaa5ba750949274d5a2f2c88e4c9387bf19e260f63e156c568f4d0463efd6f",
+  "originHash" : "2aa41cfe1b0f2bbc5a7c67d3b135977ff74ef5ef9a0e7f4d7a71720aea5e9b24",
   "pins" : [
     {
       "identity" : "archivist",
@@ -33,6 +33,14 @@
       "location" : "https://github.com/ChimeHQ/LanguageServer",
       "state" : {
         "revision" : "2bbf9508fdf6f7a17b2c34776b7485af73de338a"
+      }
+    },
+    {
+      "identity" : "languageserverprotocol",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ChimeHQ/LanguageServerProtocol.git",
+      "state" : {
+        "revision" : "82be567879ade4d904c81bff1006c5de6f78babb"
       }
     },
     {
@@ -105,6 +113,14 @@
       "state" : {
         "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
         "version" : "602.0.0"
+      }
+    },
+    {
+      "identity" : "swiftyfilesystemwatcher",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tothambrus11/SwiftyFileSystemWatcher",
+      "state" : {
+        "revision" : "0d715c535b4d2325031fa49922ceb806beb335a6"
       }
     }
   ],

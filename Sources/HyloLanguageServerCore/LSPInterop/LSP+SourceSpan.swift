@@ -33,8 +33,8 @@ extension LanguageServerProtocol.LSPRange {
 extension LanguageServerProtocol.Position {
 
   public init(_ pos: SourcePosition) {
-    let (line, column) = pos.lineAndUTF16Offset
-    self.init(line: line, character: column)
+    let p = pos.lineAndUTF16Offset
+    self.init(line: p.line, character: p.offset)
   }
 
 }

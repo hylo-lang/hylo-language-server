@@ -6,55 +6,29 @@ import Logging
 
 extension HyloRequestHandler {
 
+  /// Handles `textDocument/definition`.
   public func definition(id: JSONId, params: TextDocumentPositionParams) async -> Response<
     DefinitionResponse
   > {
     await reportingLSPError {
-      let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
-
-      let p = doc.program
-      let s = try p.requireSourceFile(at: doc.url)
-      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
-
-      return if let site = resolveDefinitionSite(cursor, in: doc.program, logger: logger, in: s) {
-        .optionA(Location(site))
-      } else {
-        nil
-      }
+      try await definitionLocation(for: params)
     }
   }
 
-}
+  /// Resolves the location of the declaration referred to at `params`' position, or `nil` if the
+  /// position does not refer to a declaration.
+  func definitionLocation(
+    for params: TextDocumentPositionParams
+  ) async throws -> DeclarationResponse {
+    let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
 
-/// Returns the site of the declaration referred to at `p` in `f`, if any.
-func resolveDefinitionSite(
-  _ p: SourcePosition, in program: Program, logger: Logger, in f: SourceFile.ID
-) -> SourceSpan? {
-  if let d = program.innermostTree(containing: p, reportingLogsTo: logger, in: f),
-    let decl = program.resolveDefinition(d, visibleFrom: program.scope(at: d))
-  {
-    program[decl].site
-  } else {
-    nil
-  }
-}
-
-extension Program {
-
-  func resolveDefinition(
-    _ node: AnySyntaxIdentity, visibleFrom scopeOfUse: ScopeIdentity
-  ) -> DeclarationIdentity? {
-    if let c = cast(node, to: Call.self),
-      let n = cast(self[c].callee, to: NameExpression.self)
+    if let d = doc.program.declaration(
+      at: params.position, of: doc.url, reportingLogsTo: logger)
     {
-      return declaration(maybeReferredToBy: n)?.target
+      return .optionA(Location(doc.program[d].site))
+    } else {
+      return nil
     }
-
-    if let nameId = cast(node, to: NameExpression.self) {
-      return declaration(maybeReferredToBy: nameId)?.target
-    }
-
-    return nil
   }
 
 }

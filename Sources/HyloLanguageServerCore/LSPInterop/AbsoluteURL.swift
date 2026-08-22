@@ -71,6 +71,15 @@ public struct AbsoluteURL: Sendable, Hashable, CustomStringConvertible {
     toNativeSeparators(url.path)
   }
 
+  /// The absolute path in canonical spelling, with `/` separators.
+  ///
+  /// Percent-decoded, with `.`/`..` collapsed and the Windows drive letter lowercased. Two
+  /// URLs denoting the same file share this string, so it is a stable cross-component key —
+  /// unlike a raw `URL.path`, whose spelling varies with the URL's original encoding.
+  public var canonicalPath: String {
+    url.path
+  }
+
   /// The absolute URL as a string.
   public var description: String {
     url.absoluteString
