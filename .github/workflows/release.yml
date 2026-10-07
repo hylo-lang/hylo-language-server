@@ -46,8 +46,8 @@ jobs:
         include:
           - { os: ubuntu-24.04,     target: linux-x64 }
           - { os: ubuntu-24.04-arm, target: linux-arm64 }
-          - { os: macos-15,         target: macos-arm64 }
-          - { os: macos-15-intel,   target: macos-x64 }
+          - { os: macos-26,         target: macos-arm64 }
+          - { os: macos-26-intel,   target: macos-x64 }
           - { os: windows-2025,     target: windows-x64 }
           - { os: windows-11-arm,   target: windows-arm64 }
 
@@ -64,7 +64,7 @@ jobs:
       - name: Set up Swift
         uses: SwiftyLab/setup-swift@latest
         with:
-          swift-version: "6.2"
+          swift-version: "6.3.0"
 
       - name: Build distributable
         run: swift build -c release --verbose --product hylo-language-server --static-swift-stdlib

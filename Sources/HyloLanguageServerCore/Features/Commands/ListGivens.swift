@@ -32,8 +32,7 @@ extension HyloRequestHandler {
         throw LSPError.invalidParameter(message: "First argument must be a Location.")
       }
 
-      let source = try AbsoluteURL(fromUrlString: location.uri)
-      let d = try await documentProvider.getDocumentContext(at: source)
+      let d = try await documentProvider.getDocumentContext(forUri: location.uri)
       return try givens(arguments: arguments, location: location, document: d)
     }
   }

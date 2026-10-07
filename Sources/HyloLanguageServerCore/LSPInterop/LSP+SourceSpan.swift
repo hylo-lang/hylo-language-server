@@ -6,15 +6,18 @@ extension FileName {
 
   /// The LSP absolute URL of `self`.
   public var absoluteUrl: AbsoluteURL {
-    AbsoluteURL(self.url)
+    // `FileName`s in a server-built program are minted from `AbsoluteURL`s, so their URLs are
+    // already canonical and need no further canonicalization.
+    AbsoluteURL(fromCanonical: self.url)
   }
 
 }
 
 extension LanguageServerProtocol.Location {
 
+  /// Creates an instance locating `range`, addressed by its file's canonical URL.
   public init(_ range: SourceSpan) {
-    self.init(uri: range.absoluteURL.url.absoluteString, range: LSPRange(range))
+    self.init(uri: range.absoluteURL.description, range: LSPRange(range))
   }
 
 }
@@ -30,8 +33,8 @@ extension LanguageServerProtocol.LSPRange {
 extension LanguageServerProtocol.Position {
 
   public init(_ pos: SourcePosition) {
-    let (line, column) = pos.lineAndUTF16Offset
-    self.init(line: line, character: column)
+    let p = pos.lineAndUTF16Offset
+    self.init(line: p.line, character: p.offset)
   }
 
 }

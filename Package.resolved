@@ -1,12 +1,12 @@
 {
-  "originHash" : "8932895a712c769bde2194f2599f85cdeb5484c6e62f98f750c73639d376114d",
+  "originHash" : "2aa41cfe1b0f2bbc5a7c67d3b135977ff74ef5ef9a0e7f4d7a71720aea5e9b24",
   "pins" : [
     {
       "identity" : "archivist",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kyouko-taiga/Archivist.git",
       "state" : {
-        "revision" : "0b66ecdb3a0da5a94af49274e2751e3332f12b90"
+        "revision" : "9d5540fe2b7143c4ee1bb40e0f578a29bbfdf86f"
       }
     },
     {
@@ -38,10 +38,9 @@
     {
       "identity" : "languageserverprotocol",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ChimeHQ/LanguageServerProtocol",
+      "location" : "https://github.com/ChimeHQ/LanguageServerProtocol.git",
       "state" : {
-        "revision" : "f7879c782c0845af9c576de7b8baedd946237286",
-        "version" : "0.14.0"
+        "revision" : "82be567879ade4d904c81bff1006c5de6f78babb"
       }
     },
     {
@@ -108,12 +107,38 @@
       }
     },
     {
+      "identity" : "swift-subprocess",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-subprocess.git",
+      "state" : {
+        "revision" : "b3937ab85dd32f6e9435914599c1519074769c1a",
+        "version" : "1.0.0"
+      }
+    },
+    {
       "identity" : "swift-syntax",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-syntax",
       "state" : {
         "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
         "version" : "602.0.0"
+      }
+    },
+    {
+      "identity" : "swift-system",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-system",
+      "state" : {
+        "revision" : "869129b7bf4ecc57b97d0193ad29690ca2134750",
+        "version" : "1.8.1"
+      }
+    },
+    {
+      "identity" : "swiftyfilesystemwatcher",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tothambrus11/SwiftyFileSystemWatcher",
+      "state" : {
+        "revision" : "0d715c535b4d2325031fa49922ceb806beb335a6"
       }
     }
   ],

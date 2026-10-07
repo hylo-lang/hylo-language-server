@@ -10,24 +10,18 @@ extension HyloRequestHandler {
     id: JSONId, params: SemanticTokensParams
   ) async -> Response<SemanticTokensResponse> {
     await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let p = try await documentProvider.getDocumentContext(at: source).program
-      return try await semanticTokensFull(id: id, params: params, program: p)
+      let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
+      return try await semanticTokensFull(
+        id: id, params: params, program: doc.program, source: doc.url)
     }
   }
 
   public func semanticTokensFull(
-    id: JSONId, params: SemanticTokensParams, program: Program
+    id: JSONId, params: SemanticTokensParams, program: Program, source: AbsoluteURL
   ) async throws -> SemanticTokensResponse {
     logger.debug("List semantic tokens in document: \(params.textDocument.uri)")
 
-    let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-    guard let s = program.sourceFile(named: source.localFileName) else {
-      logger.error("Failed to locate translation unit for document: \(params.textDocument.uri)")
-      throw LSPError.invalidParameter(
-        message:
-          "Failed to locate translation unit for document: \(params.textDocument.uri)")
-    }
+    let s = try program.requireSourceFile(at: source)
 
     let ds = program.topLevelDeclarations(in: s)
 
@@ -742,8 +736,10 @@ where TopLevelDeclarations.Element == DeclarationIdentity {
   }
 
   mutating func addRemoteTypeExpression(_ e: RemoteTypeExpression) {
-    // Add access effect
-    addKeyword(at: e.access.site)
+    // Add access effect unless implicit
+    if !e.access.site.region.isEmpty {
+      addKeyword(at: e.access.site)
+    }
 
     // Add projectee type
     addSyntax(e.projectee.erased)

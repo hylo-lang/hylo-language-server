@@ -28,6 +28,29 @@ final class DiagnosticsFeatureTests: XCTestCase {
     XCTAssertEqual(diagnostic.message, "undefined symbol 'missingName'")
   }
 
+  /// A close/reopen cycle serves the same diagnostics on the reopen pull: the client clears its
+  /// pulled diagnostics when a tab closes, so the pull after `didOpen` must reproduce them.
+  func testDiagnosticsSurviveCloseAndReopen() async throws {
+    let source = try MarkedSource(
+      """
+      public fun main() {
+        let y = missingName
+      }
+      """)
+
+    let uri = try await context.openDocument(source)
+    let before = try await context.diagnostics(uri: uri)
+    XCTAssertFalse(try XCTUnwrap(before.items).isEmpty, "expected an error before the close")
+
+    try await context.closeDocument(uri)
+    _ = try await context.openDocument(source, uri: uri.absoluteString)
+
+    let after = try await context.diagnostics(uri: uri)
+    XCTAssertFalse(
+      try XCTUnwrap(after.items).isEmpty,
+      "the reopen pull must reproduce the diagnostics the client cleared on close")
+  }
+
 }
 
 extension LSPTestContext {

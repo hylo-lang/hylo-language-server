@@ -31,10 +31,14 @@ public actor LSPTestContext {
   }
 
   /// Creates a fully initialized test context with the given workspace configuration.
+  ///
+  /// Pass `supportsCompletionLabelDetails` to handshake as a client that renders
+  /// `CompletionItem.labelDetails`.
   public static func make(
     tag: String,
     rootUri: String? = nil,
-    workspaceFolders: [WorkspaceFolder] = []
+    workspaceFolders: [WorkspaceFolder] = [],
+    supportsCompletionLabelDetails: Bool = false
   ) async throws -> LSPTestContext {
     var logger = Logger(label: tag)
     logger.logLevel = .debug
@@ -42,8 +46,15 @@ public actor LSPTestContext {
     let dataChannel = DataChannel.stdioPipe()
     let connection = JSONRPCClientConnection(dataChannel)
 
+    let textDocument: TextDocumentClientCapabilities? =
+      supportsCompletionLabelDetails
+      ? TextDocumentClientCapabilities(
+        completion: CompletionClientCapabilities(
+          completionItem: .init(labelDetailsSupport: true)))
+      : nil
+
     let capabilities = ClientCapabilities(
-      workspace: nil, textDocument: nil, window: nil, general: nil, experimental: nil)
+      workspace: nil, textDocument: textDocument, window: nil, general: nil, experimental: nil)
     let params = InitializeParams(
       processId: nil,
       locale: nil,
@@ -61,6 +72,11 @@ public actor LSPTestContext {
       standardLibrary: StandardLibrary.bundledStandardLibrarySources,
       parameters: params
     )
+
+    // Deterministic by default: debounced publishes never fire mid-test, and publishes go
+    // nowhere. Push-pipeline tests reconfigure with a recorder and flush explicitly.
+    await documentProvider.configureDiagnosticsForTesting(
+      debounce: .seconds(3600), sink: { _ in })
 
     let requestHandler = HyloRequestHandler(
       connection: connection, logger: logger, documentProvider: documentProvider)
@@ -144,6 +160,15 @@ public actor LSPTestContext {
     )
 
     return try await requestHandler.definition(id: .numericId(1), params: params).get()
+  }
+
+  public func declaration(uri: URL, at position: Position) async throws -> DeclarationResponse {
+    let params = TextDocumentPositionParams(
+      textDocument: TextDocumentIdentifier(uri: uri.absoluteString),
+      position: position
+    )
+
+    return try await requestHandler.declaration(id: .numericId(1), params: params).get()
   }
 
   public func references(

@@ -8,18 +8,16 @@ extension HyloRequestHandler {
 
   public func references(id: JSONId, params: ReferenceParams) async -> Response<ReferenceResponse> {
     await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let doc = try await documentProvider.getDocumentContext(at: source)
-      let p = doc.program
-      let s = try p.requireSourceFile(at: source)
-      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
+      let doc = try await documentProvider.getDocumentContext(forUri: params.textDocument.uri)
 
-      guard let target = p.innermostTree(containing: cursor, reportingLogsTo: logger, in: s)
+      guard
+        let d = doc.program.declaration(
+          at: params.position, of: doc.url, reportingLogsTo: logger)
       else { return nil }
 
-      guard let d = p.castToDeclaration(target) else { return nil }
-
-      return findReferences(of: d, in: doc.program).map(Location.init)
+      let (scanProgram, scanTarget) = try await documentProvider.closure(
+        potentiallyReferencing: d, resolvedIn: doc, at: params.position)
+      return findReferences(of: scanTarget, in: scanProgram).map(Location.init)
     }
   }
 

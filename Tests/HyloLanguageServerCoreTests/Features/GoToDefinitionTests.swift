@@ -57,6 +57,59 @@ final class GoToDefinitionTests: XCTestCase {
     }
   }
 
+  func testDefinitionOnDeclarationResolvesToItself() async throws {
+    // When the cursor is already on a declaration's name, "Go to Definition" returns
+    // the declaration itself. Clients such as VS Code detect that the returned range
+    // contains the cursor and fall back to showing the symbol's references instead.
+    let source = try MarkedSource(
+      """
+      fun 0️⃣fact1️⃣orial2️⃣(n: Int) -> Int {
+        if n < 2 { 1 } else { n * 3️⃣factorial4️⃣(n - 1) }
+      }
+
+      public fun main() {
+        let _ = 5️⃣factorial6️⃣(6)
+      }
+      """)
+
+    let uri = try await context.openDocument(source)
+
+    for marker in [0, 1, 2] {
+      let cursor = source.markers[marker]
+      let d = try await context.definition(uri: uri, at: cursor)
+
+      XCTAssertEqual(
+        try text(of: d, in: source),
+        """
+        fun factorial(n: Int) -> Int {
+          if n < 2 { 1 } else { n * factorial(n - 1) }
+        }
+        """)
+
+      guard case .optionA(let location) = d else {
+        throw TestFailure("Expected optionA - single location")
+      }
+      let start = try XCTUnwrap(location.range.start.stringIndex(in: source.source))
+      let end = try XCTUnwrap(location.range.end.stringIndex(in: source.source))
+      let c = try XCTUnwrap(cursor.stringIndex(in: source.source))
+      XCTAssertTrue(
+        (start ..< end).contains(c),
+        "Definition of a declaration should contain the cursor (marker \(marker)) so clients "
+          + "can detect they are already at the definition and fall back to references")
+    }
+
+    // The client's fallback then requests references at the same position; the
+    // declaration position must yield the symbol's usages.
+    let references = try await XCTUnwrapAsync(
+      await context.references(uri: uri, at: source.markers[0], includeDeclaration: false))
+    XCTAssertEqual(
+      Set(references.map(\.range)),
+      [
+        LSPRange(start: source.markers[3], end: source.markers[4]),
+        LSPRange(start: source.markers[5], end: source.markers[6]),
+      ])
+  }
+
   func testBothSidesOfIdentifiersMatch() async throws {
     let source = try MarkedSource(
       """

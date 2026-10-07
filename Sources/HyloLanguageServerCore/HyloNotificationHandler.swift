@@ -35,7 +35,7 @@ public struct HyloNotificationHandler: NotificationHandler {
   }
 
   public func initialized(_ params: InitializedParams) async {
-
+    await documentProvider.startFileWatching()
   }
 
   public func exit() async {
@@ -86,7 +86,7 @@ public struct HyloNotificationHandler: NotificationHandler {
   }
 
   public func workspaceDidChangeWatchedFiles(_ params: DidChangeWatchedFilesParams) async {
-
+    await documentProvider.handleWatchedFileChanges(params.changes)
   }
 
   public func windowWorkDoneProgressCancel(_ params: WorkDoneProgressCancelParams) async {
