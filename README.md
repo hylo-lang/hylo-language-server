@@ -55,17 +55,23 @@ declared only when `HYLO_LSP_WASM` is set, built with a WebAssembly Swift SDK an
 links FoundationEssentials instead of Foundation:
 
 ```sh
-HYLO_LSP_WASM=1 swift build --product hylo-language-server-wasm \
+HYLO_LSP_WASM=1 swift build -c release --product hylo-language-server-wasm \
   --swift-sdks-path <directory of the SDK> --swift-sdk swift-6.4.0-RELEASE_wasm \
   --toolset Toolsets/foundation-essentials.toolset.json
 ```
 
-It does not link yet, because some dependencies still use Foundation where WebAssembly lacks it:
+The build must be optimized, because BigInt, used by the frontend, calls Foundation's
+`NSDecimalRound`, which links only once inlined. Even so, it does not build yet, because some
+dependencies still use Foundation where WebAssembly lacks it:
 
 - JSONRPC's `DataChannel+StdioPipe.swift` uses `FileHandle.readabilityHandler`;
 - LanguageServerProtocol uses Foundation in `Snippet.swift`, `NSRegularExpression+Matching.swift`
-  and `MessageFraming.swift`;
-- BigInt, used by the frontend, calls `NSDecimalRound`.
+  and `MessageFraming.swift`.
+
+Until these dependencies support WebAssembly, the driver builds only from local edits of them
+(`swift package edit`) that leave the first three files out of WebAssembly builds with
+`#if !os(WASI)`, and that trim header values in `MessageFraming.swift` without
+`trimmingCharacters(in:)`. The driver uses none of the code left out.
 
 The host of the driver calls `lsp_init` once with the standard library (a JSON object mapping
 the URI of each source to its text), then `lsp_handle` with each JSON-RPC message from the
