@@ -2,7 +2,8 @@ import FrontEnd
 import LanguageServerProtocol
 import Logging
 
-/// The documents a client opened, each analyzed in a program of its own with the standard library.
+/// The documents a client opened, each analyzed in a program of its own with the standard library,
+/// and the capabilities of that client.
 public struct Workspace: Sendable {
 
   /// The sources of the standard library.
@@ -17,11 +18,22 @@ public struct Workspace: Sendable {
   /// Where diagnostics of the server itself are logged.
   let logger: Logger
 
+  /// `true` iff the client renders the label details of completion items.
+  private(set) var isLabelDetailsSupported = false
+
   /// Creates an instance analyzing documents with the standard library `sources`, logging to
   /// `logger`.
   public init(standardLibrary sources: [SourceFile], logger: Logger) {
     self.standardLibrarySources = sources
     self.logger = logger
+  }
+
+  /// Records the capabilities of the client described by `parameters` and returns the answer to
+  /// its `initialize` request.
+  public mutating func initialize(_ parameters: InitializeParams) -> InitializationResponse {
+    isLabelDetailsSupported =
+      parameters.capabilities.textDocument?.completion?.completionItem?.labelDetailsSupport ?? false
+    return initializationResponse
   }
 
   /// `true` iff the document at `uri` is open.
@@ -36,6 +48,7 @@ public struct Workspace: Sendable {
 
   /// Opens `d`, replacing the document at its URI, if any.
   public mutating func open(_ d: Document) {
+    if standardLibrary == nil { standardLibrary = analyzedStandardLibrary() }
     documents[d.uri] = DocumentContext(d, program: program(analyzing: d))
   }
 
@@ -66,18 +79,18 @@ public struct Workspace: Sendable {
   }
 
   /// Returns a program containing `d` in a module depending on the standard library.
-  private mutating func program(analyzing d: Document) -> Program {
-    var p = analyzedStandardLibrary()
+  ///
+  /// - Requires: The standard library has been analyzed.
+  func program(analyzing d: Document) -> Program {
+    guard var p = standardLibrary else { preconditionFailure("unanalyzed standard library") }
     let m = p.demandModule(.init("MainModule"))
     p[m].addDependency(Module.standardLibraryName)
     analyze([SourceFile(name: d.uri.localFileName, contents: d.text)], into: m, of: &p)
     return p
   }
 
-  /// Returns the standard library, analyzing it first if it has not been yet.
-  private mutating func analyzedStandardLibrary() -> Program {
-    if let p = standardLibrary { return p }
-
+  /// Returns a program containing the standard library, scoped and typed.
+  private func analyzedStandardLibrary() -> Program {
     // `forTesting` makes the frontend tolerate missing standard library entities rather than trap,
     // which is needed because the standard library may be incomplete. Only code that uses no
     // missing entity is tolerated: the frontend still traps on code that does (e.g., on an integer
@@ -85,7 +98,6 @@ public struct Workspace: Sendable {
     var p = Program(forTesting: true)
     let m = p.demandModule(Module.standardLibraryName)
     analyze(standardLibrarySources, into: m, of: &p)
-    standardLibrary = p
     return p
   }
 
