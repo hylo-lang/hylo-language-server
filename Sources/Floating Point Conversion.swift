@@ -38,34 +38,32 @@ extension BigUInt {
     }
 
     private init?(commonDecimal source: Decimal) {
-        var integer = source
-        if source.exponent < 0 {
-            var source = source
-            NSDecimalRound(&integer, &source, 0, .down)
-        }
-
-        guard !integer.isZero else { self = 0; return }
-        guard integer.isFinite else { return nil }
-        guard integer.sign == .plus else { return nil }
-        assert(integer.floatingPointClass == .positiveNormal)
+        guard !source.isZero else { self = 0; return }
+        guard source.isFinite else { return nil }
+        guard source.sign == .plus else { return nil }
+        assert(source.floatingPointClass == .positiveNormal)
 
         #if os(Linux) || os(Android) || os(Windows) || os(WASI)
         // `Decimal._mantissa` has an internal access level on linux, and it might get
         // deprecated in the future, so keeping the string implementation around for now.
-        let significand = BigUInt("\(integer.significand)")!
+        let significand = BigUInt("\(source.significand)")!
         #else
         let significand = {
             var start = BigUInt(0)
-            for (place, value) in integer.significand.mantissaParts.enumerated() {
+            for (place, value) in source.significand.mantissaParts.enumerated() {
                 guard value > 0 else { continue }
                 start += (1 << (place * 16)) * BigUInt(value)
             }
             return start
         }()
         #endif
-        let exponent = BigUInt(10).power(integer.exponent)
 
-        self = significand * exponent
+        // Dividing by a power of ten truncates the fractional part, like rounding toward zero.
+        if source.exponent >= 0 {
+            self = significand * BigUInt(10).power(source.exponent)
+        } else {
+            self = significand / BigUInt(10).power(-source.exponent)
+        }
     }
     #endif
 }
