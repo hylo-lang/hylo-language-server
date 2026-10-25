@@ -150,9 +150,12 @@ jobs:
       - name: Build the smoke test for wasm32
         run: swift build --swift-sdk swift-6.3.2-RELEASE_wasm --product frontend-smoke-test
 
+      - name: Build the standard library's resource bundle
+        run: swift build --swift-sdk swift-6.3.2-RELEASE_wasm --target StandardLibrary
+
       - name: Run the smoke test
-        # The path of the resource bundle containing the standard library's sources is baked into
-        # the binary as an absolute path, so it is mapped into the wasm guest as-is.
+        # The smoke test reads the standard library's sources from the directory it is given, which
+        # is mapped into the wasm guest at the same path.
         run: |
           BIN=$(swift build --swift-sdk swift-6.3.2-RELEASE_wasm --show-bin-path)
-          wasmtime run --dir "$BIN::$BIN" "$BIN/frontend-smoke-test.wasm"
+          wasmtime run --dir "$BIN::$BIN" "$BIN/frontend-smoke-test.wasm" "$BIN"/Hylo_StandardLibrary.*

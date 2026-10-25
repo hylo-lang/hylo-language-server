@@ -82,8 +82,7 @@ let package = Package(
     .executableTarget(
       name: "frontend-smoke-test",
       dependencies: [
-        .target(name: "FrontEnd"),
-        .target(name: "StandardLibrary"),
+        .target(name: "FrontEnd")
       ],
       swiftSettings: commonSwiftSettings),
 
