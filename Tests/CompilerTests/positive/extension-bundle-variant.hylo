@@ -1,0 +1,18 @@
+//! stage:typing no-std
+
+struct A { public memberwise init }
+struct B { public memberwise init }
+
+extension A {
+  public fun f(x: inout B) auto -> B {
+    let { (A(), B()) }
+    inout { B() }
+  }
+}
+
+fun check<T>(x: T) {}
+
+public fun main() {
+  var a = A()
+  check<[inout A](inout B) inout -> B>(a.f@inout)
+}

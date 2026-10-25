@@ -4389,7 +4389,7 @@ public struct Typer {
         let w = program.types.reify(
           a.witness, applying: a.substitutions, withVariables: .substitutedByError)
 
-        for m in declarations(lexicallyIn: .init(node: e))[n.identifier] ?? [] {
+        for m in lookup(n, lexicallyIn: .init(node: e)) {
           if !resolvableWithQualification(m) { continue }
           if !isSelectable(m, statically: selectionIsStatic) { continue }
           var member = typeOfName(referringTo: m, statically: selectionIsStatic)
