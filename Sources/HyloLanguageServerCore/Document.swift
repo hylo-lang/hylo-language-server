@@ -60,10 +60,11 @@ private func applyChange(
   }
 }
 
-/// Returns the String index range corresponding to the given LSP range.
+/// Returns the indices in `text` of `range`, if `range` is a valid range of `text`.
 private func findRange(_ range: LSPRange, in text: String) -> Range<String.Index>? {
   if let start = range.start.stringIndex(in: text),
-    let end = range.end.stringIndex(in: text)
+    let end = range.end.stringIndex(in: text),
+    start <= end
   {
     start ..< end
   } else {
