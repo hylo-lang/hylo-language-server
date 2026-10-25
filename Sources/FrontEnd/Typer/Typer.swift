@@ -4854,15 +4854,22 @@ public struct Typer {
     }
   }
 
-  /// Extends `m` so that it maps identifiers declared in `ds` to their declarations.
+  /// Extends `m` so that it maps identifiers declared in `ds` to their declarations, ignoring
+  /// synthesized identifiers.
   private func extendLookupTable<T: Sequence<DeclarationIdentity>>(
     _ m: inout Memos.LookupTable, with ds: T
   ) {
-    for d in ds {
+    for d in ds where !isSynthesized(d) {
       if let n = program.name(of: d) {
         m[n.identifier, default: []].append(d)
       }
     }
+  }
+
+  /// Returns `true` iff `d` declares an entity whose identifier was synthesized, and that can
+  /// therefore not be referred to by name.
+  private func isSynthesized(_ d: DeclarationIdentity) -> Bool {
+    program.cast(d, to: VariableDeclaration.self).map({ (v) in program[v].isSynthesized }) ?? false
   }
 
   /// Returns the type defining the nominal scope that includes `s`, if any.

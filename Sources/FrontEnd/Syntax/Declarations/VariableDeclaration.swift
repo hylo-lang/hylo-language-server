@@ -11,6 +11,9 @@ public struct VariableDeclaration: Declaration, Pattern {
   /// The identifier of the declared variable.
   public let identifier: Parsed<String>
 
+  /// `true` iff `identifier` was synthesized rather than written in source.
+  public let isSynthesized: Bool
+
   /// The site from which `self` was parsed.
   public var site: SourceSpan { identifier.site }
 
@@ -29,10 +32,12 @@ extension VariableDeclaration: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     self.identifier = try archive.read(Parsed<String>.self, in: &context)
+    self.isSynthesized = try archive.read(Bool.self, in: &context)
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
     try archive.write(identifier, in: &context)
+    try archive.write(isSynthesized, in: &context)
   }
 
 }

@@ -85,6 +85,18 @@ final class MemberEnumerationTests: XCTestCase {
     XCTAssert(ms.isEmpty)
   }
 
+  func testIgnoreSynthesizedDeclarations() async throws {
+    let source = """
+      struct A {
+        given Void = ()
+        given x: Void = ()
+      }
+      fun use(a: A) { let _ = a }
+      """
+    let (_, ms) = await members(of: "a", in: source)
+    XCTAssertEqual(ms.map(\.name.identifier), ["x"])
+  }
+
   func testAgreementWithSelection() async {
     await assertHolds(selectionCounterexample(in:))
   }
