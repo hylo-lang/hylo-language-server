@@ -73,12 +73,14 @@ public struct MessageServer {
   }
 
   /// Returns the response with identity `id` to the request for `method` encoded in `message`.
-  private func response(to method: String, id: JSONId, in message: Data) -> Data {
+  private mutating func response(to method: String, id: JSONId, in message: Data) -> Data {
     switch method {
     case "initialize":
-      return encoded(JSONRPCResponse(id: id, result: initializationResponse))
+      return response(id: id, to: message, computedBy: { (p) in workspace.initialize(p) })
     case "shutdown":
       return encoded(JSONRPCResponse(id: id, result: nil as JSONValue?))
+    case "textDocument/completion":
+      return response(id: id, to: message, computedBy: workspace.completion)
     case "textDocument/definition":
       return response(id: id, to: message, computedBy: workspace.definition)
     case "textDocument/diagnostic":

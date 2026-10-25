@@ -31,11 +31,15 @@ struct HyloRequestHandler: RequestHandler, Sendable {
   func initialize(id: JSONId, params: InitializeParams) async -> Response<
     InitializationResponse
   > {
-    .success(initializationResponse)
+    .success(await documents.update { (w) in w.initialize(params) })
   }
 
   /// Called when the client initiates the shutdown of the language server.
   func shutdown(id: JSONId) async {
+  }
+
+  func completion(id: JSONId, params: CompletionParams) async -> Response<CompletionResponse> {
+    await respond(about: params.textDocument.uri) { (w) in .optionB(try w.completion(params)) }
   }
 
   func definition(id: JSONId, params: TextDocumentPositionParams) async -> Response<

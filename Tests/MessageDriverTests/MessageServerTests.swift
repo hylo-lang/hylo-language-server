@@ -31,6 +31,21 @@ final class MessageServerTests: XCTestCase {
     XCTAssertEqual(output, [try response(id: 1, initializationResponse)])
   }
 
+  func testInitializeRecordsClientCapabilities() throws {
+    var s = MessageServer(standardLibrary: [])
+    _ = try s.handle(request(id: 1, "initialize", initializeParameters(labelDetailsSupport: true)))
+    _ = try s.handle(notification("textDocument/didOpen", didOpen(text: "fun f() { let _ = f }")))
+    let p = CompletionParams(
+      uri: uri, position: .init(line: 0, character: 19), triggerKind: .invoked,
+      triggerCharacter: nil)
+    let output = try messages(s.handle(request(id: 2, "textDocument/completion", p)))
+    var w = Workspace(standardLibrary: [], logger: quiet)
+    _ = w.initialize(initializeParameters(labelDetailsSupport: true))
+    try w.open(didOpen(text: "fun f() { let _ = f }"))
+    XCTAssertEqual(output.last, try response(id: 2, w.completion(p)))
+    XCTAssertNotNil(try w.completion(p).items.first(where: { (i) in i.labelDetails != nil }))
+  }
+
   func testShutdown() throws {
     var s = MessageServer(standardLibrary: [])
     let output = try messages(s.handle(request(id: 7, "shutdown", nil as JSONValue?)))
@@ -243,10 +258,13 @@ final class MessageServerTests: XCTestCase {
       textDocument: d, position: p, context: ReferenceContext(includeDeclaration: true))
     let rename = RenameParams(textDocument: d, position: p, newName: "z")
     let tokens = SemanticTokensParams(textDocument: d)
+    let completion = CompletionParams(
+      uri: u, position: p, triggerKind: .invoked, triggerCharacter: nil)
     let givens = ExecuteCommandParams(
       command: "givens", arguments: [try json(Location(uri: u, range: LSPRange(start: p, end: p)))])
     let unknown = ExecuteCommandParams(command: "hylo/unknown", arguments: [])
     return [
+      Request("textDocument/completion", completion) { (w) in try w.completion(completion) },
       Request("textDocument/definition", position) { (w) in try w.definition(position) },
       Request("textDocument/diagnostic", diagnostics) { (w) in try w.diagnostics(diagnostics) },
       Request("textDocument/documentHighlight", highlight) { (w) in
@@ -272,11 +290,21 @@ final class MessageServerTests: XCTestCase {
 
   /// The parameters of an `initialize` request.
   private var initializeParameters: InitializeParams {
-    InitializeParams(
+    initializeParameters(labelDetailsSupport: false)
+  }
+
+  /// Returns the parameters of an `initialize` request from a client that renders the label
+  /// details of completion items iff `labelDetailsSupport` is `true`.
+  private func initializeParameters(labelDetailsSupport: Bool) -> InitializeParams {
+    let item = CompletionClientCapabilities.CompletionItem(labelDetailsSupport: labelDetailsSupport)
+    return InitializeParams(
       processId: nil, locale: nil, rootPath: nil, rootUri: "file:///workspace/",
       initializationOptions: nil,
       capabilities: ClientCapabilities(
-        workspace: nil, textDocument: nil, window: nil, general: nil, experimental: nil),
+        workspace: nil,
+        textDocument: TextDocumentClientCapabilities(
+          completion: CompletionClientCapabilities(completionItem: item)),
+        window: nil, general: nil, experimental: nil),
       trace: nil, workspaceFolders: nil)
   }
 
