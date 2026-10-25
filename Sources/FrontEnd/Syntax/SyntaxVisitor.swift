@@ -1,3 +1,4 @@
+import OrderedCollections
 import Utilities
 
 /// A collection of callbacks for visiting an abstract syntax tree.

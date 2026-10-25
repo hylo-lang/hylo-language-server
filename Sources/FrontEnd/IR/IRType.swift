@@ -1,4 +1,5 @@
 import Archivist
+import Utilities
 
 /// The type of an entity in Hylo IR.
 @Archivable

@@ -1,3 +1,6 @@
+import StableCollections
+import Utilities
+
 extension IRFunction {
 
   /// Eliminates needless basic blocks to simplify the control-flow graph of the function.

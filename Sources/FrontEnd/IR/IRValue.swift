@@ -1,5 +1,7 @@
 import Archivist
 import BigInt
+import StableCollections
+import Utilities
 
 /// A value in Hylo IR.
 ///

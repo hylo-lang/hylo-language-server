@@ -1,3 +1,4 @@
+import StableCollections
 import Utilities
 
 extension IRFunction {

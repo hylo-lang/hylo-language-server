@@ -1,4 +1,5 @@
 import Archivist
+import Utilities
 
 /// Creates a closure by partially applying a function to a sequence of arguments.
 ///
