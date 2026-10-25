@@ -49,7 +49,6 @@ let package = Package(
       name: "HyloLanguageServerCore",
       dependencies: [
         .product(name: "Logging", package: "swift-log"),
-        "JSONRPC",
         "LanguageServerProtocol",
         .product(name: "HyloFrontEnd", package: "hylo-new"),
       ],
@@ -112,7 +111,6 @@ let package = Package(
       name: "HyloLanguageServerCoreTests",
       dependencies: [
         "HyloLanguageServerCore",
-        "JSONRPC",
         .product(name: "HyloFrontEnd", package: "hylo-new"),
         .product(name: "HyloStandardLibrary", package: "hylo-new"),
       ],

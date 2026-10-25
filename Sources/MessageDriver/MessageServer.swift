@@ -281,3 +281,13 @@ extension MessageType {
   }
 
 }
+
+extension JSONRPCResponseError where T == JSONValue {
+
+  /// Creates an instance reporting `error` to the client.
+  public init(reporting error: any Error) {
+    let e = LSPError(reporting: error)
+    self.init(code: e.code, message: e.message)
+  }
+
+}

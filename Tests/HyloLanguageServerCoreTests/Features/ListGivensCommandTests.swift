@@ -1,4 +1,3 @@
-import JSONRPC
 import LanguageServerProtocol
 import XCTest
 

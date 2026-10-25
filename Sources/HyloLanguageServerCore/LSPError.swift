@@ -1,4 +1,3 @@
-import JSONRPC
 import LanguageServerProtocol
 
 /// An error to be reported to the LSP client.
@@ -13,21 +12,28 @@ public enum LSPError: Error {
   /// The request names a method or command the server does not know.
   case methodNotFound(message: String)
 
-}
-
-extension JSONRPCResponseError where T == JSONValue {
-
   /// Creates an instance reporting `error` to the client.
   public init(reporting error: any Error) {
-    switch error {
-    case LSPError.invalidParameter(let m):
-      self.init(code: ErrorCodes.InvalidParams, message: m)
-    case LSPError.methodNotFound(let m):
-      self.init(code: ErrorCodes.MethodNotFound, message: m)
-    case LSPError.internalError(let m):
-      self.init(code: ErrorCodes.InternalError, message: m)
-    default:
-      self.init(code: ErrorCodes.InternalError, message: "\(error)")
+    self = (error as? LSPError) ?? .internalError(message: "\(error)")
+  }
+
+  /// The code identifying the kind of `self` in a response to the client.
+  public var code: Int {
+    switch self {
+    case .invalidParameter:
+      ErrorCodes.InvalidParams
+    case .internalError:
+      ErrorCodes.InternalError
+    case .methodNotFound:
+      ErrorCodes.MethodNotFound
+    }
+  }
+
+  /// The description of `self` for the client.
+  public var message: String {
+    switch self {
+    case .invalidParameter(let m), .internalError(let m), .methodNotFound(let m):
+      m
     }
   }
 

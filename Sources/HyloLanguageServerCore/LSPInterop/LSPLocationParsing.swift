@@ -1,4 +1,4 @@
-import JSONRPC
+import Foundation
 import LanguageServerProtocol
 
 extension Location {
@@ -8,7 +8,7 @@ extension Location {
   /// - See: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
   public init?(json: LSPAny) {
     do {
-      self = try JSONValueDecoder().decode(Location.self, from: json)
+      self = try JSONDecoder().decode(Location.self, from: JSONEncoder().encode(json))
     } catch {
       return nil
     }
