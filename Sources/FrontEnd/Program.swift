@@ -85,6 +85,14 @@ public struct Program: Sendable {
     await Scoper().visit(m, of: &self)
   }
 
+  /// Computes the scoping relationships in `m` on the calling thread.
+  ///
+  /// Use this method rather than `assignScopes(_:)` when no executor can run tasks, as in a
+  /// WebAssembly module whose host calls its exported functions.
+  public mutating func assignScopesSerially(_ m: Module.ID) {
+    Scoper().visitSerially(m, of: &self)
+  }
+
   /// Re-compute the scoping relationships of `n`'s immediate children.
   public mutating func reassignScopes<T: SyntaxIdentity>(childrenOf n: T) {
     for c in children(n) {

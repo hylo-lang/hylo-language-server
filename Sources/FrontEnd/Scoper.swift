@@ -7,30 +7,45 @@ public struct Scoper {
   /// Creates an instance.
   public init() {}
 
-  /// Computes the scoping relationships in `m`, which is in `p`.
+  /// Computes the scoping relationships in `m`, which is in `p`, one task per source file.
   public func visit(_ m: Module.ID, of p: inout Program) async {
     let ts = p[m].sources.values.indices.map { (i) in
-      Task.detached { [p] in
-        let f = SourceFile.ID(module: m, offset: i)
-        var v = Visitor(p[f])
-        for n in p[f].roots {
-          p.visit(n, calling: &v)
-        }
-        return v
-      }
+      let f = SourceFile.ID(module: m, offset: i)
+      return (f, Task.detached { [p] in Self.relationships(in: f, of: p) })
     }
 
-    for (i, t) in ts.enumerated() {
-      let f = SourceFile.ID(module: m, offset: i)
-      var v = await t.value
-      modify(&p[f]) { (w) in
-        swap(&w.topLevelDeclarations, &v.topLevelDeclarations)
-        swap(&w.syntaxToParent, &v.syntaxToParent)
-        swap(&w.scopeToDeclarations, &v.scopeToDeclarations)
-        swap(&w.variableToBinding, &v.variableToBinding)
-      }
-      assert(p[f].syntax.count == v.syntaxToParent.count)
+    for (f, t) in ts {
+      Self.install(await t.value, in: f, of: &p)
     }
+  }
+
+  /// Computes the scoping relationships in `m`, which is in `p`, one source file after another on
+  /// the calling thread.
+  func visitSerially(_ m: Module.ID, of p: inout Program) {
+    for i in p[m].sources.values.indices {
+      let f = SourceFile.ID(module: m, offset: i)
+      Self.install(Self.relationships(in: f, of: p), in: f, of: &p)
+    }
+  }
+
+  /// Returns the scoping relationships in `f`, which is in `p`.
+  private static func relationships(in f: SourceFile.ID, of p: Program) -> Visitor {
+    var v = Visitor(p[f])
+    for n in p[f].roots {
+      p.visit(n, calling: &v)
+    }
+    return v
+  }
+
+  /// Stores the scoping relationships `v` of `f` into `p`.
+  private static func install(_ v: consuming Visitor, in f: SourceFile.ID, of p: inout Program) {
+    modify(&p[f]) { (w) in
+      swap(&w.topLevelDeclarations, &v.topLevelDeclarations)
+      swap(&w.syntaxToParent, &v.syntaxToParent)
+      swap(&w.scopeToDeclarations, &v.scopeToDeclarations)
+      swap(&w.variableToBinding, &v.variableToBinding)
+    }
+    assert(p[f].syntax.count == v.syntaxToParent.count)
   }
 
   /// The computation of the scoping relationships in a single source file.
