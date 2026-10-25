@@ -1,28 +1,10 @@
-import JSONRPC
-import LanguageServer
 import LanguageServerProtocol
-import Logging
-import Puppy
-import StandardLibrary
 import XCTest
 
 @testable import HyloLanguageServerCore
 
-/// Tests for document management functionality.
-///
-/// These tests verify:
-/// - Document change application
-/// - Workspace path resolution
+/// Tests for the application of changes to documents.
 final class DocumentManagementTests: XCTestCase {
-
-  func createLogger() -> Logger {
-    var logger = Logger(label: loggerLabel) { label in
-      StreamLogHandler.standardOutput(label: label)
-    }
-
-    logger.logLevel = .debug
-    return logger
-  }
 
   func testApplyDocumentChanges() throws {
     let uri = "file:///factorial.hylo"

@@ -1,15 +1,15 @@
 import Foundation
-import FrontEnd
+import HyloLanguageServerCore
 import LanguageServerProtocol
 
 /// The workspace shared by the request and notification handlers of a server.
-public actor DocumentProvider {
+actor DocumentProvider {
 
   /// The workspace.
   private var workspace: Workspace
 
   /// Creates an instance sharing `workspace`.
-  public init(_ workspace: Workspace) {
+  init(_ workspace: Workspace) {
     self.workspace = workspace
   }
 
@@ -41,7 +41,7 @@ public actor DocumentProvider {
   /// Returns the contents of the file at `u`.
   private func contents(of u: AbsoluteURL) throws -> String {
     do {
-      return try String(contentsOf: u.url, encoding: .utf8)
+      return try String(contentsOfFile: u.nativePath, encoding: .utf8)
     } catch {
       throw LSPError.invalidParameter(message: "Cannot read \(u): \(error)")
     }

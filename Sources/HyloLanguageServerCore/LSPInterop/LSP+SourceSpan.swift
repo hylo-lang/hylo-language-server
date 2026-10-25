@@ -1,6 +1,11 @@
-import Foundation
 import FrontEnd
 import LanguageServerProtocol
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 extension FileName {
 
