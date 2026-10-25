@@ -30,13 +30,13 @@ public actor LSPTestContext {
     self.logger = logger
   }
 
-  /// Creates a fully initialized test context with the given workspace configuration, reading the
-  /// standard library from `standardLibrary`.
+  /// Creates a fully initialized test context with the given workspace configuration, analyzing
+  /// documents with the standard library `sources`, or with the bundled one if `sources` is `nil`.
   public static func make(
     tag: String,
     rootUri: String? = nil,
     workspaceFolders: [WorkspaceFolder] = [],
-    standardLibrary: URL = StandardLibrary.bundledStandardLibrarySources
+    standardLibrary sources: [SourceFile]? = nil
   ) async throws -> LSPTestContext {
     var logger = Logger(label: tag)
     logger.logLevel = .debug
@@ -60,7 +60,7 @@ public actor LSPTestContext {
     let (documentProvider, _) = try await DocumentProvider.make(
       connection: connection,
       logger: logger,
-      standardLibrary: standardLibrary,
+      standardLibrary: try sources ?? bundledStandardLibrary(),
       parameters: params
     )
 
@@ -178,6 +178,13 @@ public actor LSPTestContext {
     }
   }
 
+}
+
+/// Returns the sources of the standard library bundled with the frontend.
+func bundledStandardLibrary() throws -> [SourceFile] {
+  var sources: [SourceFile] = []
+  try SourceFile.forEach(in: bundledStandardLibrarySources) { (s) in sources.append(s) }
+  return sources
 }
 
 /// Represents a test document with convenient access to LSP operations
