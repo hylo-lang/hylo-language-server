@@ -125,11 +125,13 @@ let buildsWebAssemblyDriver = ProcessInfo.processInfo.environment["HYLO_LSP_WASM
 ///
 /// The driver is a reactor: it has no main loop, and its host calls the functions it exports. Its
 /// stack comes first in memory, so that overflowing the stack traps instead of overwriting data,
-/// and has 8 MB, because the frontend recurses once per nesting level of a program.
+/// and has 8 MB, because the frontend recurses once per nesting level of a program. Data must then
+/// start past the stack, overriding the address at which the Swift driver makes it start.
 let reactorLinkerFlags = [
   "-Xclang-linker", "-mexec-model=reactor",
   "-Xlinker", "--stack-first",
   "-Xlinker", "-z", "-Xlinker", "stack-size=8388608",
+  "-Xlinker", "--global-base=8388608",
 ]
 
 if buildsWebAssemblyDriver {
