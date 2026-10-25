@@ -5,9 +5,9 @@ extension Workspace {
 
   /// Returns the completions at the position described by `params`.
   ///
-  /// The completions are the names visible at the position if the name being typed there has no
-  /// qualification. They are not filtered by the part of the name already typed, which clients
-  /// do.
+  /// The completions are the members of the qualification of the name being typed at the
+  /// position, if it has one, or the names visible there otherwise. They are not filtered by the
+  /// part of the name already typed, which clients do.
   ///
   /// - Complexity: One type check of the document.
   public func completion(_ params: CompletionParams) throws -> CompletionList {
@@ -42,7 +42,14 @@ extension Program {
   ///
   /// - Requires: The module containing `e` has been type checked.
   fileprivate mutating func completions(of e: NameExpression.ID) -> [Completion] {
-    self[e].qualification == nil ? completions(visibleFrom: parent(containing: e)) : []
+    let scope = parent(containing: e)
+    guard let q = self[e].qualification else { return completions(visibleFrom: scope) }
+    guard let t = type(maybeAssignedTo: q), !t[.hasVariable] else { return [] }
+
+    let k: Completion.Qualification = types[types.head(t)] is Metatype ? .metatype : .instance
+    return members(of: t, visibleFrom: scope).compactMap { (n) in
+      Completion(n, qualifiedAs: k, in: &self)
+    }
   }
 
   /// Returns the completions of a name without qualification in `scope`.
