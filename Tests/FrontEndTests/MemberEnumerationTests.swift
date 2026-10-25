@@ -40,6 +40,20 @@ final class MemberEnumerationTests: XCTestCase {
     }
   }
 
+  func testEnumerateStaticVariables() async throws {
+    let source = """
+      struct A {
+        public let x: Void
+        public static let k: Void = ()
+      }
+      fun use(a: A) { let _ = a ; let _ = A }
+      """
+    let (_, instanceMembers) = await members(of: "a", in: source)
+    XCTAssertEqual(Set(instanceMembers.map(\.name.identifier)), ["x"])
+    let (_, staticMembers) = await members(of: "A", in: source)
+    XCTAssertEqual(Set(staticMembers.map(\.name.identifier)), ["x", "k"])
+  }
+
   func testEnumerateMembersOfTypeApplication() async throws {
     let source = """
       struct A<T> { public fun f(x: T) {} }
