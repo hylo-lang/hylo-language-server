@@ -93,10 +93,7 @@ public struct HyloNotificationHandler: NotificationHandler {
 
   }
 
-  /// Called when the client switched the set of active workspace folders.
   public func workspaceDidChangeWorkspaceFolders(_ params: DidChangeWorkspaceFoldersParams) async {
-    await documentProvider.changeWorkspaceFolders(
-      added: params.event.added, removed: params.event.removed)
   }
 
   public func workspaceDidChangeConfiguration(_ params: DidChangeConfigurationParams) async {
