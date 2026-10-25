@@ -47,6 +47,38 @@ To test out a released version of the LSP together with your latest local change
 ```sh
 ./release-build-and-install-vscode-extension.sh
 ```
+
+### WebAssembly
+
+`hylo-language-server-wasm` runs the server in a browser worker. It is a WebAssembly reactor
+declared only when `HYLO_LSP_WASM` is set, built with a WebAssembly Swift SDK and hylo-new's
+toolset, which links FoundationEssentials instead of Foundation:
+
+```sh
+HYLO_LSP_WASM=1 swift build --product hylo-language-server-wasm \
+  --swift-sdks-path <directory of the SDK> --swift-sdk swift-6.4.0-RELEASE_wasm \
+  --toolset hylo-new/foundation-essentials.toolset.json
+```
+
+The build needs patched versions of three dependencies, which use Foundation APIs that
+FoundationEssentials or WebAssembly lack. Until the patches are upstream, use patched clones with
+`swift package edit <dependency> --path <clone>`:
+
+- JSONRPC: `DataChannel+StdioPipe.swift` uses `FileHandle.readabilityHandler`, which exists only
+  where Dispatch does; the patch builds that file only if `canImport(Dispatch)`.
+- LanguageServerProtocol: `MessageFraming` trims header values with
+  `trimmingCharacters(in: .whitespaces)`; the patch trims the same characters with the standard
+  library. `Snippet` uses `NSRegularExpression` and `NSRange`; the patch leaves it, and its
+  tests, out of WASI builds. The driver uses no snippets.
+- BigInt, used by the frontend: the `Decimal` initializers round with `NSDecimalRound`; the patch
+  computes the integral part with `BigUInt` arithmetic instead.
+
+The host of the driver calls `lsp_init` once with the standard library (a JSON object mapping
+the URI of each source to its text), then `lsp_handle` with each JSON-RPC message from the
+client, which returns the length of a JSON array of the messages to send back, at the address
+`lsp_output` returns. Both take their argument in memory returned by `lsp_alloc`, which they free;
+`lsp_free` frees such memory that is passed to neither.
+
 ### Code formatting
 The project uses `swift-format` bundled by the Swift toolchain to enforce a consistent code style.
 
