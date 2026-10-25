@@ -38,6 +38,9 @@ let package = Package(
     .package(
       url: "https://github.com/ChimeHQ/LanguageServer",
       revision: "2bbf9508fdf6f7a17b2c34776b7485af73de338a"),
+    .package(
+      url: "https://github.com/ChimeHQ/LanguageServerProtocol",
+      revision: "48ab36295c56c6cc5ba783a37a0c1324fef54ff6"),
     .package(path: "./hylo-new"),
   ],
   targets: [
@@ -50,6 +53,7 @@ let package = Package(
         .product(name: "Logging", package: "swift-log"),
         "Puppy",
         "LanguageServer",
+        "LanguageServerProtocol",
         .product(name: "HyloStandardLibrary", package: "hylo-new"),
         .product(name: "HyloFrontEnd", package: "hylo-new"),
       ],
