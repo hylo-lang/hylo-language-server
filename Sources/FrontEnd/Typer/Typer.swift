@@ -4152,7 +4152,7 @@ public struct Typer {
   }
 
   /// Returns candidates for resolving `n` without qualification in `scopeOfUse`.
-  private mutating func resolve(
+  internal mutating func resolve(
     _ n: Name, unqualifiedIn scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
     var candidates: [NameResolutionCandidate] = []
@@ -4168,6 +4168,53 @@ public struct Typer {
     } else {
       return candidates
     }
+  }
+
+  /// Returns the names visible from `scopeOfUse`, each paired with an entity that it may denote
+  /// without qualification there, in no particular order.
+  ///
+  /// The result contains the candidates for resolving without qualification in `scopeOfUse` each
+  /// identifier that is predefined or declared in a scope visited by unqualified name lookup from
+  /// `scopeOfUse`. These candidates are computed by `resolve(_:unqualifiedIn:)`, so enumeration
+  /// and resolution agree on shadowing and on the types of names by construction.
+  ///
+  /// - Complexity: O(i * s) table lookups, where i is the number of identifiers declared in the
+  ///   scopes visited by unqualified name lookup from `scopeOfUse` and s is the number of these
+  ///   scopes.
+  internal mutating func names(visibleFrom scopeOfUse: ScopeIdentity) -> [VisibleName] {
+    var result: [VisibleName] = []
+    for i in identifiers(visibleFrom: scopeOfUse) {
+      let n = Name(identifier: i)
+      for c in resolve(n, unqualifiedIn: scopeOfUse) {
+        let m = c.reference.target.map({ (d) in program.name(of: d)! }) ?? n
+        result.append(.init(name: m, declaration: c.reference, type: c.type))
+      }
+    }
+    return result
+  }
+
+  /// Returns the predefined identifiers and the identifiers declared in the scopes visited by
+  /// unqualified name lookup from `scopeOfUse`.
+  ///
+  /// The scopes visited are those visited by `lookup(_:unqualifiedIn:containedIn:)`: `scopeOfUse`
+  /// and its ancestors, the other source files of its module, and the imported modules.
+  private mutating func identifiers(visibleFrom scopeOfUse: ScopeIdentity) -> Set<String> {
+    var result = Set(Self.predefinedIdentifiers)
+    for s in program.scopes(from: scopeOfUse) {
+      result.formUnion(declarations(lexicallyIn: s).keys)
+    }
+
+    let f = scopeOfUse.file
+    for s in program[f.module].sourceFileIdentities where s != f {
+      result.formUnion(declarations(lexicallyIn: .init(file: s)).keys)
+    }
+
+    for m in imports(of: f) {
+      for d in program[m].topLevelDeclarations {
+        if let n = program.name(of: d) { result.insert(n.identifier) }
+      }
+    }
+    return result
   }
 
   /// Returns candidates for resolving `n` without qualification in `scopeOfUse`.
@@ -4216,6 +4263,11 @@ public struct Typer {
       return candidates
     }
   }
+
+  /// The identifiers of the names denoting built-in entities in any scope unless shadowed.
+  ///
+  /// - Note: Each element must be handled by `resolve(predefined:unqualifiedIn:)`.
+  internal static let predefinedIdentifiers = ["Self", "Metatype", "Never", "Void", "Builtin"]
 
   /// Resolves `n` as a predefined name unqualified in `scopeOfUse`.
   private mutating func resolve(
