@@ -1,0 +1,46 @@
+//! stage:typing no-std
+
+// Checks that an implicitly qualified member reference that is not called can be an argument.
+
+struct A {
+  public memberwise init
+  public static let k: A = A()
+}
+
+struct B {
+  public memberwise init
+  public static let k: Void = ()
+}
+
+enum E {
+  case a
+  case b(x: Void)
+}
+
+fun f(x: A) {}
+fun g(x: E) {}
+fun h(x: A, y: E) {}
+
+fun p(x: A) {}
+fun p(x: E, y: Void) {}
+
+fun q(x: A) {}
+fun q(x: E) {}
+
+fun r(x: A) {}
+fun r(x: B) {}
+
+fun two<T>(x: T, y: T) {}
+
+public fun main() {
+  f(.k)
+  g(.a)
+  h(.k, .a)
+  p(.k)
+  p(.a, ())
+  q(.k)
+  q(.a)
+  r(.k)
+  two(.k, A())
+  two(A(), .k)
+}

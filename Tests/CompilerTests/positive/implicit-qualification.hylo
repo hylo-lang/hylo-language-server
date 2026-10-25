@@ -21,7 +21,19 @@ extension B<Void> {
   public static fun make<U>() -> Self { .new<U>() }
 }
 
+struct C is Deinitializable {
+  public memberwise init
+  public static let k: C = C()
+}
+
+enum E is Deinitializable {
+  case a
+  case b
+}
+
 public fun use<T>(x: A<T>) {}
+
+public fun use(x: C, y: E) {}
 
 public fun main() {
   let a0: A<_> = .new(x: ())
@@ -30,6 +42,7 @@ public fun main() {
 
   use(.new(x: ()))
   use(.make(()).id())
+  use(.k, .b)
 
   // Some type arguments are expressed in the static member's qualification while others are
   // expressed in the type application of the member itself.

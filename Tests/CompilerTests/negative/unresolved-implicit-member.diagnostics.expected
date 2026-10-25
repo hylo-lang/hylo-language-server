@@ -1,0 +1,13 @@
+negative/unresolved-implicit-member.hylo:22.3-4: error: ambiguous use of 'f'
+  f(.k)
+  ^
+negative/unresolved-implicit-member.hylo:23.5-7: error: not enough context to infer a type
+  g(.k)
+    ~~
+negative/unresolved-implicit-member.hylo:24.5-7: error: type 'Void' is not compatible with 'A'
+  h(.v)
+    ~~
+negative/unresolved-implicit-member.hylo:25.11-13: error: not enough context to infer a type
+  let y = .k
+          ~~
+

@@ -2183,9 +2183,7 @@ public struct Typer {
     // expected type so that `f` in a call of the form `.f(x)` can be resolved as a member of the
     // call's expected type. The callee itself has no expected type; only its qualification.
     if let q = program.implicitQualification(of: callee) {
-      let t =
-        context.expectedType ?? context.obligations.assume(e, hasType: fresh().erased, at: site)
-      let u = program.types.demand(Metatype(inhabitant: t)).erased
+      let u = typeOfImplicitQualification(heading: e, at: site, in: &context)
       _ = context.withSubcontext(expectedType: u) { (ctx) in inferredType(of: q, in: &ctx) }
     }
 
@@ -2849,22 +2847,37 @@ public struct Typer {
     return context.obligations.assume(d, hasType: t, at: program[d].site)
   }
 
-  /// Returns the inferred type `q`, which is the qualification of some name expression occurring
-  /// in `context`.
+  /// Returns the inferred type of `q`, which is the qualification of `e` in `context`.
+  ///
+  /// If `q` is implicit, it is inferred as the metatype of the type of `e`. For example, `.k` in
+  /// `f(.k)` is resolved as `T.k`, where `T` is the type of the parameter to which `.k` is passed.
+  /// If `e` is a callee, the type of `q` has already been inferred from its call (see
+  /// `inferredType(calleeOf:in:)`).
   private mutating func inferredType(
-    of q: ExpressionIdentity, qualifyingNameOccurringIn context: inout InferenceContext
+    of q: ExpressionIdentity, qualifying e: NameExpression.ID,
+    in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    let expected = context.expectedType.flatMap { (t) in
-      if program.tag(of: q) == ImplicitQualification.self {
-        return program.types.demand(Metatype(inhabitant: t)).erased
-      } else {
-        return nil
-      }
-    }
+    let expected =
+      (program.tag(of: q) == ImplicitQualification.self)
+      ? typeOfImplicitQualification(
+        heading: e, at: program.spanForDiagnostic(about: e), in: &context)
+      : nil
 
     return context.withSubcontext(expectedType: expected) { (ctx) in
       inferredType(of: q, in: &ctx)
     }
+  }
+
+  /// Returns the type of an implicit qualification heading `e`, which occurs in `context` at
+  /// `site`.
+  ///
+  /// The returned type is `Metatype<T>`, where `T` is the expected type in `context` or, if there
+  /// is none, a fresh variable assigned to `e`.
+  private mutating func typeOfImplicitQualification<T: SyntaxIdentity>(
+    heading e: T, at site: SourceSpan, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    let t = context.expectedType ?? context.obligations.assume(e, hasType: fresh().erased, at: site)
+    return demand(Metatype(inhabitant: t)).erased
   }
 
   /// Returns the type tentatively assigned to `d`, if any.
@@ -4055,7 +4068,7 @@ public struct Typer {
 
     // Qualified case.
     if let m = program[e].qualification {
-      let q = inferredType(of: m, qualifyingNameOccurringIn: &context)
+      let q = inferredType(of: m, qualifying: e, in: &context)
 
       // Is the qualification a unification variable?
       if q.isVariable || program.types.isMetatype(q, of: \.isVariable) {
