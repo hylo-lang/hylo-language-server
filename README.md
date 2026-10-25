@@ -74,7 +74,7 @@ client, which returns the length of a JSON array of the messages to send back, a
 `lsp_output` returns. Both take their argument in memory returned by `lsp_alloc`, which they free.
 
 `Tools/wasm-smoke-test.mjs` hosts the driver under Node's WASI, opens a document and requests its
-hover and symbols:
+hover, symbols and completions:
 
 ```sh
 node Tools/wasm-smoke-test.mjs \
