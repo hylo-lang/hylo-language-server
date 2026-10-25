@@ -7,11 +7,11 @@ final class DiagnosticsFeatureTests: XCTestCase {
 
   var context: LSPTestContext!
 
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(tag: "DiagnosticsFeatureTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "DiagnosticsFeatureTests")
   }
 
-  func testDiagnosticsContainUndefinedNameRange() async throws {
+  func testDiagnosticsContainUndefinedNameRange() throws {
     let source = try MarkedSource(
       """
       public fun main() {
@@ -19,8 +19,8 @@ final class DiagnosticsFeatureTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
-    let report = try await context.diagnostics(uri: uri)
+    let uri = try context.openDocument(source)
+    let report = try context.diagnostics(uri: uri)
     let ds = try XCTUnwrap(report.items)
     let diagnostic = try XCTUnwrap(ds.first)
 
@@ -32,15 +32,10 @@ final class DiagnosticsFeatureTests: XCTestCase {
 
 extension LSPTestContext {
 
-  func diagnostics(uri: URL) async throws -> DocumentDiagnosticReport {
+  func diagnostics(uri: URL) throws -> DocumentDiagnosticReport {
     let params = DocumentDiagnosticParams(
       textDocument: TextDocumentIdentifier(uri: uri.absoluteString))
-    switch await requestHandler.diagnostics(id: .numericId(1), params: params) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw TestFailure(error.message)
-    }
+    return try workspace.diagnostics(params)
   }
 
 }

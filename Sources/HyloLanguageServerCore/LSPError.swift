@@ -1,26 +1,34 @@
-import LanguageServer
+import JSONRPC
 import LanguageServerProtocol
 
 /// An error to be reported to the LSP client.
-enum LSPError: Error {
+public enum LSPError: Error {
+
+  /// The parameters of a request are invalid.
   case invalidParameter(message: String)
+
+  /// The server failed to process a valid request.
   case internalError(message: String)
+
+  /// The request names a method or command the server does not know.
+  case methodNotFound(message: String)
+
 }
 
-/// Returns the result computed by `action`, or an LSP error if `action` threw.
-func reportingLSPError<T>(_ action: () async throws -> T) async -> HyloRequestHandler.Response<T> {
-  do {
-    return .success(try await action())
-  } catch {
-    if let lspError = error as? LSPError {
-      switch lspError {
-      case .invalidParameter(let message):
-        return .invalidParameters(message)
-      case .internalError(let message):
-        return .internalError(message)
-      }
-    } else {
-      return .internalError("\(error)")
+extension JSONRPCResponseError where T == JSONValue {
+
+  /// Creates an instance reporting `error` to the client.
+  public init(reporting error: any Error) {
+    switch error {
+    case LSPError.invalidParameter(let m):
+      self.init(code: ErrorCodes.InvalidParams, message: m)
+    case LSPError.methodNotFound(let m):
+      self.init(code: ErrorCodes.MethodNotFound, message: m)
+    case LSPError.internalError(let m):
+      self.init(code: ErrorCodes.InternalError, message: m)
+    default:
+      self.init(code: ErrorCodes.InternalError, message: "\(error)")
     }
   }
+
 }

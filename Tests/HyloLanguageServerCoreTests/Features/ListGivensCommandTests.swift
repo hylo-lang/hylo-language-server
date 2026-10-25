@@ -8,11 +8,11 @@ final class ListGivensCommandTests: XCTestCase {
 
   var context: LSPTestContext!
 
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(tag: "ListGivensCommandTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "ListGivensCommandTests")
   }
 
-  func testListGivensCommandReturnsStringEntries() async throws {
+  func testListGivensCommandReturnsStringEntries() throws {
     let source = try MarkedSource(
       """
       trait Peekable {
@@ -27,7 +27,7 @@ final class ListGivensCommandTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
+    let uri = try context.openDocument(source)
     let locationArg: LSPAny = [
       "uri": .string(uri.absoluteString),
       "range": [
@@ -42,7 +42,7 @@ final class ListGivensCommandTests: XCTestCase {
       ],
     ]
 
-    let response = try await context.executeCommand("givens", arguments: [locationArg])
+    let response = try context.executeCommand("givens", arguments: [locationArg])
     guard let response else {
       XCTFail("Expected non-nil givens response")
       return
@@ -66,16 +66,11 @@ final class ListGivensCommandTests: XCTestCase {
 
 extension LSPTestContext {
 
-  func executeCommand(_ command: String, arguments: [LSPAny]? = nil) async throws
+  func executeCommand(_ command: String, arguments: [LSPAny]? = nil) throws
     -> LSPAny?
   {
     let params = ExecuteCommandParams(command: command, arguments: arguments)
-    switch await requestHandler.workspaceExecuteCommand(id: .numericId(1), params: params) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw TestFailure(error.message)
-    }
+    return try workspace.executeCommand(params)
   }
 
 }
