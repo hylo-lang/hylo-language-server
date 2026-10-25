@@ -2519,6 +2519,11 @@ public struct Typer {
 
     let q = program[e].qualification
     let s = context.withSubcontext { (ctx) in inferredType(of: q, in: &ctx) }
+    if s == .error {
+      context.obligations.assume(program[e].target, hasType: .error, at: site)
+      return context.obligations.assume(e, hasType: .error, at: site)
+    }
+
     let u = fresh().erased
 
     context.obligations.assume(

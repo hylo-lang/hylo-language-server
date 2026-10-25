@@ -23,4 +23,5 @@ public fun main() {
   g(.k)
   h(.v)
   let y = .k
+  let z = .new
 }
