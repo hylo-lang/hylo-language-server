@@ -1,7 +1,9 @@
 // Runs hylo-language-server-wasm under node's WASI as a browser worker would, printing each answer
 // and failing unless every request is answered without error, the document analyzes without
 // diagnostics, the hover on the call of `twice` gives its type, the document's symbols are
-// `twice` and `main`, and `lsp_alloc` rejects a negative size.
+// `twice` and `main`, the completions there include `twice(_:)` and `Int`, the completions after
+// `twice(21).` in an edited document include `copy()`, the completions after `twice(.` include
+// `zero()`, and `lsp_alloc` rejects a negative size.
 //
 // Usage: node Tools/wasm-smoke-test.mjs <hylo-language-server-wasm.wasm> <standard library>
 //
@@ -65,19 +67,32 @@ const answers = [
          params: { textDocument: { uri, languageId: 'hylo', version: 0, text } } }),
   send({ id: 2, method: 'textDocument/hover', params: { textDocument: { uri }, position } }),
   send({ id: 3, method: 'textDocument/documentSymbol', params: { textDocument: { uri } } }),
+  send({ id: 4, method: 'textDocument/completion', params: { textDocument: { uri }, position } }),
+  send({ method: 'textDocument/didChange',
+         params: { textDocument: { uri, version: 1 },
+                   contentChanges: [{ text: text.replace('twice(21)', 'twice(21).') }] } }),
+  send({ id: 5, method: 'textDocument/completion',
+         params: { textDocument: { uri }, position: { line: 1, character: 38 } } }),
+  send({ method: 'textDocument/didChange',
+         params: { textDocument: { uri, version: 2 },
+                   contentChanges: [{ text: text.replace('twice(21)', 'twice(.)') }] } }),
+  send({ id: 6, method: 'textDocument/completion',
+         params: { textDocument: { uri }, position: { line: 1, character: 35 } } }),
 ];
 
 const messages = answers.flat();
 const responses = messages.filter((m) => m.id !== undefined);
 const errors = responses.filter((m) => m.error !== undefined).map((m) => m.error);
-const diagnostics = messages
+const diagnostics = answers[2]
   .filter((m) => m.method === 'textDocument/publishDiagnostics' && m.params.uri === uri)
   .map((m) => m.params.diagnostics);
 const hover = responses.find((m) => m.id === 2)?.result?.contents;
 const symbols = responses.find((m) => m.id === 3)?.result?.map((s) => s.name);
+/** Returns the labels of the completions answering request `id`. */
+const labels = (id) => responses.find((m) => m.id === id)?.result?.items?.map((i) => i.label) ?? [];
 console.log(`total ${(performance.now() - start).toFixed(0)} ms, ` +
             `memory ${lsp.memory.buffer.byteLength / 2 ** 20} MiB`);
-assert.equal(responses.length, 3, 'every request is answered');
+assert.equal(responses.length, 6, 'every request is answered');
 assert.deepEqual(errors, [], 'no request fails');
 assert.notEqual(diagnostics.length, 0, 'the diagnostics of the document are published');
 assert.deepEqual(diagnostics.flat(), [], 'the document has no diagnostics');
@@ -85,5 +100,8 @@ assert.deepEqual(diagnostics.flat(), [], 'the document has no diagnostics');
 assert.deepEqual(
   hover, ['```hylo\n[Void](let Int) let -> Int\n```', 'NameExpression'], 'hover');
 assert.deepEqual(symbols, ['twice', 'main'], 'document symbols');
+assert.ok(['twice(_:)', 'Int'].every((n) => labels(4).includes(n)), 'unqualified completion');
+assert.ok(labels(5).includes('copy()'), 'member completion');
+assert.ok(labels(6).includes('zero()'), 'argument completion');
 // Last, as a trap leaves the instance unusable.
 assert.throws(() => lsp.lsp_alloc(-1), WebAssembly.RuntimeError, 'negative allocation traps');
