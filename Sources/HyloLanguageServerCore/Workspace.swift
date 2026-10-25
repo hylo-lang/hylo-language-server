@@ -91,7 +91,7 @@ public struct Workspace: Sendable {
   private func analyze(_ sources: [SourceFile], into m: Module.ID, of p: inout Program) {
     let clock = ContinuousClock()
     let parsing = clock.measure { for s in sources { _ = p[m].addSource(s) } }
-    let scoping = clock.measure { p.assignScopesSynchronously(m) }
+    let scoping = clock.measure { p.assignScopesSerially(m) }
     let typing = clock.measure { p.assignTypes(m, loggingInferenceWhere: nil) }
     logger.debug("Analyzed \(p[m].name): parsing \(parsing), scoping \(scoping), typing \(typing)")
     if p[m].containsError {
