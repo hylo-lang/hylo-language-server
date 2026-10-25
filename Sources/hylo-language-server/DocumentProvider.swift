@@ -13,8 +13,8 @@ actor DocumentProvider {
     self.workspace = workspace
   }
 
-  /// Applies `update` to the workspace.
-  func update(_ update: (inout Workspace) throws -> Void) rethrows {
+  /// Applies `update` to the workspace and returns its result.
+  func update<T: Sendable>(_ update: (inout Workspace) throws -> T) rethrows -> T {
     try update(&workspace)
   }
 

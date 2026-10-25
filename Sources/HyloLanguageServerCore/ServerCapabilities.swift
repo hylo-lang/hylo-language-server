@@ -28,6 +28,9 @@ private let serverCapabilities: ServerCapabilities = {
   c.diagnosticProvider = .optionA(
     DiagnosticOptions(interFileDependencies: false, workspaceDiagnostics: false))
 
+  c.completionProvider = CompletionOptions(
+    workDoneProgress: false, triggerCharacters: ["."], allCommitCharacters: nil,
+    resolveProvider: false, completionItem: nil)
   c.hoverProvider = .optionA(true)
   c.executeCommandProvider = .init(commands: ["givens"])
   c.referencesProvider = .optionA(true)

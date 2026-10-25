@@ -81,12 +81,21 @@ public struct MessageServer: ~Copyable {
   }
 
   /// Returns the response with identity `id` to the request for `method` encoded in `message`.
-  private func response(to method: String, id: JSONId, in message: Data) -> Data {
+  private mutating func response(to method: String, id: JSONId, in message: Data) -> Data {
     switch method {
     case "initialize":
-      return encoded(JSONRPCResponse(id: id, result: initializationResponse))
+      // Not computed by `response(id:to:computedBy:)`, whose access to `self` would overlap the
+      // modification of `workspace`.
+      do {
+        let p: InitializeParams = try parameters(of: message)
+        return encoded(JSONRPCResponse(id: id, result: workspace.initialize(p)))
+      } catch {
+        return failure(id: id, .init(reporting: error))
+      }
     case "shutdown":
       return encoded(JSONRPCResponse(id: id, result: nil as JSONValue?))
+    case "textDocument/completion":
+      return response(id: id, to: message, computedBy: workspace.completion)
     case "textDocument/definition":
       return response(id: id, to: message, computedBy: workspace.definition)
     case "textDocument/diagnostic":
