@@ -2215,7 +2215,9 @@ extension Program {
   ///
   /// The result is empty if `q` is `.error` or the namespace of the built-in module, whose members
   /// are recognized by their names. Tuple elements and the `Self` of an enclosing trait are not
-  /// members and are not included.
+  /// members and are not included. Neither are variables whose identifiers were synthesized by the
+  /// parser (e.g., the variable of an anonymous given), even though name resolution finds them if
+  /// their identifiers are written as quoted identifiers.
   ///
   /// - Requires: `q` has no unification variable. The module containing `scopeOfUse` has been
   ///   type checked.
@@ -2233,7 +2235,9 @@ extension Program {
   ///
   /// The result contains each entity to which some name `n` may refer in `scopeOfUse`, including
   /// the predefined names that are not shadowed by declarations (e.g., `Self` or `Void`), with the
-  /// type of `n`.
+  /// type of `n`. Variables whose identifiers were synthesized by the parser (e.g., the variable of
+  /// an anonymous given) are not included, even though name resolution finds them if their
+  /// identifiers are written as quoted identifiers.
   ///
   /// - Requires: The module containing `scopeOfUse` has been type checked.
   public mutating func names(visibleFrom scopeOfUse: ScopeIdentity) -> [VisibleName] {

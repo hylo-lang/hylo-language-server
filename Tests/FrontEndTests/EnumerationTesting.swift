@@ -35,12 +35,14 @@ extension Program {
   /// Returns a description of how `names` differs from `candidates`, if any.
   ///
   /// `names` and `candidates` agree iff they denote the same entities, each entity occurs once in
-  /// `names`, and each element of `names` is referred to and typed as in some candidate.
+  /// `names`, and each element of `names` is referred to and typed as in some candidate, ignoring
+  /// the candidates referring to variables whose identifiers were synthesized by the parser, which
+  /// resolution finds but enumeration deliberately omits.
   func disagreement(
     between names: [VisibleName], and candidates: [NameResolutionCandidate]
   ) -> String? {
     let enumerated = names.map(\.declaration)
-    let resolved = candidates.map(\.reference)
+    let resolved = candidates.map(\.reference).filter({ (r) in !isSynthesized(r) })
     let entities = Set(enumerated.map(Entity.init(_:)))
     if (entities != Set(resolved.map(Entity.init(_:)))) || (entities.count != enumerated.count) {
       return "enumerated \(describe(enumerated)), resolved \(describe(resolved))"
@@ -49,6 +51,15 @@ extension Program {
       return "'\(show(n.type))' is not the type of \(describe([n.declaration]))"
     }
     return nil
+  }
+
+  /// Returns `true` iff `r` refers to a variable whose identifier was synthesized by the parser.
+  func isSynthesized(_ r: DeclarationReference) -> Bool {
+    if let d = r.target, let v = cast(d, to: VariableDeclaration.self) {
+      return self[v].isSynthesized
+    } else {
+      return false
+    }
   }
 
   /// Returns a textual description of `rs`.

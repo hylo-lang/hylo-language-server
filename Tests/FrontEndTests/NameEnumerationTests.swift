@@ -85,6 +85,36 @@ final class NameEnumerationTests: XCTestCase {
     XCTAssert(p.members(of: b, visibleFrom: .init(file: fs[0])).isEmpty)
   }
 
+  func testIgnoreSynthesizedVariables() async throws {
+    let source = """
+      fun use() {
+        given Void = ()
+        let _ = ()
+      }
+      """
+    var (p, _) = await Program.typeChecked([source])
+    XCTAssertFalse(p.containsError, "\(p.diagnostics.map(\.message))")
+    let b = try XCTUnwrap(Array(p.select(.tag(BindingDeclaration.self))).last)
+    let s = p.parent(containing: b)
+    let v = try XCTUnwrap(p.select(.tag(VariableDeclaration.self)).first)
+    let i = p[p.castUnchecked(v, to: VariableDeclaration.self)].identifier.value
+    XCTAssertFalse(p.names(visibleFrom: s).contains(where: { (n) in n.name.identifier == i }))
+
+    // Resolution still finds the variable, which can be referred to with a quoted identifier.
+    let cs = p.withTyper(typing: s.file.module) { (t) in
+      t.resolve(Name(identifier: i), unqualifiedIn: s)
+    }
+    XCTAssertEqual(cs.map(\.reference.target), [p.castToDeclaration(v)])
+  }
+
+  func testEnumerateQuotedIdentifiers() async throws {
+    // Written identifiers are enumerated even if they look like synthesized ones.
+    var (p, fs) = await Program.typeChecked(["let `$0`: Void = ()"])
+    XCTAssertFalse(p.containsError, "\(p.diagnostics.map(\.message))")
+    let ns = p.names(visibleFrom: .init(file: fs[0]))
+    XCTAssert(ns.contains(where: { (n) in n.name.identifier == "$0" }))
+  }
+
   func testAgreementWithResolution() async {
     await assertHolds(counterexample(in:))
   }

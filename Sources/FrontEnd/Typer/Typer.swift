@@ -4178,6 +4178,11 @@ public struct Typer {
   /// `scopeOfUse`. These candidates are computed by `resolve(_:unqualifiedIn:)`, so enumeration
   /// and resolution agree on shadowing and on the types of names by construction.
   ///
+  /// Candidates referring to variables whose identifiers were synthesized by the parser (e.g., the
+  /// variable of an anonymous given) are omitted. Unlike resolution, which finds these variables
+  /// when their identifiers are written as quoted identifiers, enumeration does not report them
+  /// because they have no name in source.
+  ///
   /// - Complexity: O(i * s) table lookups, where i is the number of identifiers declared in the
   ///   scopes visited by unqualified name lookup from `scopeOfUse` and s is the number of these
   ///   scopes.
@@ -4185,7 +4190,7 @@ public struct Typer {
     var result: [VisibleName] = []
     for i in identifiers(visibleFrom: scopeOfUse) {
       let n = Name(identifier: i)
-      for c in resolve(n, unqualifiedIn: scopeOfUse) {
+      for c in resolve(n, unqualifiedIn: scopeOfUse) where !isSynthesized(c.reference) {
         let m = c.reference.target.map({ (d) in program.name(of: d)! }) ?? n
         result.append(.init(name: m, declaration: c.reference, type: c.type))
       }
@@ -4375,8 +4380,9 @@ public struct Typer {
   /// These candidates are computed by `resolve(_:memberOf:visibleFrom:)`, so enumeration and
   /// resolution agree on which members are selectable and on their types by construction. A
   /// declaration reachable in more than one way (e.g., through different witnesses of the same
-  /// conformance) occurs once. The result is empty if `q` is `.error`, whose members are never
-  /// resolved.
+  /// conformance) occurs once. As in `names(visibleFrom:)`, members whose identifiers were
+  /// synthesized by the parser are omitted although resolution finds them. The result is empty if
+  /// `q` is `.error`, whose members are never resolved.
   ///
   /// - Requires: `q` is not a unification variable.
   /// - Complexity: O(i * (e + t)) witness lookups, where i is the number of identifiers collected
@@ -4390,7 +4396,8 @@ public struct Typer {
     var result: [VisibleName] = []
     var visited: Set<DeclarationIdentity> = []
     for i in identifiers(ofMembersOf: q, visibleFrom: scopeOfUse) {
-      for c in resolve(Name(identifier: i), memberOf: q, visibleFrom: scopeOfUse) {
+      let cs = resolve(Name(identifier: i), memberOf: q, visibleFrom: scopeOfUse)
+      for c in cs where !isSynthesized(c.reference) {
         let m = c.reference.target!
         if visited.insert(m).inserted {
           result.append(.init(name: program.name(of: m)!, declaration: c.reference, type: c.type))
@@ -4417,6 +4424,15 @@ public struct Typer {
       result.formUnion(declarations(lexicallyIn: .init(node: t)).keys)
     }
     return result
+  }
+
+  /// Returns `true` iff `r` refers to a variable whose identifier was synthesized by the parser.
+  private func isSynthesized(_ r: DeclarationReference) -> Bool {
+    if let d = r.target, let v = program.cast(d, to: VariableDeclaration.self) {
+      return program[v].isSynthesized
+    } else {
+      return false
+    }
   }
 
   /// Returns the members of `q`, except if `q` is the built-in module.
