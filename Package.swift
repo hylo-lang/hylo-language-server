@@ -64,6 +64,7 @@ let package = Package(
       name: "hylo-language-server",
       dependencies: [
         "HyloLanguageServerCore",
+        .product(name: "HyloFrontEnd", package: "hylo-new"),
         .product(name: "HyloStandardLibrary", package: "hylo-new"),
       ],
       swiftSettings: toolCompileSettings

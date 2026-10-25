@@ -7,12 +7,11 @@ final class SemanticTokensFeatureTests: XCTestCase {
 
   var context: LSPTestContext!
 
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(
-      tag: "SemanticTokensFeatureTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "SemanticTokensFeatureTests")
   }
 
-  func testSemanticTokensContainFunctionIdentifierToken() async throws {
+  func testSemanticTokensContainFunctionIdentifierToken() throws {
     let source = try MarkedSource(
       """
       fun 0️⃣foo1️⃣() -> Int {
@@ -20,8 +19,8 @@ final class SemanticTokensFeatureTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
-    let response = try await context.semanticTokens(uri: uri)
+    let uri = try context.openDocument(source)
+    let response = try context.semanticTokens(uri: uri)
     let tokens = (response ?? SemanticTokens(data: [])).decode()
 
     let functionTokenExpectedLength = UInt32(source.positionsBetweenMarkers(0, 1).count)
@@ -48,16 +47,11 @@ final class SemanticTokensFeatureTests: XCTestCase {
 
 extension LSPTestContext {
 
-  func semanticTokens(uri: URL) async throws -> SemanticTokensResponse {
+  func semanticTokens(uri: URL) throws -> SemanticTokensResponse {
     let params = SemanticTokensParams(
       textDocument: TextDocumentIdentifier(uri: uri.absoluteString))
 
-    switch await requestHandler.semanticTokensFull(id: .numericId(1), params: params) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw TestFailure(error.message)
-    }
+    return try workspace.semanticTokens(params)
   }
 
 }
