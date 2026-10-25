@@ -119,3 +119,34 @@ let package = Package(
     ),
   ]
 )
+
+/// `true` iff the WebAssembly driver is built, which needs a WebAssembly Swift SDK.
+let buildsWebAssemblyDriver = ProcessInfo.processInfo.environment["HYLO_LSP_WASM"] != nil
+
+/// The size in bytes of the WebAssembly driver's stack, 8 MB because the frontend recurses once
+/// per nesting level of a program.
+let reactorStackSize = 8 << 20
+
+/// The linker flags of the WebAssembly driver.
+///
+/// The driver is a reactor: it has no main loop, and its host calls the functions it exports. Its
+/// stack comes first in memory, so that overflowing the stack traps instead of overwriting data.
+/// Data must then start past the stack, overriding the address at which the Swift driver makes it
+/// start.
+let reactorLinkerFlags = [
+  "-Xclang-linker", "-mexec-model=reactor",
+  "-Xlinker", "--stack-first",
+  "-Xlinker", "-z", "-Xlinker", "stack-size=\(reactorStackSize)",
+  "-Xlinker", "--global-base=\(reactorStackSize)",
+]
+
+if buildsWebAssemblyDriver {
+  package.products.append(
+    .executable(name: "hylo-language-server-wasm", targets: ["hylo-language-server-wasm"]))
+  package.targets.append(
+    .executableTarget(
+      name: "hylo-language-server-wasm",
+      dependencies: ["MessageDriver"],
+      swiftSettings: commonCompileSettings,
+      linkerSettings: [.unsafeFlags(reactorLinkerFlags)]))
+}
