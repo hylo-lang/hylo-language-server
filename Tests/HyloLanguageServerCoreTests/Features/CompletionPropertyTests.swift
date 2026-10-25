@@ -16,8 +16,8 @@ final class CompletionPropertyTests: XCTestCase {
   ///
   /// The completions are sound iff inserting each one at the site, without arguments if it is a
   /// call, yields a name expression with that name and no diagnostic of an unresolved name there.
-  /// They are complete iff each name `n` of `program` such that `n` or, where `self` resolves,
-  /// `self.n` resolves at the site is completed.
+  /// They are complete iff each name `n` of `program` such that `n` or, at an unqualified site
+  /// where `self` resolves, `self.n` resolves at the site is completed.
   ///
   /// The property is vacuous if inserting the undefined name `zz` at the site yields a diagnostic
   /// elsewhere, because `program` is then outside the domain of the property. Otherwise, inserting
@@ -47,8 +47,9 @@ final class CompletionPropertyTests: XCTestCase {
       }
     }
 
-    let offered = Set(items.map({ (i) in i.filterText ?? i.label }))
-    let isSelfVisible = try resolves("self", named: "self", in: program, in: &w)
+    let offered = Set(items.map({ (i) in i.filterText ?? i.label }).map(canonical))
+    let isSelfVisible =
+      try !program.isQualified && resolves("self", named: "self", in: program, in: &w)
     for n in program.candidateNames.sorted() where !offered.contains(n) {
       if try resolves(n, named: n, in: program, in: &w) { return "'\(n)' is not offered" }
       if try isSelfVisible && resolves("self." + n, named: n, in: program, in: &w) {
@@ -140,6 +141,11 @@ final class CompletionPropertyTests: XCTestCase {
     }
   }
 
+  /// Returns the identifier of the name spelled `n`.
+  private func canonical(_ n: String) -> String {
+    n == "new" ? "init" : n
+  }
+
   /// `true` iff `m` is the message of a diagnostic of a name that does not resolve.
   private func isUnresolvedName(_ m: String) -> Bool {
     m.hasPrefix("undefined symbol") || m.contains("has no member")
@@ -209,7 +215,12 @@ private struct CompletionProgram: CustomStringConvertible {
     }
 
     let q = types.randomElement(using: &g)!
-    let use = "fun use(q: \(q)) { let _ = \(Self.marker) }"
+    let qualified = [
+      "let _ = q.\(Self.marker)", "let _ = \(q).\(Self.marker)", "let _: \(q) = .\(Self.marker)",
+    ]
+    let expression =
+      Bool.random(using: &g) ? "let _ = \(Self.marker)" : qualified.randomElement(using: &g)!
+    let use = "fun use(q: \(q)) { \(expression) }"
     let extending = declarations.indices.filter({ (i) in declarations[i].isExtending })
     switch Int.random(in: 0 ..< 5, using: &g) {
     case 0:
@@ -245,6 +256,11 @@ private struct CompletionProgram: CustomStringConvertible {
           "struct \(u.uppercased()) {}",
         ]).randomElement(using: &g)!
     }
+  }
+
+  /// `true` iff the site of `self` is qualified.
+  var isQualified: Bool {
+    prefix.hasSuffix(".")
   }
 
   /// The text of `self` before its site.

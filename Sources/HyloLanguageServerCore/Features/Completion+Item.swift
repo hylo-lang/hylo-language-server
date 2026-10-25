@@ -38,11 +38,20 @@ struct Completion {
   /// argument, which is recognized by the shape of its type.
   let isUnbound: Bool
 
+  /// The name of the declaration whose scope declares the entity to which `name` refers, if any.
+  let origin: String?
+
   /// The way in which a completed name is qualified.
   enum Qualification {
 
     /// The name is not qualified.
     case none
+
+    /// The name is selected on an instance whose type is not a metatype.
+    case instance
+
+    /// The name is selected on an instance of a metatype.
+    case metatype
 
     /// The name is selected on `self`, which is inserted before it.
     case implicitSelf
@@ -53,23 +62,29 @@ struct Completion {
   /// returns `nil` if `n` cannot be spelled there or if its type is erroneous.
   ///
   /// An operator cannot be spelled as a name, and an initializer cannot be spelled without
-  /// qualification. An erroneous type is typically the one of an entity whose declaration
-  /// contains the site, which is not meant to be completed there.
+  /// qualification. An initializer selected on a metatype is spelled `new`, which constructs an
+  /// instance. An erroneous type is typically the one of an entity whose declaration contains
+  /// the site, which is not meant to be completed there.
   init?(_ n: VisibleName, qualifiedAs q: Qualification, in p: inout Program) {
     let d = n.declaration.target
     let isInitializer = d.map(p.isInitializer(_:)) ?? false
     if (n.name.notation != .none) || n.type[.hasError] || (isInitializer && (q == .none)) {
       return nil
     }
-    let arrow = p.types.seenAsTermAbstraction(n.type).map({ (a) in p.types[a] })
+    let constructor = isInitializer && (q == .metatype) ? p.types.asConstructor(n.type) : nil
+    let type = constructor ?? n.type
+    let arrow = p.types.seenAsTermAbstraction(type).map({ (a) in p.types[a] })
 
-    self.name = n.name.identifier
+    self.name = constructor != nil ? "new" : n.name.identifier
     self.prefix = q == .implicitSelf ? "self." : ""
-    self.detail = p.show(n.type)
-    self.isUnbound = p.types.asBoundMemberFunction(n.type) != nil
+    self.detail = p.show(type)
+    self.isUnbound = p.types.asBoundMemberFunction(type) != nil
     self.call = arrow.map { (a) in (a.style, a.inputs.map({ (i) in Parameter(i, in: p) })) }
+    self.origin = d.flatMap({ (m) in p.nameOfParent(of: m) })
     self.kind =
-      if arrow != nil {
+      if constructor != nil {
+        .constructor
+      } else if arrow != nil {
         (d.map({ (m) in p.isMember(m) }) ?? false) ? .method : .function
       } else if p.types[n.type] is Namespace {
         .module
@@ -83,6 +98,12 @@ struct Completion {
 }
 
 extension Program {
+
+  /// Returns the name of the declaration whose scope contains `d`, if any.
+  fileprivate func nameOfParent(of d: DeclarationIdentity) -> String? {
+    parent(containing: d).node.flatMap({ (s) in castToDeclaration(s) })
+      .flatMap({ (s) in name(of: s)?.identifier })
+  }
 
   /// `true` iff `d` declares an initializer.
   fileprivate func isInitializer(_ d: DeclarationIdentity) -> Bool {
@@ -124,11 +145,12 @@ extension Completion.Parameter {
 
 extension Array where Element == Completion {
 
-  /// Returns the presentation of `self`, putting the signatures of callables in label details iff
-  /// `withLabelDetails` is `true`.
+  /// Returns the presentation of `self`, putting the signatures of callables and the origins of
+  /// names in label details iff `withLabelDetails` is `true`.
   ///
   /// The signature of a callable shows its argument labels and, if overloads sharing its name and
-  /// labels have different types at some positions, its types at these positions.
+  /// labels have different types at some positions, its types at these positions. The origin of
+  /// a name is shown iff it is presented like another name otherwise.
   ///
   /// - Complexity: O(n * m) where n is the number of parameters in `self` and m is the largest
   ///   number of overloads sharing a name and argument labels.
@@ -140,11 +162,13 @@ extension Array where Element == Completion {
       let signature = c.call.map { (call) in
         c.signature(call.style, call.parameters, distinguishingFrom: rivals.map(\.call!.parameters))
       }
-      let label = withLabelDetails ? c.name : c.name + (signature ?? "")
+      let origin = rivals.contains(where: c.hasParameterTypes(of:)) ? c.origin : nil
+      let label = withLabelDetails ? c.name : c.label(signature: signature, origin: origin)
+      let isDetailed = withLabelDetails && ((signature != nil) || (origin != nil))
       let insertText = c.insertText
       return CompletionItem(
         label: label,
-        labelDetails: withLabelDetails ? signature.map({ (s) in .init(detail: s) }) : nil,
+        labelDetails: isDetailed ? .init(detail: signature, description: origin) : nil,
         kind: c.kind, detail: c.detail, sortText: (c.isUnbound ? "1" : "0") + c.name,
         filterText: label == c.name ? nil : c.name,
         insertText: insertText == label ? nil : insertText,
@@ -160,6 +184,16 @@ extension Completion {
   fileprivate var overloadKey: String {
     prefix + name
       + (call.map({ (c) in signature(c.style, c.parameters, distinguishingFrom: []) }) ?? "")
+  }
+
+  /// Returns `name` qualified by `origin` and followed by `signature`.
+  fileprivate func label(signature: String?, origin: String?) -> String {
+    (origin.map({ (o) in o + "." }) ?? "") + name + (signature ?? "")
+  }
+
+  /// `true` iff `self` and `other` have parameters of the same types or are not callable.
+  fileprivate func hasParameterTypes(of other: Completion) -> Bool {
+    call?.parameters.map(\.type) == other.call?.parameters.map(\.type)
   }
 
   /// The text inserted by `self`.

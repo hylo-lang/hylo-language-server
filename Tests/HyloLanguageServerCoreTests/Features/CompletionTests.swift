@@ -6,6 +6,155 @@ import XCTest
 
 final class CompletionTests: XCTestCase {
 
+  // MARK: Members
+
+  func testInstanceMembers() throws {
+    let items = try completions(
+      """
+      struct A {
+        let x: Void
+        memberwise init
+        static let k: Void = ()
+        fun m() {}
+        static fun s() {}
+      }
+      fun main(a: A) { let _ = a.0️⃣ }
+      """)
+    XCTAssertEqual(names(items), ["init", "m", "x"])
+    XCTAssertEqual(items.named("m")?.insertText, "m()$0")
+  }
+
+  func testTypedPrefixIsReplaced() throws {
+    let items = try completions(
+      """
+      struct A { let x: Void; fun m() {} }
+      fun main(a: A) { let _ = a.m0️⃣ }
+      """)
+    XCTAssertEqual(names(items), ["m", "x"])
+  }
+
+  func testStaticMembers() throws {
+    let items = try completions(
+      """
+      struct A {
+        let x: Void
+        memberwise init
+        static let k: Void = ()
+        fun m() {}
+        static fun s() {}
+        struct N {}
+      }
+      fun main() { let _ = A.0️⃣ }
+      """)
+    XCTAssertEqual(names(items), ["N", "k", "m", "new", "s", "x"])
+    let m = try XCTUnwrap(items.named("m"))
+    XCTAssertEqual(m.insertText, "m(self: ${1:A})$0")
+    for n in ["N", "k", "new", "s"] {
+      XCTAssertLessThan(try XCTUnwrap(items.named(n)?.sortText), try XCTUnwrap(m.sortText), n)
+    }
+    XCTAssertEqual(items.named("new")?.insertText, "new(x: ${1:Void})$0")
+    XCTAssertEqual(items.named("new")?.kind, .constructor)
+    XCTAssertEqual(items.named("new")?.detail, "[Void](x: sink Void) let -> A")
+  }
+
+  func testImplicitMembers() throws {
+    let items = try completions(
+      """
+      struct A {
+        memberwise init
+        static fun s() -> A { .new() }
+      }
+      fun main() { let _: A = .0️⃣ }
+      """)
+    XCTAssert(Set(names(items)).isSuperset(of: ["new", "s"]), "\(names(items))")
+  }
+
+  func testMembersOfExtensionsAndConformances() throws {
+    let items = try completions(
+      """
+      trait P { fun p() }
+      struct A { let x: Void; static fun s() {} }
+      extension A { fun e() {}; static fun t() {} }
+      given A is P { fun p() {} }
+      fun main(a: A) { let _ = a.0️⃣ }
+      """)
+    XCTAssert(Set(names(items)).isSuperset(of: ["e", "p", "x"]), "\(names(items))")
+    XCTAssert(Set(names(items)).isDisjoint(with: ["s", "t"]), "\(names(items))")
+  }
+
+  func testMembersOfBoundedParameter() throws {
+    let items = try completions(
+      """
+      trait P { fun p() }
+      trait Q refines P { fun q() }
+      fun f<T is Q>(x: T) { let _ = x.0️⃣ }
+      """)
+    XCTAssert(Set(names(items)).isSuperset(of: ["p", "q"]), "\(names(items))")
+  }
+
+  func testSameNamedTraitMembers() throws {
+    let source = """
+      trait P { fun f() }
+      trait Q { fun f() }
+      struct A {}
+      given A is P { fun f() {} }
+      given A is Q { fun f() {} }
+      fun main(a: A) { let _ = a.0️⃣ }
+      """
+    let items = try completions(source)
+    XCTAssertEqual(Set(items.completing("f").map(\.label)), ["P.f()", "Q.f()"])
+
+    var w = workspace()
+    _ = w.initialize(initializeParameters(labelDetailsSupport: true))
+    let detailed = try completions(source, in: &w).completing("f")
+    XCTAssertEqual(Set(detailed.compactMap(\.labelDetails?.description)), ["P", "Q"])
+  }
+
+  func testSameNamedAssociatedTypes() throws {
+    let items = try completions(
+      """
+      trait P { type X }
+      trait Q { type X }
+      struct A {}
+      given A is P { type X = Void }
+      given A is Q { type X = Void }
+      fun main() { let _ = A.0️⃣ }
+      """)
+    let xs = items.completing("X")
+    XCTAssertEqual(Set(xs.map(\.label)), ["P.X", "Q.X"])
+    XCTAssertEqual(xs.map(\.insertText), ["X", "X"])
+  }
+
+  func testSubscriptMembers() throws {
+    let items = try completions(
+      """
+      struct A {
+        subscript m(x: Void) -> Void { yield x }
+        subscript n(y x: Void) auto -> Void { let { yield x } }
+      }
+      fun main(a: A) { let _ = a.0️⃣ }
+      """)
+    XCTAssertEqual(items.named("m")?.label, "m[_:]")
+    XCTAssertEqual(items.named("m")?.insertText, "m[${1:Void}]$0")
+    XCTAssertEqual(items.named("n")?.label, "n[y:]")
+    XCTAssertEqual(items.named("n")?.insertText, "n[y: ${1:Void}]$0")
+  }
+
+  func testBuiltinMembers() throws {
+    XCTAssertEqual(try completions("fun main() { let _ = Builtin.0️⃣ }"), [])
+  }
+
+  func testUntypedQualification() throws {
+    XCTAssertEqual(try completions("fun main() { let _ = undefined.0️⃣ }"), [])
+  }
+
+  func testStandardLibraryMembers() throws {
+    let items = try completions(
+      "fun main() { let x = 1; let _ = x.0️⃣ }", standardLibrary: bundledStandardLibrary())
+    XCTAssert(names(items).contains("copy"), "\(names(items))")
+    XCTAssertFalse(names(items).contains(where: { (n) in n.hasPrefix("$") }), "\(names(items))")
+  }
+
   // MARK: Unqualified names
 
   func testLocalNames() throws {
@@ -131,15 +280,18 @@ final class CompletionTests: XCTestCase {
   }
 
   func testOperatorsAreNotOffered() throws {
-    let items = try completions(
-      """
+    let source = """
       struct A {
         fun infix+(other: A) -> A { self.copy() }
         fun f() { let _ = 0️⃣ }
       }
-      """)
-    XCTAssertFalse(items.contains(where: { (i) in i.label.contains("+") }), "\(items)")
-    XCTAssert(names(items).contains("f"), "\(names(items))")
+      fun main(a: A) { let _ = a.1️⃣ }
+      """
+    for m in 0 ..< 2 {
+      let items = try completions(source, at: m)
+      XCTAssertFalse(items.contains(where: { (i) in i.label.contains("+") }), "\(m): \(items)")
+      XCTAssert(names(items).contains("f"), "\(m): \(names(items))")
+    }
   }
 
   // MARK: Presentation
@@ -244,13 +396,66 @@ final class CompletionTests: XCTestCase {
     XCTAssert(names(items).contains("a"))
   }
 
+  // MARK: Argument position
+
+  func testImplicitMemberArguments() throws {
+    let items = try completions(
+      """
+      struct A { static fun a() -> A { .new() } }
+      struct B { static fun b() -> B { .new() } }
+      fun f(x: A) {}
+      fun f(x: B) {}
+      fun main() { f(.0️⃣) }
+      """)
+    try skipUnlessImplicitMemberArgumentsAreTyped(items)
+    XCTAssert(Set(names(items)).isSuperset(of: ["a", "b"]), "\(names(items))")
+  }
+
+  func testImplicitMemberArgumentsDisambiguated() throws {
+    let items = try completions(
+      """
+      struct A { memberwise init; static fun a() -> A { .new() } }
+      struct B { memberwise init; static fun b() -> B { .new() } }
+      fun f(x: A, y: A) {}
+      fun f(x: B, y: B) {}
+      fun main() { f(.0️⃣, B()) }
+      """)
+    try skipUnlessImplicitMemberArgumentsAreTyped(items)
+    XCTAssert(names(items).contains("b"), "\(names(items))")
+    XCTAssertFalse(names(items).contains("a"), "\(names(items))")
+  }
+
   // MARK: Robustness
+
+  func testCodeAfterCursor() throws {
+    let items = try completions(
+      """
+      struct A { let x: Void }
+      fun main(a: A) {
+        let _ = a.0️⃣
+        let y = ()
+      }
+      """)
+    XCTAssertEqual(names(items), ["x"])
+  }
 
   func testUnopenedDocument() {
     let p = CompletionParams(
       uri: "file:///nowhere.hylo", position: .init(line: 0, character: 0), triggerKind: .invoked,
       triggerCharacter: nil)
     XCTAssertThrowsError(try workspace().completion(p))
+  }
+
+  // MARK: Helpers
+
+  /// Skips the current test unless `items` is non-empty.
+  ///
+  /// The checker types implicit members in argument position only on hylo-new's branch
+  /// `implicit-member-arguments`, which the pinned front end does not include yet.
+  private func skipUnlessImplicitMemberArgumentsAreTyped(_ items: [CompletionItem]) throws {
+    if items.isEmpty {
+      throw XCTSkip("needs hylo-new's branch implicit-member-arguments")
+    }
   }
 
 }
