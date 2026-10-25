@@ -48,13 +48,9 @@ let package = Package(
     .target(
       name: "HyloLanguageServerCore",
       dependencies: [
-        "Semaphore",
-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Logging", package: "swift-log"),
-        "Puppy",
-        "LanguageServer",
+        "JSONRPC",
         "LanguageServerProtocol",
-        .product(name: "HyloStandardLibrary", package: "hylo-new"),
         .product(name: "HyloFrontEnd", package: "hylo-new"),
       ],
       swiftSettings: commonCompileSettings
@@ -64,6 +60,13 @@ let package = Package(
       name: "hylo-language-server",
       dependencies: [
         "HyloLanguageServerCore",
+        "Semaphore",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "Logging", package: "swift-log"),
+        "Puppy",
+        "JSONRPC",
+        "LanguageServer",
+        "LanguageServerProtocol",
         .product(name: "HyloFrontEnd", package: "hylo-new"),
         .product(name: "HyloStandardLibrary", package: "hylo-new"),
       ],
@@ -71,8 +74,23 @@ let package = Package(
     ),
 
     .testTarget(
+      name: "NativeDriverTests",
+      dependencies: [
+        "hylo-language-server",
+        "HyloLanguageServerCore",
+        .product(name: "Logging", package: "swift-log"),
+        "LanguageServerProtocol",
+      ]
+    ),
+
+    .testTarget(
       name: "HyloLanguageServerCoreTests",
-      dependencies: ["HyloLanguageServerCore", "JSONRPC"],
+      dependencies: [
+        "HyloLanguageServerCore",
+        "JSONRPC",
+        .product(name: "HyloFrontEnd", package: "hylo-new"),
+        .product(name: "HyloStandardLibrary", package: "hylo-new"),
+      ],
     ),
   ]
 )
