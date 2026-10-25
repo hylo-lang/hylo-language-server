@@ -23,6 +23,10 @@ public struct Typer {
   /// The maximum depth of a derivation during implicit search.
   private let maxImplicitDepth = 10
 
+  /// The argument whose types are inferred by `apply(inferringTypesOfArgument:of:)`, identified by
+  /// its call and position, with the types inferred so far, if any.
+  private var probedArgument: (call: Call.ID, index: Int, types: [AnyTypeIdentity])?
+
   /// Creates an instance assigning types to syntax trees in `m`, which is a module in `p`.
   public init(
     typing m: Module.ID, of p: consuming Program,
@@ -41,6 +45,19 @@ public struct Typer {
       program.initializeStandardLibraryCaches()
     }
     for d in program[module].topLevelDeclarations { check(d) }
+  }
+
+  /// Type checks the top-level declarations of `self.module`, which contains `call`, and returns
+  /// the types that argument `i` of `call` may have in a well-typed program.
+  ///
+  /// See `Program.assignTypes(inferringTypesOfArgument:of:)`.
+  internal mutating func apply(
+    inferringTypesOfArgument i: Int, of call: Call.ID
+  ) -> [AnyTypeIdentity] {
+    probedArgument = (call, i, [])
+    defer { probedArgument = nil }
+    apply()
+    return probedArgument!.types
   }
 
   /// Returns the resources held by this instance.
@@ -2125,8 +2142,15 @@ public struct Typer {
     }
 
     var i: [CallConstraint.Argument] = []
-    for a in program[e].arguments {
-      let t = context.withSubcontext { (ctx) in inferredType(of: a.value, in: &ctx) }
+    for (j, a) in program[e].arguments.enumerated() {
+      let t: AnyTypeIdentity
+      if (probedArgument?.call == e) && (probedArgument?.index == j) {
+        // The probed argument is checked on its own; its type in `e` is inferred from the call.
+        check(a.value)
+        t = fresh().erased
+      } else {
+        t = context.withSubcontext { (ctx) in inferredType(of: a.value, in: &ctx) }
+      }
       i.append(.init(label: a.label?.value, type: t))
     }
 
@@ -3013,11 +3037,30 @@ public struct Typer {
         for c in o.constraints { print("- \(program.show(c))") }
       }
 
-      var solver = Solver(o, withLoggingEnabled: loggingIsEnabled)
+      let h = typeOfProbedArgument(in: o)
+      var solver = Solver(
+        o, withLoggingEnabled: loggingIsEnabled, collectingSolutionsWithoutError: h != nil)
       let s = solver.solution(using: &self)
+      if let t = h {
+        for x in solver.solutionsWithoutError! {
+          let u = program.types.reify(t, applying: x.substitutions, withVariables: .kept)
+          if !u[.hasVariable] && !u[.hasError] && !probedArgument!.types.contains(u) {
+            probedArgument!.types.append(u)
+          }
+        }
+      }
       commit(s, to: o)
       return s
     }
+  }
+
+  /// Returns the type of the probed argument in `o` iff `o` contains the constraint on its call.
+  private func typeOfProbedArgument(in o: Obligations) -> AnyTypeIdentity? {
+    guard let (call, i, _) = probedArgument else { return nil }
+    let k = o.constraints.lazy.compactMap({ (c) in c as? CallConstraint }).first { (c) in
+      c.origin == call
+    }
+    return k?.arguments[i].type
   }
 
   /// Stores the assignments made in `s` to solve `o` into the program.
