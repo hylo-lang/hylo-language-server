@@ -603,6 +603,10 @@ final class CompletionTests: XCTestCase {
     XCTAssert(names(items).contains("g"), "\(names(items))")
   }
 
+  func testCapability() {
+    XCTAssertEqual(initializationResponse.capabilities.completionProvider?.triggerCharacters, ["."])
+  }
+
   // MARK: Comments and string literals
 
   func testNoCompletionInComments() throws {
