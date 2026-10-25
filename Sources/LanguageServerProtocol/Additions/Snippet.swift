@@ -1,5 +1,10 @@
 import Foundation
 
+// Snippets are parsed with `NSRegularExpression` and expose `NSRange`, which are not part of
+// FoundationEssentials. WebAssembly builds commonly link only FoundationEssentials, because
+// the full Foundation and its ICU data are large, so leave snippets out of them.
+#if !os(WASI)
+
 public struct Snippet {
 	public enum Element: Equatable {
 		case text(String)
@@ -163,3 +168,5 @@ extension Snippet {
 		return (label, content)
 	}
 }
+
+#endif

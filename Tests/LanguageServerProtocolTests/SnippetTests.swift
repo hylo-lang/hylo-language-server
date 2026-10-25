@@ -1,6 +1,8 @@
 import XCTest
 @testable import LanguageServerProtocol
 
+#if !os(WASI)
+
 final class SnippetTests: XCTestCase {
     func testPlainString() {
         let snippet = Snippet(value: "plain string")
@@ -166,3 +168,5 @@ final class SnippetTests: XCTestCase {
         XCTAssertNotEqual(elements, expectedElements)
     }
 }
+
+#endif

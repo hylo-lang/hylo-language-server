@@ -1,5 +1,7 @@
 import Foundation
 
+#if !os(WASI)
+
 extension NSRegularExpression {
 	func matches(inFullString string: String, options: NSRegularExpression.MatchingOptions = [])
 		-> [NSTextCheckingResult]
@@ -29,3 +31,5 @@ extension NSTextCheckingResult {
 		return stringValue(at: index, in: string).flatMap { Int($0) }
 	}
 }
+
+#endif
