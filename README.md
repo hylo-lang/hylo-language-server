@@ -79,6 +79,17 @@ client, which returns the length of a JSON array of the messages to send back, a
 `lsp_output` returns. Both take their argument in memory returned by `lsp_alloc`, which they free;
 `lsp_free` frees such memory that is passed to neither.
 
+`Tools/wasm-smoke-test.mjs` hosts a build of the driver under Node's WASI, opens a document and
+checks its diagnostics, hover and symbols. It takes the standard library from the resource bundle
+of a native build, which holds the generated integer types beside hylo-new's
+`StandardLibrary/Sources`. On Linux x86-64, after a native debug build and the build above:
+
+```sh
+node Tools/wasm-smoke-test.mjs \
+  .build/out/Products/Debug-webassembly-wasm32/hylo-language-server-wasm.wasm \
+  .build/out/Products/Debug-linux-x86_64/Hylo_StandardLibrary.bundle
+```
+
 ### Code formatting
 The project uses `swift-format` bundled by the Swift toolchain to enforce a consistent code style.
 
