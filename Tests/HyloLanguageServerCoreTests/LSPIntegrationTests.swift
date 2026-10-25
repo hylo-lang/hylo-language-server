@@ -116,6 +116,17 @@ final class LSPIntegrationTests: XCTestCase {
     XCTAssertEqual(symbols.map(\.name), ["f"])
   }
 
+  func testQuietLogger() throws {
+    let c = try LSPTestContext(
+      tag: "LSPIntegrationTests", standardLibrary: bundledStandardLibrary(), logLevel: .critical)
+    let uri = try c.openDocument(MarkedSource("fun f() {}"))
+
+    guard case .optionA(let symbols) = try c.documentSymbols(at: uri) else {
+      return XCTFail("Expected optionA response")
+    }
+    XCTAssertEqual(symbols.map(\.name), ["f"])
+  }
+
   func testRequestOnUnopenedDocument() throws {
     let uri = try XCTUnwrap(URL(string: "file:///test/unopened.hylo"))
     do {

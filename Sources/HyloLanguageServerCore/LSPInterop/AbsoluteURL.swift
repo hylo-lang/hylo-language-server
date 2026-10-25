@@ -1,5 +1,10 @@
-import Foundation
 import FrontEnd
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// Represents a URL that's guaranteed to be absolute.
 ///
