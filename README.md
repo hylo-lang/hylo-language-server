@@ -73,6 +73,14 @@ the URI of each source to its text), then `lsp_handle` with each JSON-RPC messag
 client, which returns the length of a JSON array of the messages to send back, at the address
 `lsp_output` returns. Both take their argument in memory returned by `lsp_alloc`, which they free.
 
+`Tools/wasm-smoke-test.mjs` hosts the driver under Node's WASI, opens a document and requests its
+hover and symbols:
+
+```sh
+node Tools/wasm-smoke-test.mjs \
+  .build/release/hylo-language-server-wasm.wasm .build/debug/Hylo_StandardLibrary.bundle
+```
+
 ### Code formatting
 The project uses `swift-format` bundled by the Swift toolchain to enforce a consistent code style.
 
