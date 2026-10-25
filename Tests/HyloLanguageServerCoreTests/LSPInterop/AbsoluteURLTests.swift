@@ -116,6 +116,10 @@ final class AbsoluteUrlTests: XCTestCase {
     XCTAssertThrowsError(try AbsoluteURL(fromUrlString: "hello"))
   }
 
+  func testFromUrlStringNamingNoFile() {
+    XCTAssertThrowsError(try AbsoluteURL(fromUrlString: "file:///"))
+  }
+
   func testFileNameUrl() {
     XCTAssertEqual(
       FileName.local(.init(filePath: "/foo/bar")).absoluteUrl,

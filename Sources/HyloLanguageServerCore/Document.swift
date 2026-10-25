@@ -23,11 +23,11 @@ public struct Document: Sendable {
 
   /// Creates an instance from the given `textDocument`.
   ///
-  /// - Throws iff the url is invalid.
+  /// - Throws iff the URI of `textDocument` is invalid or names no file.
   public init(textDocument: TextDocumentItem) throws {
-    uri = try AbsoluteURL(fromUrlString: textDocument.uri)
-    version = textDocument.version
-    text = textDocument.text
+    self.init(
+      uri: try AbsoluteURL(fromUrlString: textDocument.uri), version: textDocument.version,
+      text: textDocument.text)
   }
 
   /// Applies `changes` sequentially and sets the version of `self` to `version`.
