@@ -1,5 +1,8 @@
 import Foundation
 
+// `FileHandle.readabilityHandler` is only available where Foundation has Dispatch, unlike on WASI.
+#if canImport(Dispatch)
+
 extension FileHandle {
 	public var dataStream: AsyncStream<Data> {
 		let (stream, continuation) = AsyncStream<Data>.makeStream()
@@ -30,3 +33,5 @@ extension DataChannel {
 		return DataChannel(writeHandler: writeHandler, dataSequence: FileHandle.standardInput.dataStream)
 	}
 }
+
+#endif
