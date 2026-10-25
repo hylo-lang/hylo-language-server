@@ -1,5 +1,5 @@
 {
-  "originHash" : "8932895a712c769bde2194f2599f85cdeb5484c6e62f98f750c73639d376114d",
+  "originHash" : "14a084c0d5c1f9968dcf4aa4c9981a722f8ff13761ef9bf45fcfc520f3241e20",
   "pins" : [
     {
       "identity" : "archivist",
@@ -40,8 +40,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ChimeHQ/LanguageServerProtocol",
       "state" : {
-        "revision" : "f7879c782c0845af9c576de7b8baedd946237286",
-        "version" : "0.14.0"
+        "revision" : "48ab36295c56c6cc5ba783a37a0c1324fef54ff6"
       }
     },
     {
