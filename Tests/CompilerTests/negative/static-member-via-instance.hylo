@@ -1,5 +1,22 @@
-//! no-std
+//! stage:typing no-std
 
 struct A { static fun f() {} }
 
 fun g(a: A) { a.f() }
+
+struct B {
+  let v: Void
+  static let k: Void = ()
+  static let (l, m): {Void, Void} = ((), ())
+}
+
+extension B {
+  static let n: Void = ()
+}
+
+fun h(b: B) {
+  let _ = b.v
+  let _ = b.k
+  let _ = b.l
+  let _ = b.n
+}
