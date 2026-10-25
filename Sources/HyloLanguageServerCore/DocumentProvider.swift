@@ -47,11 +47,10 @@ private struct CompilationHelper {
 
   /// Assigns scopes to trees in module
   @discardableResult
-  mutating func assignScopes(of module: Module.ID) async -> (elapsed: Duration, containsError: Bool)
-  {
+  mutating func assignScopes(of module: Module.ID) -> (elapsed: Duration, containsError: Bool) {
     let clock = ContinuousClock()
-    let elapsed = await clock.measure {
-      await program.assignScopes(module)
+    let elapsed = clock.measure {
+      program.assignScopesSynchronously(module)
     }
     return (elapsed, program[module].containsError)
   }
@@ -84,7 +83,18 @@ private struct CompilationHelper {
 /// This separation exists because the server must begin listening for messages before
 /// the client sends `initialize`; the params are therefore not available at construction
 /// time in the live-server path.
+///
+/// The jobs of an instance run outside Swift's concurrency pool, because scoping a program blocks
+/// its thread.
 public actor DocumentProvider {
+
+  /// The executor running the jobs of `self`.
+  private let jobs = QueueExecutor(label: "DocumentProvider")
+
+  /// The executor of `self`.
+  public nonisolated var unownedExecutor: UnownedSerialExecutor {
+    jobs.asUnownedSerialExecutor()
+  }
 
   private var documents: [AbsoluteURL: DocumentContext] = [:]
   public let logger: Logger
@@ -147,7 +157,7 @@ public actor DocumentProvider {
     }
 
     // Assign scopes
-    let (scopeTime, scopeError) = await helper.assignScopes(of: moduleId)
+    let (scopeTime, scopeError) = helper.assignScopes(of: moduleId)
     logger.debug("Standard library scope assignment took: \(scopeTime)")
     if scopeError {
       logger.error("Standard library scope assignment failed")
@@ -192,7 +202,7 @@ public actor DocumentProvider {
     }
 
     // Assign scopes
-    let (scopeTime, scopeError) = await helper.assignScopes(of: mainModuleId)
+    let (scopeTime, scopeError) = helper.assignScopes(of: mainModuleId)
     logger.debug("Main module scope assignment took: \(scopeTime)")
     if scopeError {
       logger.error("Main module scope assignment failed\n\(render(helper.program.diagnostics))")
