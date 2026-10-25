@@ -83,8 +83,8 @@ client, which returns the length of a JSON array of the messages to send back, a
 `lsp_free` frees such memory that is passed to neither.
 
 `Tools/wasm-smoke-test.mjs` hosts a build of the driver under Node's WASI, opens a document and
-checks its diagnostics, hover and symbols. It takes the standard library from the resource bundle
-of a native build, which holds the generated integer types beside hylo-new's
+checks its diagnostics, hover, symbols and completions. It takes the standard library from the
+resource bundle of a native build, which holds the generated integer types beside hylo-new's
 `StandardLibrary/Sources`. On Linux x86-64, after a native debug build and the build above:
 
 ```sh
