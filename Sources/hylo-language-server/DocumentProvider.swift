@@ -3,18 +3,7 @@ import HyloLanguageServerCore
 import LanguageServerProtocol
 
 /// The workspace shared by the request and notification handlers of a server.
-///
-/// The jobs of an instance run outside Swift's concurrency pool, because scoping a program blocks
-/// its thread.
 actor DocumentProvider {
-
-  /// The executor running the jobs of `self`.
-  private let jobs = QueueExecutor(label: "DocumentProvider")
-
-  /// The executor of `self`.
-  nonisolated var unownedExecutor: UnownedSerialExecutor {
-    jobs.asUnownedSerialExecutor()
-  }
 
   /// The workspace.
   private var workspace: Workspace
