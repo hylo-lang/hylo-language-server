@@ -17,7 +17,7 @@ public struct AbsoluteURL: Sendable, Hashable, CustomStringConvertible {
   ///
   /// If the path is not absolute, it will be interpreted relative to the current working directory.
   public init(fromPath path: String) {
-    precondition(!path.contains("://"))
+    precondition(path.firstRange(of: "://") == nil)
     // TODO: avoid standardizedFileURL, it's doing file access
     self.url = URL(fileURLWithPath: path).standardizedFileURL
   }
