@@ -12,11 +12,11 @@ final class LSPTestContext {
   /// The workspace under test.
   private(set) var workspace: Workspace
 
-  /// Creates an instance whose workspace analyzes documents with `standardLibrary`, logging under
-  /// `tag`.
-  init(tag: String, standardLibrary: [SourceFile]) {
+  /// Creates an instance whose workspace analyzes documents with `standardLibrary`, logging
+  /// messages of at least `logLevel` under `tag`.
+  init(tag: String, standardLibrary: [SourceFile], logLevel: Logger.Level = .debug) {
     var logger = Logger(label: tag)
-    logger.logLevel = .debug
+    logger.logLevel = logLevel
     workspace = Workspace(standardLibrary: standardLibrary, logger: logger)
   }
 
