@@ -50,4 +50,17 @@ final class DocumentManagementTests: XCTestCase {
     XCTAssertEqual(doc.text, afterEdit)
   }
 
+  func testChangeEndingBeforeItsStart() throws {
+    let item = TextDocumentItem(
+      uri: "file:///a.hylo", languageId: "hylo", version: 0, text: "abcdef")
+    var d = try Document(textDocument: item)
+    let c = TextDocumentContentChangeEvent(
+      range: LSPRange(startPair: (0, 5), endPair: (0, 1)), rangeLength: nil, text: "")
+    do {
+      try d.applyChanges([c], version: 1)
+      XCTFail("Expected an error")
+    } catch LSPError.invalidParameter(_) {}
+    XCTAssertEqual(d.text, "abcdef")
+  }
+
 }
