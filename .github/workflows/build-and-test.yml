@@ -159,3 +159,17 @@ jobs:
         run: |
           BIN=$(swift build --swift-sdk swift-6.3.2-RELEASE_wasm --show-bin-path)
           wasmtime run --dir "$BIN::$BIN" "$BIN/frontend-smoke-test.wasm" "$BIN"/Hylo_StandardLibrary.*
+
+      - name: Build and run the smoke test for wasm32 with FoundationEssentials only
+        # The toolset stops imports from autolinking the rest of Foundation, so that using it is a
+        # link error. The build is optimized because only then is BigInt's call to Foundation's
+        # NSDecimalRound inlined into a call to FoundationEssentials. The standard library's
+        # sources are those of the resource bundle built above. Scopes are assigned serially, as
+        # in a WebAssembly module without an executor.
+        run: |
+          FLAGS="-c release --swift-sdk swift-6.3.2-RELEASE_wasm --toolset foundation-essentials.toolset.json"
+          swift build $FLAGS --product frontend-smoke-test
+          BIN=$(swift build $FLAGS --show-bin-path)
+          LIB=$(swift build --swift-sdk swift-6.3.2-RELEASE_wasm --show-bin-path)
+          wasmtime run --dir "$BIN::$BIN" --dir "$LIB::$LIB" \
+            "$BIN/frontend-smoke-test.wasm" --serially "$LIB"/Hylo_StandardLibrary.*
