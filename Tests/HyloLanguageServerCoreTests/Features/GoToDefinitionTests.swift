@@ -14,8 +14,8 @@ final class GoToDefinitionTests: XCTestCase {
 
   var context: LSPTestContext!
 
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(tag: "GoToDefinitionTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "GoToDefinitionTests")
   }
 
   /// Returns the text at the site of the definition response `d`.
@@ -30,7 +30,7 @@ final class GoToDefinitionTests: XCTestCase {
     }
   }
 
-  func testCall() async throws {
+  func testCall() throws {
     // Test definition on a recursive call
     let source = try MarkedSource(
       """
@@ -44,8 +44,8 @@ final class GoToDefinitionTests: XCTestCase {
       """)
 
     for fromMarker in [0, 1, 2, 9, 10] {
-      let uri = try await context.openDocument(source)
-      let d = try await context.definition(uri: uri, at: source.markers[fromMarker])
+      let uri = try context.openDocument(source)
+      let d = try context.definition(uri: uri, at: source.markers[fromMarker])
 
       XCTAssertEqual(
         try text(of: d, in: source),
@@ -57,7 +57,7 @@ final class GoToDefinitionTests: XCTestCase {
     }
   }
 
-  func testBothSidesOfIdentifiersMatch() async throws {
+  func testBothSidesOfIdentifiersMatch() throws {
     let source = try MarkedSource(
       """
       struct K is Deinitializable {
@@ -73,27 +73,27 @@ final class GoToDefinitionTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
+    let uri = try context.openDocument(source)
 
-    let d0 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[0]))
+    let d0 = try XCTUnwrap(context.definition(uri: uri, at: source.markers[0]))
     XCTAssertEqual(try text(of: d0, in: source), "x")
 
-    let d1 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[1]))
+    let d1 = try XCTUnwrap(context.definition(uri: uri, at: source.markers[1]))
     XCTAssertEqual(try text(of: d1, in: source), "x")
 
-    let d2 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[2]))
+    let d2 = try XCTUnwrap(context.definition(uri: uri, at: source.markers[2]))
     XCTAssertEqual(try text(of: d2, in: source), "fun infix+(other: K) -> K { K() }")
 
-    let d3 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[3]))
+    let d3 = try XCTUnwrap(context.definition(uri: uri, at: source.markers[3]))
     XCTAssertEqual(try text(of: d3, in: source), "fun infix+(other: K) -> K { K() }")
 
-    let d4 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[4]))
+    let d4 = try XCTUnwrap(context.definition(uri: uri, at: source.markers[4]))
     XCTAssertEqual(try text(of: d4, in: source), "fun prefix-() -> K { K() }")
 
-    let d5 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[5]))
+    let d5 = try XCTUnwrap(context.definition(uri: uri, at: source.markers[5]))
     XCTAssertEqual(try text(of: d5, in: source), "y")
 
-    let d6 = try await XCTUnwrapAsync(await context.definition(uri: uri, at: source.markers[6]))
+    let d6 = try XCTUnwrap(context.definition(uri: uri, at: source.markers[6]))
     XCTAssertEqual(try text(of: d6, in: source), "y")
 
   }

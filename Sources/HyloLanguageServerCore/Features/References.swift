@@ -1,26 +1,13 @@
 import FrontEnd
-import JSONRPC
-import LanguageServer
 import LanguageServerProtocol
-import Logging
 
-extension HyloRequestHandler {
+extension Workspace {
 
-  public func references(id: JSONId, params: ReferenceParams) async -> Response<ReferenceResponse> {
-    await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let doc = try await documentProvider.getDocumentContext(at: source)
-      let p = doc.program
-      let s = try p.requireSourceFile(at: source)
-      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
-
-      guard let target = p.innermostTree(containing: cursor, reportingLogsTo: logger, in: s)
-      else { return nil }
-
-      guard let d = p.castToDeclaration(target) else { return nil }
-
-      return findReferences(of: d, in: doc.program).map(Location.init)
-    }
+  /// Returns the references to the declaration at the position identified in `params`.
+  public func references(_ params: ReferenceParams) throws -> ReferenceResponse {
+    let c = try cursor(at: params.position, in: params.textDocument.uri)
+    guard let target = c.tree, let d = c.program.castToDeclaration(target) else { return nil }
+    return findReferences(of: d, in: c.program).map(Location.init)
   }
 
   func findReferences(

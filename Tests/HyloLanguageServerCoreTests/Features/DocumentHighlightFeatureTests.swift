@@ -7,12 +7,11 @@ final class DocumentHighlightFeatureTests: XCTestCase {
 
   var context: LSPTestContext!
 
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(
-      tag: "DocumentHighlightFeatureTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "DocumentHighlightFeatureTests")
   }
 
-  func testDocumentHighlightReturnsDeclarationAndReferences() async throws {
+  func testDocumentHighlightReturnsDeclarationAndReferences() throws {
     let source = try MarkedSource(
       """
       fun 0️⃣foo1️⃣() -> Int { 42 }
@@ -23,8 +22,8 @@ final class DocumentHighlightFeatureTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
-    let highlights = try await context.documentHighlight(uri: uri, at: source.markers[2])
+    let uri = try context.openDocument(source)
+    let highlights = try context.documentHighlight(uri: uri, at: source.markers[2])
 
     let expectedRanges = Set([
       try source.markerRange(start: 0, end: 1),
@@ -36,7 +35,7 @@ final class DocumentHighlightFeatureTests: XCTestCase {
     XCTAssertEqual(ranges, expectedRanges)
   }
 
-  func testDocumentHighlightOnlyReportsCurrentDocument() async throws {
+  func testDocumentHighlightOnlyReportsCurrentDocument() throws {
     // `Bool` is declared in the standard library and referenced across many of its
     // sources. Highlighting it here must report only the occurrences in this document,
     // not the references located in other documents. See issue #31.
@@ -47,8 +46,8 @@ final class DocumentHighlightFeatureTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
-    let highlights = try await context.documentHighlight(uri: uri, at: source.markers[0])
+    let uri = try context.openDocument(source)
+    let highlights = try context.documentHighlight(uri: uri, at: source.markers[0])
 
     let expectedRanges = Set([
       try source.markerRange(start: 0, end: 1),
@@ -63,7 +62,7 @@ final class DocumentHighlightFeatureTests: XCTestCase {
 
 extension LSPTestContext {
 
-  func documentHighlight(uri: URL, at position: Position) async throws
+  func documentHighlight(uri: URL, at position: Position) throws
     -> DocumentHighlightResponse
   {
     let params = DocumentHighlightParams(
@@ -71,12 +70,7 @@ extension LSPTestContext {
       position: position
     )
 
-    switch await requestHandler.documentHighlight(id: .numericId(1), params: params) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw TestFailure(error.message)
-    }
+    return try workspace.documentHighlight(params)
   }
 
 }

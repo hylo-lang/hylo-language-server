@@ -1,9 +1,13 @@
 import LanguageServerProtocol
 
+/// The answer to a client's `initialize` request.
+public let initializationResponse = InitializationResponse(
+  capabilities: serverCapabilities, serverInfo: ServerInfo(name: "hylo", version: "0.1.0"))
+
 /// The capabilities of the language server.
 ///
 /// Used to inform the client about which features are supported.
-let serverCapabilities: ServerCapabilities = {
+private let serverCapabilities: ServerCapabilities = {
   var c = ServerCapabilities()
 
   c.textDocumentSync = .optionB(TextDocumentSyncKind.incremental)

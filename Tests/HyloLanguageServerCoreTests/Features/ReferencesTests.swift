@@ -11,13 +11,13 @@ final class ReferencesTests: XCTestCase {
 
   var context: LSPTestContext!
 
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(tag: "ReferencesTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "ReferencesTests")
   }
 
   // MARK: - Basic References Tests
 
-  func testFindReferencesOfRecursiveFunction() async throws {
+  func testFindReferencesOfRecursiveFunction() throws {
     let source = try MarkedSource(
       """
       fun 0️⃣factorial(_ n: Int) -> Int {
@@ -29,8 +29,8 @@ final class ReferencesTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
-    let references = try await context.references(
+    let uri = try context.openDocument(source)
+    let references = try context.references(
       uri: uri, at: source.markers[0], includeDeclaration: false)
 
     guard let references else {
@@ -50,7 +50,7 @@ final class ReferencesTests: XCTestCase {
 
   // MARK: - Invariant Tests
 
-  func testReferencesSelfConsistency() async throws {
+  func testReferencesSelfConsistency() throws {
     // Property: If we find N references, each should be a valid location
     // Cursor must be on the declaration, not on a usage
     let source = try MarkedSource(
@@ -64,8 +64,8 @@ final class ReferencesTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
-    let references = try await context.references(
+    let uri = try context.openDocument(source)
+    let references = try context.references(
       uri: uri, at: source.markers[0], includeDeclaration: false)
 
     guard let references = references else {

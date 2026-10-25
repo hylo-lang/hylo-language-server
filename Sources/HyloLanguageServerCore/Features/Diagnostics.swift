@@ -1,26 +1,12 @@
 import FrontEnd
-import JSONRPC
-import LanguageServer
 import LanguageServerProtocol
-import Logging
 
-extension HyloRequestHandler {
+extension Workspace {
 
-  public func diagnostics(id: JSONId, params: DocumentDiagnosticParams) async -> Response<
-    DocumentDiagnosticReport
-  > {
-    await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let p = try await documentProvider.getDocumentContext(at: source).program
-
-      guard let s = p.sourceFile(named: source.localFileName) else {
-        throw LSPError.internalError(
-          message: "Failed to locate translation unit: \(params.textDocument.uri)")
-      }
-      let ds = p.diagnostics(in: s)
-
-      return buildReport(uri: source, diagnostics: ds)
-    }
+  /// Returns the diagnostics of the document identified in `params`.
+  public func diagnostics(_ params: DocumentDiagnosticParams) throws -> DocumentDiagnosticReport {
+    let d = try document(at: params.textDocument.uri)
+    return buildReport(uri: d.url, diagnostics: d.program.diagnostics(in: d.source))
   }
 
 }

@@ -1,5 +1,4 @@
 import Foundation
-import FrontEnd
 import JSONRPC
 import LanguageServer
 import LanguageServerProtocol
@@ -11,18 +10,18 @@ public struct HyloNotificationHandler: NotificationHandler {
 
   public let connection: JSONRPCClientConnection
   public let logger: Logger
-  var documentProvider: DocumentProvider
+  var documents: DocumentProvider
   var exitSemaphore: AsyncSemaphore
 
   public init(
     connection: JSONRPCClientConnection,
     logger: Logger,
-    documentProvider: DocumentProvider,
+    documents: DocumentProvider,
     exitSemaphore: AsyncSemaphore
   ) {
     self.connection = connection
     self.logger = logger
-    self.documentProvider = documentProvider
+    self.documents = documents
     self.exitSemaphore = exitSemaphore
   }
 
@@ -45,7 +44,7 @@ public struct HyloNotificationHandler: NotificationHandler {
 
   public func textDocumentDidOpen(_ params: DidOpenTextDocumentParams) async {
     do {
-      try await documentProvider.registerDocument(params)
+      try await documents.update { (w) in try w.open(params) }
     } catch {
       logger.error("Failed to register document: \(params.textDocument.uri): \(error)")
     }
@@ -53,7 +52,7 @@ public struct HyloNotificationHandler: NotificationHandler {
 
   public func textDocumentDidChange(_ params: DidChangeTextDocumentParams) async {
     do {
-      try await documentProvider.updateDocument(params)
+      try await documents.update { (w) in try w.change(params) }
     } catch {
       logger.error("textDocumentDidChange resulted in a failure: \(error)")
       // todo send failure to client
@@ -62,7 +61,7 @@ public struct HyloNotificationHandler: NotificationHandler {
 
   public func textDocumentDidClose(_ params: DidCloseTextDocumentParams) async {
     do {
-      try await documentProvider.unregisterDocument(params)
+      try await documents.update { (w) in try w.close(params) }
     } catch {
       logger.error("textDocumentDidClose resulted in a failure: \(error)")
       // todo send failure to client

@@ -30,16 +30,12 @@ private func createLSPEventDispatcher(
   exitSemaphore: AsyncSemaphore, connection: JSONRPCClientConnection,
   standardLibrary sources: [SourceFile], logger: Logger
 ) -> EventDispatcher {
-  // An actor shared between request handler and notification handler.
-  let documentProvider = DocumentProvider(
-    connection: connection, logger: logger, standardLibrary: sources)
+  let documents = DocumentProvider(Workspace(standardLibrary: sources, logger: logger))
 
-  let requestHandler = HyloRequestHandler(
-    connection: connection, logger: logger, documentProvider: documentProvider)
+  let requestHandler = HyloRequestHandler(logger: logger, documents: documents)
 
   let notificationHandler = HyloNotificationHandler(
-    connection: connection, logger: logger, documentProvider: documentProvider,
-    exitSemaphore: exitSemaphore)
+    connection: connection, logger: logger, documents: documents, exitSemaphore: exitSemaphore)
 
   let errorHandler = HyloErrorHandler(logger: logger)
 
