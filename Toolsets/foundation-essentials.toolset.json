@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "swiftCompiler": {
+    "extraCLIOptions": [
+      "-Xfrontend", "-disable-autolink-library", "-Xfrontend", "Foundation",
+      "-Xfrontend", "-disable-autolink-library", "-Xfrontend", "FoundationInternationalization",
+      "-Xfrontend", "-disable-autolink-library", "-Xfrontend", "_FoundationICU",
+      "-Xfrontend", "-disable-autolink-library", "-Xfrontend", "CoreFoundation"
+    ]
+  }
+}

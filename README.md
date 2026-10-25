@@ -47,6 +47,31 @@ To test out a released version of the LSP together with your latest local change
 ```sh
 ./release-build-and-install-vscode-extension.sh
 ```
+
+### WebAssembly
+
+`hylo-language-server-wasm` runs the server in a browser worker. It is a WebAssembly reactor
+declared only when `HYLO_LSP_WASM` is set, built with a WebAssembly Swift SDK and a toolset that
+links FoundationEssentials instead of Foundation:
+
+```sh
+HYLO_LSP_WASM=1 swift build --product hylo-language-server-wasm \
+  --swift-sdks-path <directory of the SDK> --swift-sdk swift-6.4.0-RELEASE_wasm \
+  --toolset Toolsets/foundation-essentials.toolset.json
+```
+
+It does not link yet, because some dependencies still use Foundation where WebAssembly lacks it:
+
+- JSONRPC's `DataChannel+StdioPipe.swift` uses `FileHandle.readabilityHandler`;
+- LanguageServerProtocol uses Foundation in `Snippet.swift`, `NSRegularExpression+Matching.swift`
+  and `MessageFraming.swift`;
+- BigInt, used by the frontend, calls `NSDecimalRound`.
+
+The host of the driver calls `lsp_init` once with the standard library (a JSON object mapping
+the URI of each source to its text), then `lsp_handle` with each JSON-RPC message from the
+client, which returns the length of a JSON array of the messages to send back, at the address
+`lsp_output` returns. Both take their argument in memory returned by `lsp_alloc`, which they free.
+
 ### Code formatting
 The project uses `swift-format` bundled by the Swift toolchain to enforce a consistent code style.
 
