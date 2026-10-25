@@ -90,11 +90,10 @@ public struct Workspace: Sendable {
   /// Parses, scopes and types `sources` in module `m` of `p`, logging the time each phase takes.
   private func analyze(_ sources: [SourceFile], into m: Module.ID, of p: inout Program) {
     let clock = ContinuousClock()
-    logger.debug(
-      "Parsed \(p[m].name) in \(clock.measure { for s in sources { _ = p[m].addSource(s) } })")
-    logger.debug("Scoped \(p[m].name) in \(clock.measure { p.assignScopesSerially(m) })")
-    logger.debug(
-      "Typed \(p[m].name) in \(clock.measure { p.assignTypes(m, loggingInferenceWhere: nil) })")
+    let parsing = clock.measure { for s in sources { _ = p[m].addSource(s) } }
+    let scoping = clock.measure { p.assignScopesSerially(m) }
+    let typing = clock.measure { p.assignTypes(m, loggingInferenceWhere: nil) }
+    logger.debug("Analyzed \(p[m].name): parsing \(parsing), scoping \(scoping), typing \(typing)")
     if p[m].containsError {
       logger.debug("Diagnostics of \(p[m].name):\n\(render(p.diagnostics))")
     }

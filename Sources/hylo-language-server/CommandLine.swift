@@ -25,8 +25,7 @@ struct HyloLspCommand: AsyncParsableCommand {
   var stdlibPath: String = bundledStandardLibrarySources.path
 
   func run() async throws {
-    var logger = Logger(label: "s")
-    logger.handler = NullLogHandler(label: "s")
+    let logger = Logger(label: "s", factory: SwiftLogNoOpLogHandler.init)
 
     var sources: [SourceFile] = []
     try SourceFile.forEach(in: URL(fileURLWithPath: stdlibPath)) { (s) in sources.append(s) }

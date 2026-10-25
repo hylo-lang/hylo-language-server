@@ -1,5 +1,6 @@
 import Foundation
 import FrontEnd
+import HyloLanguageServerCore
 import JSONRPC
 import LanguageServer
 import Logging
@@ -7,7 +8,7 @@ import Semaphore
 
 /// Serves a language server analyzing documents with the standard library `sources` through
 /// `channel`, logging to `logger`.
-public func serveLanguageServer(
+func serveLanguageServer(
   channel: DataChannel, logger: Logger, standardLibrary sources: [SourceFile]
 ) async {
   logger.debug("Starting Hylo LSP server...")
