@@ -39,11 +39,11 @@ private struct StandardLibraryCache {
 /// A simple compilation helper for LSP document processing
 private struct CompilationHelper {
 
-  var program: Program
-
-  init() {
-    self.program = Program()
-  }
+  /// The program being compiled.
+  ///
+  /// `forTesting: true` makes the frontend tolerate missing standard library entities rather than
+  /// trap, which is needed because the standard library may be incomplete (e.g., while edited).
+  var program = Program(forTesting: true)
 
   /// Parses sources into a module
   @discardableResult
