@@ -30,11 +30,13 @@ public actor LSPTestContext {
     self.logger = logger
   }
 
-  /// Creates a fully initialized test context with the given workspace configuration.
+  /// Creates a fully initialized test context with the given workspace configuration, reading the
+  /// standard library from `standardLibrary`.
   public static func make(
     tag: String,
     rootUri: String? = nil,
-    workspaceFolders: [WorkspaceFolder] = []
+    workspaceFolders: [WorkspaceFolder] = [],
+    standardLibrary: URL = StandardLibrary.bundledStandardLibrarySources
   ) async throws -> LSPTestContext {
     var logger = Logger(label: tag)
     logger.logLevel = .debug
@@ -58,7 +60,7 @@ public actor LSPTestContext {
     let (documentProvider, _) = try await DocumentProvider.make(
       connection: connection,
       logger: logger,
-      standardLibrary: StandardLibrary.bundledStandardLibrarySources,
+      standardLibrary: standardLibrary,
       parameters: params
     )
 
