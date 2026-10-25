@@ -40,10 +40,7 @@ extension Program {
   func resolveDefinition(
     _ node: AnySyntaxIdentity, visibleFrom scopeOfUse: ScopeIdentity
   ) -> DeclarationIdentity? {
-    if let c = cast(node, to: Call.self),
-      let callee = callee(ExpressionIdentity(c)),
-      let n = cast(callee, to: NameExpression.self)
-    {
+    if let c = cast(node, to: Call.self), let n = cast(self[c].callee, to: NameExpression.self) {
       return declaration(maybeReferredToBy: n)?.target
     }
 
