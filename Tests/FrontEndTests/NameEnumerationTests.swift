@@ -74,6 +74,17 @@ final class NameEnumerationTests: XCTestCase {
     XCTAssert(ms.contains(where: { (n) in n.predefinedIdentifier == "Never" }))
   }
 
+  func testEnumerateNamespaceMembers() async throws {
+    var (p, fs) = await Program.typeChecked(["fun f() {}", "fun g() {}"])
+    let m = p.types.demand(Namespace(identifier: .module(fs[0].module))).erased
+    let ms = p.members(of: m, visibleFrom: .init(file: fs[0]))
+    XCTAssertEqual(
+      Set(ms.map(\.name.identifier)), ["f", "g", "Builtin", "Metatype", "Never", "Void"])
+
+    let b = p.types.demand(Namespace(identifier: .builtin)).erased
+    XCTAssert(p.members(of: b, visibleFrom: .init(file: fs[0])).isEmpty)
+  }
+
   func testAgreementWithResolution() async {
     await assertHolds(counterexample(in:))
   }
