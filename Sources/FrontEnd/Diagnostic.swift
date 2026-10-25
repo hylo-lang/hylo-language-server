@@ -1,3 +1,5 @@
+import Utilities
+
 /// A diagnostic related to a region of Hylo source code.
 public struct Diagnostic: Hashable, Sendable {
 

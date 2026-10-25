@@ -1,3 +1,4 @@
+import OrderedCollections
 import Utilities
 
 /// A function computing the scoping relationships of a module.

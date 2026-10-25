@@ -1,3 +1,5 @@
+import OrderedCollections
+
 /// The context for mangling a symbol.
 ///
 /// It maintains the state of the mangling process, including the output being built, as well as

@@ -1,5 +1,6 @@
-import OrderedCollections
 import Foundation
+import OrderedCollections
+import Utilities
 
 /// A set of diagnostics.
 public struct DiagnosticSet: Hashable, Sendable, CustomStringConvertible {

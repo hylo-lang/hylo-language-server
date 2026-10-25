@@ -1,4 +1,5 @@
 import Archivist
+import Utilities
 
 /// A case in a pattern matching expression.
 @Archivable

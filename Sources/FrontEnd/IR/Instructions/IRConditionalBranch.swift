@@ -1,4 +1,5 @@
 import Archivist
+import StableCollections
 
 /// Transfers control flow to the start one of two basic blocks.
 public struct IRConditionalBranch: Terminator {

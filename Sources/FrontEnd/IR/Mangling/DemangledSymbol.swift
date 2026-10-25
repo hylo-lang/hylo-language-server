@@ -1,3 +1,5 @@
+import Utilities
+
 /// The demangled description of an entity.
 internal indirect enum DemangledSymbol: Hashable, Sendable {
 
