@@ -104,6 +104,24 @@ final class LSPIntegrationTests: XCTestCase {
     try await context.closeDocument(uri2)
   }
 
+  // MARK: - Error Handling Tests
+
+  func testIncompleteStandardLibrary() async throws {
+    let standardLibrary = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: standardLibrary, withIntermediateDirectories: true)
+    addTeardownBlock { try FileManager.default.removeItem(at: standardLibrary) }
+
+    let c = try await LSPTestContext.make(
+      tag: "LSPIntegrationTests", rootUri: "file:///test", standardLibrary: standardLibrary)
+    let uri = try await c.openDocument(MarkedSource("fun f() {}"))
+
+    guard case .optionA(let symbols) = try await c.documentSymbols(at: uri) else {
+      return XCTFail("Expected optionA response")
+    }
+    XCTAssertEqual(symbols.map(\.name), ["f"])
+  }
+
   // MARK: - Position Conversion Tests
 
   func testPositionConversionConsistency() throws {
