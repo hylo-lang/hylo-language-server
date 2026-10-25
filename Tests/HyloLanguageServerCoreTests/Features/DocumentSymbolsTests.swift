@@ -12,16 +12,16 @@ final class DocumentSymbolsTests: XCTestCase {
 
   var context: LSPTestContext!
 
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(tag: "DocumentSymbolsTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "DocumentSymbolsTests")
   }
 
   // MARK: - Empty File Test
 
-  func testEmptyFile() async throws {
+  func testEmptyFile() throws {
     let source = try MarkedSource("")
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     // Verify success with optionA
     guard case .optionA(let symbols) = response else {
@@ -35,7 +35,7 @@ final class DocumentSymbolsTests: XCTestCase {
 
   // MARK: - FunctionDeclaration Tests
 
-  func testFunctionDeclaration() async throws {
+  func testFunctionDeclaration() throws {
     let source = try MarkedSource(
       """
       fun factorial(_ n: Int) -> Int {
@@ -47,8 +47,8 @@ final class DocumentSymbolsTests: XCTestCase {
       }
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     // Verify success with optionA
     guard case .optionA(let symbols) = response else {
@@ -72,7 +72,7 @@ final class DocumentSymbolsTests: XCTestCase {
     verifyValidRanges(symbols[1])
   }
 
-  func testOperatorFunction() async throws {
+  func testOperatorFunction() throws {
     let source = try MarkedSource(
       """
       fun infix+ (x: Int, y: Int) -> Int {
@@ -80,8 +80,8 @@ final class DocumentSymbolsTests: XCTestCase {
       }
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
       XCTFail("Expected optionA response")
@@ -97,7 +97,7 @@ final class DocumentSymbolsTests: XCTestCase {
 
   // MARK: - StructDeclaration Tests
 
-  func testStructDeclaration() async throws {
+  func testStructDeclaration() throws {
     let source = try MarkedSource(
       """
       public struct Point {
@@ -106,8 +106,8 @@ final class DocumentSymbolsTests: XCTestCase {
       }
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
       XCTFail("Expected optionA response")
@@ -141,7 +141,7 @@ final class DocumentSymbolsTests: XCTestCase {
 
   // MARK: - TraitDeclaration Tests
 
-  func testTraitDeclaration() async throws {
+  func testTraitDeclaration() throws {
     let source = try MarkedSource(
       """
       trait Peekable {
@@ -149,8 +149,8 @@ final class DocumentSymbolsTests: XCTestCase {
       }
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
       XCTFail("Expected optionA response")
@@ -177,7 +177,7 @@ final class DocumentSymbolsTests: XCTestCase {
 
   // MARK: - TypeAliasDeclaration Tests
 
-  func testTypeAliasDeclaration() async throws {
+  func testTypeAliasDeclaration() throws {
     let source = try MarkedSource(
       """
       type IntPair = {Int, Int}
@@ -187,8 +187,8 @@ final class DocumentSymbolsTests: XCTestCase {
       type C = B
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
       XCTFail("Expected optionA response")
@@ -223,7 +223,7 @@ final class DocumentSymbolsTests: XCTestCase {
 
   // MARK: - ExtensionDeclaration Tests
 
-  func testExtensionDeclaration() async throws {
+  func testExtensionDeclaration() throws {
     let source = try MarkedSource(
       """
       extension Int {
@@ -233,8 +233,8 @@ final class DocumentSymbolsTests: XCTestCase {
       }
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
       return XCTFail("Expected optionA response")
@@ -261,7 +261,7 @@ final class DocumentSymbolsTests: XCTestCase {
 
   // MARK: - ConformanceDeclaration Tests
 
-  func testConformanceDeclaration() async throws {
+  func testConformanceDeclaration() throws {
     let source = try MarkedSource(
       """
       trait Peekable {
@@ -272,8 +272,8 @@ final class DocumentSymbolsTests: XCTestCase {
       }
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
       return XCTFail("Expected optionA response")
@@ -306,15 +306,15 @@ final class DocumentSymbolsTests: XCTestCase {
 
   // MARK: - BindingDeclaration Tests
 
-  func testBindingDeclaration() async throws {
+  func testBindingDeclaration() throws {
     let source = try MarkedSource(
       """
       let x: Int = 42
       var y: Int = 100
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
       return XCTFail("Expected optionA response")
@@ -335,15 +335,15 @@ final class DocumentSymbolsTests: XCTestCase {
 
   // MARK: - FunctionBundleDeclaration Tests
 
-  func testFunctionBundleDeclaration() async throws {
+  func testFunctionBundleDeclaration() throws {
     let source = try MarkedSource(
       """
       fun foo() {}
       fun foo(x: Int) {}
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
       XCTFail("Expected optionA response")
@@ -365,7 +365,7 @@ final class DocumentSymbolsTests: XCTestCase {
 
   // MARK: - Complex Integration Tests
 
-  func testMixedDeclarations() async throws {
+  func testMixedDeclarations() throws {
     let source = try MarkedSource(
       """
       trait Peekable {
@@ -388,8 +388,8 @@ final class DocumentSymbolsTests: XCTestCase {
       let z1: Int = 1.peek()
       """)
 
-    let doc = try await context.openDocument(source)
-    let response = try await context.documentSymbols(at: doc)
+    let doc = try context.openDocument(source)
+    let response = try context.documentSymbols(at: doc)
 
     guard case .optionA(let symbols) = response else {
       XCTFail("Expected optionA response")

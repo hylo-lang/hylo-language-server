@@ -1,21 +1,12 @@
 import FrontEnd
-import JSONRPC
-import LanguageServer
 import LanguageServerProtocol
-import Logging
 
-extension HyloRequestHandler {
+extension Workspace {
 
-  public func documentSymbol(id: JSONId, params: DocumentSymbolParams) async -> Response<
-    DocumentSymbolResponse
-  > {
-    await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let p = try await documentProvider.getDocumentContext(at: source).program
-      let s = try p.requireSourceFile(at: source)
-
-      return .optionA(p.lspSymbols(for: p.topLevelDeclarations(in: s)))
-    }
+  /// Returns the symbols declared in the document identified in `params`.
+  public func documentSymbols(_ params: DocumentSymbolParams) throws -> DocumentSymbolResponse {
+    let d = try document(at: params.textDocument.uri)
+    return .optionA(d.program.lspSymbols(for: d.program.topLevelDeclarations(in: d.source)))
   }
 
 }

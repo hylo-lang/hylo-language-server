@@ -14,8 +14,8 @@ final class HoverTests: XCTestCase {
   /// Initializes the LSP context for interaction.
   ///
   /// Run before each test method.
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(tag: "HoverTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "HoverTests")
   }
 
   private func assertHoverEquals(
@@ -35,7 +35,7 @@ final class HoverTests: XCTestCase {
 
   // MARK: - Basic Hover Tests
 
-  func testHoverOnFunctionName() async throws {
+  func testHoverOnFunctionName() throws {
     // Test hover information on a function
     let source = try MarkedSource(
       """
@@ -48,8 +48,8 @@ final class HoverTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
-    let hover = try await context.hover(uri: uri, at: source.markers[0])
+    let uri = try context.openDocument(source)
+    let hover = try context.hover(uri: uri, at: source.markers[0])
 
     assertHoverEquals(
       hover,
@@ -61,7 +61,7 @@ final class HoverTests: XCTestCase {
       """)
   }
 
-  func testHoverOnVariable() async throws {
+  func testHoverOnVariable() throws {
     // Test hover on a variable
     let source = try MarkedSource(
       """
@@ -71,8 +71,8 @@ final class HoverTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
-    let hover = try await context.hover(uri: uri, at: source.markers[0])
+    let uri = try context.openDocument(source)
+    let hover = try context.hover(uri: uri, at: source.markers[0])
 
     let contents = extractHoverContent(try XCTUnwrap(hover).contents)
     XCTAssertEqual(
@@ -85,7 +85,7 @@ final class HoverTests: XCTestCase {
       """)
   }
 
-  func testHoverOnExpression() async throws {
+  func testHoverOnExpression() throws {
     // Test with a more complex expression
     let source = try MarkedSource(
       """
@@ -96,8 +96,8 @@ final class HoverTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
-    let hover = try await context.hover(uri: uri, at: source.markers[0])
+    let uri = try context.openDocument(source)
+    let hover = try context.hover(uri: uri, at: source.markers[0])
 
     assertHoverEquals(
       hover,
@@ -111,7 +111,7 @@ final class HoverTests: XCTestCase {
 
   // MARK: - Invariant Tests
 
-  func testHoverIsIdempotent() async throws {
+  func testHoverIsIdempotent() throws {
     // Property: Hovering at the same position multiple times should give the same result
     let source = try MarkedSource(
       """
@@ -120,11 +120,11 @@ final class HoverTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
+    let uri = try context.openDocument(source)
 
-    let hover1 = try await context.hover(uri: uri, at: source.markers[0])
-    let hover2 = try await context.hover(uri: uri, at: source.markers[0])
-    let hover3 = try await context.hover(uri: uri, at: source.markers[0])
+    let hover1 = try context.hover(uri: uri, at: source.markers[0])
+    let hover2 = try context.hover(uri: uri, at: source.markers[0])
+    let hover3 = try context.hover(uri: uri, at: source.markers[0])
 
     // All hover responses should be equivalent
     let content1 = hover1.map { extractHoverContent($0.contents) }
@@ -140,19 +140,14 @@ final class HoverTests: XCTestCase {
 extension LSPTestContext {
 
   /// Performs a hover request in the document, throwing the error on failure.
-  public func hover(uri: URL, at position: Position) async throws(AnyJSONRPCResponseError)
+  public func hover(uri: URL, at position: Position) throws
     -> HoverResponse
   {
     let params = TextDocumentPositionParams(
       textDocument: TextDocumentIdentifier(uri: uri.absoluteString),
       position: position
     )
-    switch await requestHandler.hover(id: .numericId(1), params: params) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw error
-    }
+    return try workspace.hover(params)
   }
 
 }

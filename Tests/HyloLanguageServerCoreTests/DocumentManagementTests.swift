@@ -8,15 +8,6 @@ import XCTest
 
 @testable import HyloLanguageServerCore
 
-// swift-format-ignore: AlwaysUseLowerCamelCase
-func XCTUnwrapAsync<T>(
-  _ expression: @autoclosure () async throws -> T?, _ message: @autoclosure () -> String = "",
-  file: StaticString = #filePath, line: UInt = #line
-) async throws -> T {
-  let val = try await expression()
-  return try XCTUnwrap(val, message(), file: file, line: line)
-}
-
 /// Tests for document management functionality.
 ///
 /// These tests verify:
@@ -33,7 +24,7 @@ final class DocumentManagementTests: XCTestCase {
     return logger
   }
 
-  func testApplyDocumentChanges() async throws {
+  func testApplyDocumentChanges() throws {
     let uri = "file:///factorial.hylo"
     let beforeEdit = """
       fun factorial(_ n: Int) -> Int {

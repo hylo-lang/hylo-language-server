@@ -1,48 +1,39 @@
 import FrontEnd
-import JSONRPC
-import LanguageServer
 import LanguageServerProtocol
-import Logging
 
-extension HyloRequestHandler {
+extension Workspace {
 
-  public func documentHighlight(id: JSONId, params: DocumentHighlightParams) async -> Response<
-    DocumentHighlightResponse
-  > {
-    await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let doc = try await documentProvider.getDocumentContext(at: source)
-      let p = doc.program
-      let s = try p.requireSourceFile(at: source)
-      let cursor = SourcePosition(params.position, in: p[sourceFile: s])
+  /// Returns the occurrences, in its document, of the symbol at the position identified in
+  /// `params`.
+  public func documentHighlight(_ params: DocumentHighlightParams) throws
+    -> DocumentHighlightResponse
+  {
+    let c = try cursor(at: params.position, in: params.textDocument.uri)
+    guard let node = c.tree else { return nil }
+    let p = c.program
+    let source = c.document.url
 
-      guard
-        let node = p.innermostTree(
-          containing: cursor, reportingLogsTo: logger, in: s)
-      else { return nil }
-
-      if let declaration = p.castToDeclaration(node) {
-        if let identifier = p.identifier(of: declaration),
-          identifier.site.region.contains(cursor.index)
-        {
-          return highlights(
-            of: declaration, declarationIdentifierSite: identifier.site, in: p,
-            restrictedTo: source)
-        }
-      }
-
-      if let name = p.cast(node, to: NameExpression.self) {
-        guard let declaration = p.declaration(maybeReferredToBy: name)?.target else {
-          return nil
-        }
-
+    if let declaration = p.castToDeclaration(node) {
+      if let identifier = p.identifier(of: declaration),
+        identifier.site.region.contains(c.position.index)
+      {
         return highlights(
-          of: declaration, declarationIdentifierSite: p.identifier(of: declaration)?.site, in: p,
+          of: declaration, declarationIdentifierSite: identifier.site, in: p,
           restrictedTo: source)
       }
-
-      return nil
     }
+
+    if let name = p.cast(node, to: NameExpression.self) {
+      guard let declaration = p.declaration(maybeReferredToBy: name)?.target else {
+        return nil
+      }
+
+      return highlights(
+        of: declaration, declarationIdentifierSite: p.identifier(of: declaration)?.site, in: p,
+        restrictedTo: source)
+    }
+
+    return nil
   }
 
   /// Returns the document highlights for `declaration`, restricted to the source file at `source`.

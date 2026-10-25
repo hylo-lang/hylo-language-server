@@ -18,13 +18,13 @@ final class LSPIntegrationTests: XCTestCase {
 
   var context: LSPTestContext!
 
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(tag: "LSPIntegrationTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "LSPIntegrationTests")
   }
 
   // MARK: - Marker-Driven Integration Tests
 
-  func testDefinitionAndHoverAtMultipleMarkers() async throws {
+  func testDefinitionAndHoverAtMultipleMarkers() throws {
     let source = try MarkedSource(
       """
       1️⃣fun add(_ a: Int, _ b: Int) -> Int {
@@ -41,23 +41,23 @@ final class LSPIntegrationTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
+    let uri = try context.openDocument(source)
 
-    let addDefinition = try await context.definition(uri: uri, at: source.markers[0])
-    let multiplyDefinition = try await context.definition(uri: uri, at: source.markers[5])
+    let addDefinition = try context.definition(uri: uri, at: source.markers[0])
+    let multiplyDefinition = try context.definition(uri: uri, at: source.markers[5])
 
     XCTAssertNotNil(addDefinition)
     XCTAssertNotNil(multiplyDefinition)
 
-    let hoverAtAdd = try await context.hover(uri: uri, at: source.markers[0])
-    let hoverAtMultiply = try await context.hover(uri: uri, at: source.markers[5])
+    let hoverAtAdd = try context.hover(uri: uri, at: source.markers[0])
+    let hoverAtMultiply = try context.hover(uri: uri, at: source.markers[5])
     XCTAssertNotNil(hoverAtAdd)
     XCTAssertNotNil(hoverAtMultiply)
   }
 
   // MARK: - Document Update Tests
 
-  func testDocumentUpdate() async throws {
+  func testDocumentUpdate() throws {
     let initialSource = try MarkedSource(
       """
       public fun main() {
@@ -65,7 +65,7 @@ final class LSPIntegrationTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(initialSource)
+    let uri = try context.openDocument(initialSource)
 
     let updatedSource = try MarkedSource(
       """
@@ -75,15 +75,15 @@ final class LSPIntegrationTests: XCTestCase {
       }
       """)
 
-    try await context.updateDocument(uri.absoluteString, newSource: updatedSource, version: 1)
+    try context.updateDocument(uri.absoluteString, newSource: updatedSource, version: 1)
 
-    let hover = try await context.hover(uri: uri, at: updatedSource.markers[0])
+    let hover = try context.hover(uri: uri, at: updatedSource.markers[0])
     XCTAssertNotNil(hover)
   }
 
   // MARK: - Document Lifecycle Tests
 
-  func testDocumentClosingIsClean() async throws {
+  func testDocumentClosingIsClean() throws {
     let source = try MarkedSource(
       """
       public fun main() {
@@ -91,30 +91,37 @@ final class LSPIntegrationTests: XCTestCase {
       }
       """)
 
-    let uri1 = try await context.openDocument(source, uri: "file:///test/doc1.hylo")
-    let uri2 = try await context.openDocument(source, uri: "file:///test/doc2.hylo")
+    let uri1 = try context.openDocument(source, uri: "file:///test/doc1.hylo")
+    let uri2 = try context.openDocument(source, uri: "file:///test/doc2.hylo")
 
-    _ = try await context.documentSymbols(at: uri1)
-    _ = try await context.documentSymbols(at: uri2)
+    _ = try context.documentSymbols(at: uri1)
+    _ = try context.documentSymbols(at: uri2)
 
-    try await context.closeDocument(uri1)
+    try context.closeDocument(uri1)
 
-    _ = try await context.documentSymbols(at: uri2)
+    _ = try context.documentSymbols(at: uri2)
 
-    try await context.closeDocument(uri2)
+    try context.closeDocument(uri2)
   }
 
   // MARK: - Error Handling Tests
 
-  func testIncompleteStandardLibrary() async throws {
-    let c = try await LSPTestContext.make(
-      tag: "LSPIntegrationTests", rootUri: "file:///test", standardLibrary: [])
-    let uri = try await c.openDocument(MarkedSource("fun f() {}"))
+  func testIncompleteStandardLibrary() throws {
+    let c = LSPTestContext(tag: "LSPIntegrationTests", standardLibrary: [])
+    let uri = try c.openDocument(MarkedSource("fun f() {}"))
 
-    guard case .optionA(let symbols) = try await c.documentSymbols(at: uri) else {
+    guard case .optionA(let symbols) = try c.documentSymbols(at: uri) else {
       return XCTFail("Expected optionA response")
     }
     XCTAssertEqual(symbols.map(\.name), ["f"])
+  }
+
+  func testRequestOnUnopenedDocument() throws {
+    let uri = try XCTUnwrap(URL(string: "file:///test/unopened.hylo"))
+    do {
+      _ = try context.documentSymbols(at: uri)
+      XCTFail("Expected an error")
+    } catch LSPError.invalidParameter(_) {}
   }
 
   // MARK: - Position Conversion Tests
