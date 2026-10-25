@@ -96,10 +96,59 @@ public struct Program: Sendable {
     _ m: Module.ID,
     loggingInferenceWhere isLoggingEnabled: ((AnySyntaxIdentity, Program) -> Bool)?
   ) {
+    typing(m, loggingInferenceWhere: isLoggingEnabled, { (t) in t.apply() })
+  }
+
+  /// Assigns types to the syntax trees of the module containing `call` and returns the types
+  /// expected of argument `i` of `call`, i.e., the types of the parameters to which it is passed
+  /// in each well-typed choice of overloads.
+  ///
+  /// The result contains the type of argument `i` in each typing without error of the expression
+  /// in which `call` is checked, where argument `i` is assumed to have an unknown type, and all
+  /// the choices of the overloaded names in that expression (e.g., the callee of `call`) are
+  /// considered rather than the preferred ones. Hence the overloads of the callee are pruned by
+  /// the labels and the other arguments of `call`, by default arguments, and by the context of
+  /// `call` (e.g., its expected type or the parameter to which it is passed), as by type checking.
+  /// For example, if `f` is declared as `fun f(x a: A)`, `fun f(x b: B)`, and `fun f(y c: C)`,
+  /// the result for the argument of `f(x: .m)` contains `A` and `B`.
+  ///
+  /// A type is included even if several choices accept it, i.e., even if an argument of that type
+  /// would be ambiguous. A type that the expression does not determine (e.g., a generic parameter
+  /// of the callee that only argument `i` constrains) is not included, and neither is a type for
+  /// which the type checker fails to infer the type of another part of the expression. The result
+  /// is empty if the expression is ill-typed whatever the type of argument `i` (e.g., if another
+  /// argument of `call` is ill-typed or if `call` lacks arguments for parameters without default
+  /// values). The order of the result is unspecified.
+  ///
+  /// Argument `i` is type checked on its own, without any expected type, and the expression in
+  /// which `call` is checked is typed and diagnosed as if argument `i` had an unknown type. The
+  /// other syntax trees of the module are typed as by `assignTypes(_:loggingInferenceWhere:)`.
+  ///
+  /// - Requires: `i` is the position of an argument of `call`, which is as parsed. The module
+  ///   containing `call` has been scoped but not type checked; its dependencies have been type
+  ///   checked.
+  /// - Complexity: One type check of the module containing `call`.
+  public mutating func assignTypes(
+    inferringTypesOfArgument i: Int, of call: Call.ID,
+    loggingInferenceWhere isLoggingEnabled: ((AnySyntaxIdentity, Program) -> Bool)? = nil
+  ) -> [AnyTypeIdentity] {
+    precondition(self[call].arguments.indices.contains(i), "no argument at position \(i)")
+    return typing(call.module, loggingInferenceWhere: isLoggingEnabled) { (t) in
+      t.apply(inferringTypesOfArgument: i, of: call)
+    }
+  }
+
+  /// Returns the result of `action` applied to a type checker assigning types to the syntax trees
+  /// of `m`, logging a trace of inference for the trees satisfying `isLoggingEnabled`.
+  private mutating func typing<T>(
+    _ m: Module.ID,
+    loggingInferenceWhere isLoggingEnabled: ((AnySyntaxIdentity, Program) -> Bool)?,
+    _ action: (inout Typer) -> T
+  ) -> T {
     types.reserveCapacity(max(types.underestimatedCount << 1, 10000))
     var typer = Typer(typing: m, of: consume self, loggingInferenceWhere: isLoggingEnabled)
-    typer.apply()
-    self = typer.release()
+    defer { self = typer.release() }
+    return action(&typer)
   }
 
   /// Lowers the contents of `m` to IR.
