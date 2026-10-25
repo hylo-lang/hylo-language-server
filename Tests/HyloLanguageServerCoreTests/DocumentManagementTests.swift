@@ -3,11 +3,7 @@ import XCTest
 
 @testable import HyloLanguageServerCore
 
-/// Tests for document management functionality.
-///
-/// These tests verify:
-/// - Document change application
-/// - Workspace path resolution
+/// Tests for the application of changes to documents.
 final class DocumentManagementTests: XCTestCase {
 
   func testApplyDocumentChanges() throws {

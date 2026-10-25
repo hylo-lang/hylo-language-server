@@ -4,7 +4,6 @@ import FrontEnd
 import HyloLanguageServerCore
 import JSONRPC
 import Logging
-import Puppy
 import StandardLibrary
 
 @main
