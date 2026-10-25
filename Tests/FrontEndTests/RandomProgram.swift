@@ -61,6 +61,9 @@ struct RandomProgram: CustomStringConvertible {
   /// The top-level declarations of the program.
   private(set) var declarations: [Declaration] = []
 
+  /// The expressions that may qualify a name in the body of `use`.
+  private(set) var qualifications: [String] = []
+
   /// The source of randomness.
   private var g: SplitMix64
 
@@ -116,6 +119,8 @@ struct RandomProgram: CustomStringConvertible {
     let parameters = nominals.indices.map { (i) in
       "x\(i): " + applied(nominals[i], to: "<\(pick(arguments))>")
     }
+    qualifications = nominals.indices.map({ (i) in "x\(i)" }) + ["l", "t", "L", "T"]
+    qualifications.append(contentsOf: nominals.filter({ (s) in !s.isGeneric }).map(\.name))
 
     let bound = traits.randomElement(using: &g).map({ (t) in " is \(t.name)" }) ?? ""
     let header = "fun use<T\(bound)>(\((parameters + ["l: L", "t: T"]).joined(separator: ", ")))"
@@ -259,9 +264,13 @@ struct RandomProgram: CustomStringConvertible {
     xs.randomElement(using: &g)!
   }
 
-  /// The text of each source file of the module, the first of which imports the library.
-  var sources: [String] {
-    [text(of: 0, startingWith: "import Lib\n"), text(of: 1)]
+  /// Returns the text of each source file of the module, the first of which imports the library,
+  /// with `statements` appended to the body of `use`.
+  func sources(using statements: [String] = []) -> [String] {
+    var p = self
+    let i = p.declarations.firstIndex(where: \.isUse)!
+    p.declarations[i].members!.append(contentsOf: statements)
+    return [p.text(of: 0, startingWith: "import Lib\n"), p.text(of: 1)]
   }
 
   /// The text of the library.
@@ -282,17 +291,19 @@ struct RandomProgram: CustomStringConvertible {
 
   /// The text of the program.
   var description: String {
-    let fs = sources.enumerated().map({ (i, s) in "// file \(i)\n\(s)" })
+    let fs = sources().enumerated().map({ (i, s) in "// file \(i)\n\(s)" })
     return "// library\n\(library)" + fs.joined()
   }
 
-  /// Returns the programs obtained by removing a single declaration from `self`.
+  /// Returns the programs obtained by removing a single declaration from `self`, except `use`.
   private var reductions: [RandomProgram] {
     var result: [RandomProgram] = []
     for i in declarations.indices {
-      var p = self
-      p.declarations.remove(at: i)
-      result.append(p)
+      if !declarations[i].isUse {
+        var p = self
+        p.declarations.remove(at: i)
+        result.append(p)
+      }
       for j in declarations[i].members?.indices ?? (0 ..< 0) {
         var q = self
         q.declarations[i].members!.remove(at: j)
@@ -317,9 +328,10 @@ struct RandomProgram: CustomStringConvertible {
     }
   }
 
-  /// Returns `self` type checked, along with the identities of the source files of the module.
-  func typeChecked() async -> (Program, [SourceFile.ID]) {
-    await Program.typeChecked(sources, importing: library)
+  /// Returns `self` type checked, with `statements` appended to the body of `use`, along with the
+  /// identities of the source files of the module.
+  func typeChecked(using statements: [String] = []) async -> (Program, [SourceFile.ID]) {
+    await Program.typeChecked(sources(using: statements), importing: library)
   }
 
   /// The seeds of the programs on which properties are checked, whose number is 25 unless set by
@@ -327,6 +339,15 @@ struct RandomProgram: CustomStringConvertible {
   static var seeds: Range<UInt64> {
     let n = ProcessInfo.processInfo.environment["HYLO_PROPERTY_SEEDS"].flatMap(UInt64.init(_:))
     return 0 ..< (n ?? 25)
+  }
+
+}
+
+extension RandomProgram.Declaration {
+
+  /// `true` iff `self` declares `use`.
+  fileprivate var isUse: Bool {
+    header.hasPrefix("fun use")
   }
 
 }

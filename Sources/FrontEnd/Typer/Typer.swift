@@ -4332,8 +4332,45 @@ public struct Typer {
     // Is `q` a namespace?
     if let s = program.types.cast(q, to: Namespace.self) {
       return resolve(n, memberOf: s, visibleFrom: scopeOfUse)
+    } else {
+      return resolve(n, selectedOn: q, visibleFrom: scopeOfUse)
     }
+  }
 
+  /// Returns the members that can be selected on an instance of `q` in `scopeOfUse`.
+  ///
+  /// The result contains each declaration to which some name `n` may refer when resolved as a
+  /// member of `q` in `scopeOfUse`. A declaration reachable in more than one way (e.g., through
+  /// different witnesses of the same conformance) occurs once. The result is empty if `q` is
+  /// `.error`, whose members are never resolved.
+  ///
+  /// - Requires: `q` is not a unification variable.
+  /// - Complexity: O(m + t) witness lookups, where m is the number of extensions and t is the
+  ///   number of traits visible from `scopeOfUse`.
+  internal mutating func members(
+    of q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity
+  ) -> [VisibleName] {
+    if q == .error { return [] }
+    if let s = program.types.cast(q, to: Namespace.self) { return members(of: s) }
+
+    var result: [VisibleName] = []
+    var visited: Set<DeclarationIdentity> = []
+    for c in resolve(nil, selectedOn: q, visibleFrom: scopeOfUse) {
+      let m = c.reference.target!
+      if visited.insert(m).inserted {
+        result.append(.init(name: program.name(of: m)!, declaration: c.reference, type: c.type))
+      }
+    }
+    return result
+  }
+
+  /// Returns candidates for resolving `n` as a member selected on an instance of `q` in
+  /// `scopeOfUse`, or for resolving any member if `n` is `nil`.
+  ///
+  /// - Requires: `q` is not a unification variable or a namespace.
+  private mutating func resolve(
+    _ n: Name?, selectedOn q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity
+  ) -> [NameResolutionCandidate] {
     var candidates: [NameResolutionCandidate] = []
     let (type: r, isStatic: s) = qualificationForSelection(on: q)
 
@@ -4345,6 +4382,30 @@ public struct Typer {
       contentsOf: resolve(n, inheritedMemberOf: r, visibleFrom: scopeOfUse, statically: s))
 
     return candidates
+  }
+
+  /// Returns the members of `q`, except if `q` is the built-in module.
+  ///
+  /// The members of the built-in module are recognized by their names and not enumerated. The
+  /// members of a module are the names visible at the top level of any of its source files.
+  ///
+  /// - Complexity: O(f * n) where f is the number of source files in `q` and n is the number of
+  ///   declarations visible from the top level of a source file in `q`, including imported ones.
+  private mutating func members(of q: Namespace.ID) -> [VisibleName] {
+    switch program.types[q].identifier {
+    case .builtin:
+      return []
+
+    case .module(let m):
+      var result: [VisibleName] = []
+      var visited: Set<DeclarationReference> = []
+      for f in program[m].sourceFileIdentities {
+        for n in names(visibleFrom: .init(file: f)) where visited.insert(n.declaration).inserted {
+          result.append(n)
+        }
+      }
+      return result
+    }
   }
 
   /// Returns candidates for resolving `n` as a member of `q` in `scopeOfUse`.
@@ -4365,24 +4426,21 @@ public struct Typer {
   }
 
   /// Returns candidates for resolving `n` as a member declared in the primary declaration of the
-  /// type identified by `q`, selected statically iff `selectionIsStatic` is `true`.
+  /// type identified by `q`, or for resolving any such member if `n` is `nil`, selected statically
+  /// iff `selectionIsStatic` is `true`.
   ///
   /// Non-static members are resolved as unbound members if `selectionIsStatic` is `true` and as
   /// bound members if `selectionIsStatic` is `false`.
   ///
   /// - Requires: `q.type` is not a unification variable.
   private mutating func resolve(
-    _ n: Name, nativeMemberOf q: AnyTypeIdentity, statically selectionIsStatic: Bool
+    _ n: Name?, nativeMemberOf q: AnyTypeIdentity, statically selectionIsStatic: Bool
   ) -> [NameResolutionCandidate] {
     assert(!q.isVariable)
     let (context, receiver) = program.types.contextAndHead(q)
     var candidates: [NameResolutionCandidate] = []
 
-    var ds = declarations(nativeMembersOf: q)[n.identifier] ?? []
-    refineLookupResults(&ds, matching: n)
-
-    for m in ds {
-      if !resolvableWithQualification(m) { continue }
+    for m in lookup(n, in: declarations(nativeMembersOf: q)) {
       if !isSelectable(m, statically: selectionIsStatic) { continue }
       var member = typeOfName(referringTo: m, statically: selectionIsStatic)
       if let a = program.types[receiver] as? TypeApplication {
@@ -4396,13 +4454,14 @@ public struct Typer {
     return candidates
   }
 
-  /// Returns candidates for resolving `n` as a member in an extension of `q` in `scopeOfUse`,
-  /// selected statically iff `selectionIsStatic` is `true`.
+  /// Returns candidates for resolving `n` as a member in an extension of `q` in `scopeOfUse`, or
+  /// for resolving any such member if `n` is `nil`, selected statically iff `selectionIsStatic` is
+  /// `true`.
   ///
   /// Non-static members are resolved as unbound members if `selectionIsStatic` is `true` and as
   /// bound members if `selectionIsStatic` is `false`.
   private mutating func resolve(
-    _ n: Name, memberInExtensionOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity,
+    _ n: Name?, memberInExtensionOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity,
     statically selectionIsStatic: Bool
   ) -> [NameResolutionCandidate] {
     let es = extensions(visibleFrom: scopeOfUse)
@@ -4410,9 +4469,9 @@ public struct Typer {
   }
 
   /// For each declaration in `es` that applies to `q`, adds to `result` the members of that
-  /// declaration that are named `n`.
+  /// declaration that are named `n`, or all its members if `n` is `nil`.
   private mutating func resolve<S: Sequence<ExtensionDeclaration.ID>>(
-    _ n: Name,
+    _ n: Name?,
     declaredIn extensions: S, applyingTo q: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
     statically selectionIsStatic: Bool
   ) -> [NameResolutionCandidate] {
@@ -4422,8 +4481,7 @@ public struct Typer {
         let w = program.types.reify(
           a.witness, applying: a.substitutions, withVariables: .substitutedByError)
 
-        for m in lookup(n, lexicallyIn: .init(node: e)) {
-          if !resolvableWithQualification(m) { continue }
+        for m in lookup(n, in: declarations(lexicallyIn: .init(node: e))) {
           if !isSelectable(m, statically: selectionIsStatic) { continue }
           var member = typeOfName(referringTo: m, statically: selectionIsStatic)
 
@@ -4440,29 +4498,34 @@ public struct Typer {
     return candidates
   }
 
-  /// Returns candidates for resolving `name` as a member of `q` via conformance in `scopeOfUse`,
-  /// selected statically iff `selectionIsStatic` is `true`.
+  /// Returns candidates for resolving `n` as a member of `q` via conformance in `scopeOfUse`, or
+  /// for resolving any such member if `n` is `nil`, selected statically iff `selectionIsStatic` is
+  /// `true`.
   ///
   /// Non-static members are resolved as unbound members if `selectionIsStatic` is `true` and as
-  /// bound members if `selectionIsStatic` is `false`.
+  /// bound members if `selectionIsStatic` is `false`. The result contains a candidate for each
+  /// witness of a conformance of `q` so that ambiguous conformances can be diagnosed.
   private mutating func resolve(
-    _ name: Name, inheritedMemberOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity,
+    _ n: Name?, inheritedMemberOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity,
     statically selectionIsStatic: Bool
   ) -> [NameResolutionCandidate] {
     var candidates: [NameResolutionCandidate] = []
 
-    for (concept, ms) in lookup(name, memberOfTraitVisibleFrom: scopeOfUse) {
+    for concept in traits(visibleFrom: scopeOfUse) {
+      let ms = lookup(n, in: declarations(lexicallyIn: .init(node: concept))).filter { (m) in
+        isSelectable(m, statically: selectionIsStatic)
+      }
+      if ms.isEmpty { continue }
+
       let vs = program[concept].parameters.map({ _ in fresh().erased })
       let model = typeOfModel(of: q, conformingTo: concept, with: vs)
       for a in summon(model.erased, in: scopeOfUse) {
+        let w = program.types.reify(
+          a.witness, applying: a.substitutions, withVariables: .substitutedByError)
         for m in ms {
-          if !isSelectable(m, statically: selectionIsStatic) { continue }
-
           // Determine the type of the resolved member, adapting it to the qualification. Since
           // we're resolving a trait requirement we know that we can refer to the unbound version
           // of any non-static member.
-          let w = program.types.reify(
-            a.witness, applying: a.substitutions, withVariables: .substitutedByError)
           var member = typeOfImplementation(satisfying: m, in: w)
           if !selectionIsStatic {
             member = typeOfBoundMember(referringTo: m, withUnboundType: member)
@@ -4605,25 +4668,16 @@ public struct Typer {
     return ds.isEmpty ? [:] : [n.identifier: ds]
   }
 
-  /// Returns the declarations in `table` introducing `n`.
-  private mutating func lookup(_ n: Name, in table: Memos.LookupTable) -> [DeclarationIdentity] {
+  /// Returns the declarations in `table` introducing `n`, or all declarations in `table` if `n` is
+  /// `nil`.
+  ///
+  /// - Complexity: O(1) if `n` is simple; otherwise, O(m) where m is the number of declarations
+  ///   in `table`.
+  private mutating func lookup(_ n: Name?, in table: Memos.LookupTable) -> [DeclarationIdentity] {
+    guard let n else { return Array(table.values.joined()) }
     var ds = table[n.identifier] ?? []
     refineLookupResults(&ds, matching: n)
     return ds
-  }
-
-  /// Returns the declarations introducing `name` as a member of a trait visible from `scopeOfUse`.
-  private mutating func lookup(
-    _ name: Name, memberOfTraitVisibleFrom scopeOfUse: ScopeIdentity
-  ) -> [(concept: TraitDeclaration.ID, members: [DeclarationIdentity])] {
-    var result: [(concept: TraitDeclaration.ID, members: [DeclarationIdentity])] = []
-    for d in traits(visibleFrom: scopeOfUse) {
-      let ms = lookup(name, lexicallyIn: .init(node: d)).filter(resolvableWithQualification(_:))
-      if !ms.isEmpty {
-        result.append((concept: d, members: ms))
-      }
-    }
-    return result
   }
 
   /// Removes from `results` the declarations whose names do not match `name`, substituting bundle
@@ -4646,7 +4700,7 @@ public struct Typer {
     }
   }
 
-  /// Returns `true` if `m` can be resolved with a qualified name expression.
+  /// Returns `true` iff `m` can be resolved with a qualified name expression.
   private func resolvableWithQualification(_ m: DeclarationIdentity) -> Bool {
     switch program.tag(of: m) {
     case GenericParameterDeclaration.self:
@@ -4658,13 +4712,13 @@ public struct Typer {
     }
   }
 
-  /// Returns `true` if `m` can be referred to by a selection that is static iff
-  /// `selectionIsStatic` is `true`.
+  /// Returns `true` iff `m` can be resolved with a qualified name expression and referred to by a
+  /// selection that is static iff `selectionIsStatic` is `true`.
   ///
   /// Static members can't be selected on an instance. Non-static members can be selected both
   /// statically (`self` is unbound) and on an instance (`self` is bound).
   private func isSelectable(_ m: DeclarationIdentity, statically selectionIsStatic: Bool) -> Bool {
-    selectionIsStatic || !program.isStatic(m)
+    resolvableWithQualification(m) && (selectionIsStatic || !program.isStatic(m))
   }
 
   /// Returns the declarations lexically contained in the declaration of `t`.
