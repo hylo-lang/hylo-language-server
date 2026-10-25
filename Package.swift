@@ -73,6 +73,31 @@ let package = Package(
       swiftSettings: toolCompileSettings
     ),
 
+    .target(
+      name: "MessageDriver",
+      dependencies: [
+        "HyloLanguageServerCore",
+        .product(name: "Logging", package: "swift-log"),
+        "JSONRPC",
+        "LanguageServerProtocol",
+        .product(name: "HyloFrontEnd", package: "hylo-new"),
+      ],
+      swiftSettings: commonCompileSettings
+    ),
+
+    .testTarget(
+      name: "MessageDriverTests",
+      dependencies: [
+        "MessageDriver",
+        "HyloLanguageServerCore",
+        .product(name: "Logging", package: "swift-log"),
+        "JSONRPC",
+        "LanguageServerProtocol",
+        .product(name: "HyloFrontEnd", package: "hylo-new"),
+        .product(name: "HyloStandardLibrary", package: "hylo-new"),
+      ]
+    ),
+
     .testTarget(
       name: "NativeDriverTests",
       dependencies: [
