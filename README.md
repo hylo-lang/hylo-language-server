@@ -79,8 +79,9 @@ client, which returns the length of a JSON array of the messages to send back, a
 `lsp_output` returns. Both take their argument in memory returned by `lsp_alloc`, which they free.
 
 `Tools/wasm-smoke-test.mjs` hosts a build of the driver under Node's WASI, opens a document and
-requests its hover and symbols. It takes the standard library from the resource bundle of a native
-build, which holds the generated integer types beside hylo-new's `StandardLibrary/Sources`:
+requests its hover, symbols and completions. It takes the standard library from the resource
+bundle of a native build, which holds the generated integer types beside hylo-new's
+`StandardLibrary/Sources`:
 
 ```sh
 node Tools/wasm-smoke-test.mjs \

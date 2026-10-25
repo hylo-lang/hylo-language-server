@@ -61,6 +61,7 @@ const answers = [
          params: { textDocument: { uri, languageId: 'hylo', version: 0, text } } }),
   send({ id: 2, method: 'textDocument/hover', params: { textDocument: { uri }, position } }),
   send({ id: 3, method: 'textDocument/documentSymbol', params: { textDocument: { uri } } }),
+  send({ id: 4, method: 'textDocument/completion', params: { textDocument: { uri }, position } }),
 ];
 
 const messages = answers.flat();
@@ -73,7 +74,7 @@ const symbols = responses.find((m) => m.id === 3)?.result?.map((s) => s.name);
 console.log(`total ${(performance.now() - start).toFixed(0)} ms, ` +
             `memory ${lsp.memory.buffer.byteLength / 2 ** 20} MiB`);
 if (
-  responses.length !== 3 || failures.length !== 0
+  responses.length !== 4 || failures.length !== 0
   || diagnostics.length === 0 || diagnostics.some((d) => d.length !== 0)
   || JSON.stringify(symbols) !== JSON.stringify(['twice', 'main'])
 ) {
