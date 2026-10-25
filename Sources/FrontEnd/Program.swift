@@ -2204,4 +2204,18 @@ extension Program {
     })
   }
 
+  /// Returns the names visible from `scopeOfUse`, each paired with an entity that it may denote
+  /// without qualification there.
+  ///
+  /// The result contains each entity to which some name `n` may refer in `scopeOfUse`, including
+  /// the predefined names that are not shadowed by declarations (e.g., `Self` or `Void`), with the
+  /// type of `n`.
+  ///
+  /// - Requires: The module containing `scopeOfUse` has been type checked.
+  public mutating func names(visibleFrom scopeOfUse: ScopeIdentity) -> [VisibleName] {
+    withTyper(typing: scopeOfUse.file.module) { (t) in
+      t.names(visibleFrom: scopeOfUse)
+    }
+  }
+
 }
