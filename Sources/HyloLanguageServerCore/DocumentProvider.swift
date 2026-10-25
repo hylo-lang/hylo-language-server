@@ -4,7 +4,6 @@ import JSONRPC
 import LanguageServer
 import LanguageServerProtocol
 import Logging
-import StandardLibrary
 
 public protocol TextDocumentProtocol {
 
@@ -23,26 +22,13 @@ public enum GetDocumentContextError: Error {
 
 }
 
-/// Cached standard library data
-private struct StandardLibraryCache {
-
-  let program: Program
-  let fingerprint: UInt64
-
-  init(program: Program, sources: [SourceFile]) {
-    self.program = program
-    self.fingerprint = SourceFile.fingerprint(contentsOf: sources)
-  }
-
-}
-
 /// A simple compilation helper for LSP document processing
 private struct CompilationHelper {
 
   /// The program being compiled.
   ///
   /// `forTesting: true` makes the frontend tolerate missing standard library entities rather than
-  /// trap, which is needed because the standard library may be incomplete (e.g., while edited).
+  /// trap, which is needed because the standard library may be incomplete.
   var program = Program(forTesting: true)
 
   /// Parses sources into a module
@@ -103,20 +89,23 @@ public actor DocumentProvider {
   private var documents: [AbsoluteURL: DocumentContext] = [:]
   public let logger: Logger
   let connection: JSONRPCClientConnection
-  var workspaceFolders: [WorkspaceFolder] = []
 
-  // Standard library caching
-  private var stdlibCache: [AbsoluteURL: StandardLibraryCache] = [:]
-  public let defaultStdlibRoot: URL
+  /// The sources of the standard library.
+  private let standardLibrarySources: [SourceFile]
 
-  /// Creates an instance ready for the pre-handshake phase of the LSP lifecycle.
+  /// The standard library, scoped and typed, if it has been analyzed yet.
+  private var standardLibrary: Program?
+
+  /// Creates an instance ready for the pre-handshake phase of the LSP lifecycle, analyzing
+  /// documents with the standard library `sources`.
   ///
   /// Call `initialize(_:)` once the LSP `initialize` request is received.
-  public init(connection: JSONRPCClientConnection, logger: Logger, standardLibrary: URL) {
+  public init(
+    connection: JSONRPCClientConnection, logger: Logger, standardLibrary sources: [SourceFile]
+  ) {
     self.logger = logger
     self.connection = connection
-    defaultStdlibRoot = standardLibrary
-    logger.info("Using stdlib path: \(standardLibrary)")
+    standardLibrarySources = sources
   }
 
   /// Creates a fully initialized instance from `params` and returns the corresponding
@@ -125,7 +114,7 @@ public actor DocumentProvider {
   public static func make(
     connection: JSONRPCClientConnection,
     logger: Logger,
-    standardLibrary: URL,
+    standardLibrary: [SourceFile],
     parameters: InitializeParams
   ) async throws(AnyJSONRPCResponseError) -> (DocumentProvider, InitializationResponse) {
     let provider = DocumentProvider(
@@ -138,75 +127,19 @@ public actor DocumentProvider {
   public func initialize(
     _ params: InitializeParams
   ) async throws(AnyJSONRPCResponseError) -> InitializationResponse {
-    if let w = params.workspaceFolders {
-      self.workspaceFolders = w
-    }
-
-    logger.info(
-      "Initialize in working directory: \(FileManager.default.currentDirectoryPath), with workspace folders: \(workspaceFolders)"
-    )
-
     let serverInfo = ServerInfo(name: "hylo", version: "0.1.0")
     return InitializationResponse(capabilities: serverCapabilities, serverInfo: serverInfo)
   }
 
-  public func changeWorkspaceFolders(added: [WorkspaceFolder], removed: [WorkspaceFolder]) async {
-    workspaceFolders.removeAll { removed.contains($0) }
-    workspaceFolders.append(contentsOf: added)
-  }
+  /// Returns the standard library, analyzing it first if it has not been yet.
+  private func analyzedStandardLibrary() async -> Program {
+    if let p = standardLibrary { return p }
 
-  public func isStdlibDocument(_ uri: AbsoluteURL) -> Bool {
-    let (_, isStdlibDocument) = getStdlibPath(uri)
-    return isStdlibDocument
-  }
-
-  public func getStdlibPath(_ uri: AbsoluteURL) -> (stdlibPath: AbsoluteURL, isStdlibDocument: Bool)
-  {
-    var it = uri.url.deletingLastPathComponent()
-
-    // Check if current document is inside a stdlib source directory
-    while it.path != "/" {
-      let voidPath = NSString.path(withComponents: [it.path, "Core", "Void.hylo"])
-      let fm = FileManager.default
-      var isDirectory: ObjCBool = false
-      if fm.fileExists(atPath: voidPath, isDirectory: &isDirectory) && !isDirectory.boolValue {
-        logger.info("Use local stdlib path: \(it.path)")
-        return (AbsoluteURL(it), true)
-      }
-
-      it = it.deletingLastPathComponent()
-    }
-
-    return (AbsoluteURL(defaultStdlibRoot), false)
-  }
-
-  // MARK: - Standard Library Management
-
-  /// Loads standard library sources from the given path
-  private func loadStandardLibrarySources(from stdlibPath: AbsoluteURL) throws -> [SourceFile] {
-    var sources: [SourceFile] = []
-
-    try SourceFile.forEach(in: stdlibPath.url) { sourceFile in
-      sources.append(sourceFile)
-    }
-    return sources
-  }
-
-  /// Builds a program with standard library loaded and typed
-  private func buildStandardLibraryProgram(from stdlibPath: AbsoluteURL) async throws
-    -> StandardLibraryCache
-  {
-    logger.debug("Building standard library program from: \(stdlibPath)")
-
-    // Load sources
-    let sources = try loadStandardLibrarySources(from: stdlibPath)
-
-    // Create program and helper
     var helper = CompilationHelper()
     let moduleId = helper.program.demandModule(Module.standardLibraryName)
 
     // Parse sources
-    let (parseTime, parseError) = await helper.parse(sources, into: moduleId)
+    let (parseTime, parseError) = await helper.parse(standardLibrarySources, into: moduleId)
     logger.debug("Standard library parsing took: \(parseTime)")
     if parseError {
       logger.error("Standard library parsing failed")
@@ -229,43 +162,16 @@ public actor DocumentProvider {
       // Continue anyway for LSP features
     }
 
-    return StandardLibraryCache(program: helper.program, sources: sources)
-  }
-
-  /// Gets or builds the standard library program, with caching
-  private func getStandardLibraryProgram(root stdlibPath: AbsoluteURL) async throws
-    -> StandardLibraryCache
-  {
-    // Return cached version if available (invalidation is handled by invalidateStandardLibraryCache)
-    if let cached = stdlibCache[stdlibPath] {
-      return cached
-    }
-
-    // Build new program
-    let cache = try await buildStandardLibraryProgram(from: stdlibPath)
-    stdlibCache[stdlibPath] = cache
-    return cache
-  }
-
-  /// Invalidates standard library cache for the given path
-  private func invalidateStandardLibraryCache(for stdlibPath: AbsoluteURL) {
-    logger.debug("Invalidating standard library cache for: \(stdlibPath)")
-    stdlibCache.removeValue(forKey: stdlibPath)
+    standardLibrary = helper.program
+    return helper.program
   }
 
   // MARK: - Program Building
 
   /// Builds a complete program for a document
   private func buildProgramForDocument(url: AbsoluteURL, text: String) async throws -> Program {
-    let (standardLibrary, isStdlibDocument) = getStdlibPath(url)
-
-    if isStdlibDocument {
-      // Document is part of standard library - just return the stdlib program
-      return try await getStandardLibraryProgram(root: standardLibrary).program
-    }
-
     // Create a copy of the standard library program
-    var program = try await getStandardLibraryProgram(root: standardLibrary).program
+    var program = await analyzedStandardLibrary()
 
     // Add the main module for user code
     let mainModuleId = program.demandModule(.init("MainModule"))
@@ -328,12 +234,6 @@ public actor DocumentProvider {
       program: try await buildProgramForDocument(url: uri, text: document.text))
 
     logger.debug("Updated changed document: \(uri), version: \(document.version ?? -1)")
-
-    // Invalidate cached stdlib AST if the edited document is part of the stdlib
-    let (stdlibPath, isStdlibDocument) = getStdlibPath(uri)
-    if isStdlibDocument {
-      invalidateStandardLibraryCache(for: stdlibPath)
-    }
   }
 
   /// Signals that the client took over the ownership of the document.

@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import FrontEnd
 import HyloLanguageServerCore
 import JSONRPC
 import Logging
@@ -27,8 +28,9 @@ struct HyloLspCommand: AsyncParsableCommand {
     var logger = Logger(label: "s")
     logger.handler = NullLogHandler(label: "s")
 
-    await serveLanguageServer(
-      channel: .stdioPipe(), logger: logger, standardLibrary: URL(fileURLWithPath: stdlibPath))
+    var sources: [SourceFile] = []
+    try SourceFile.forEach(in: URL(fileURLWithPath: stdlibPath)) { (s) in sources.append(s) }
+    await serveLanguageServer(channel: .stdioPipe(), logger: logger, standardLibrary: sources)
   }
 
 }
