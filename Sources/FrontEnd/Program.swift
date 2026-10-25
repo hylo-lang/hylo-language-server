@@ -421,6 +421,10 @@ public struct Program: Sendable {
   }
 
   /// Returns `true` iff `n` declares a static member entity.
+  ///
+  /// A variable is static iff it is a member introduced by a static binding declaration.
+  ///
+  /// - Requires: The module containing `n` is scoped if `n` is a variable declaration.
   public func isStatic<T: SyntaxIdentity>(_ n: T) -> Bool {
     // Note: the following relies on the fact that non-member declarations can't be `static`, which
     // is an invariant of syntactically well-formed ASTs.
@@ -433,9 +437,23 @@ public struct Program: Sendable {
       return self[castUnchecked(n, to: FunctionBundleDeclaration.self)].is(.static)
     case FunctionDeclaration.self:
       return self[castUnchecked(n, to: FunctionDeclaration.self)].is(.static)
+    case VariableDeclaration.self:
+      if
+        isMemberScope(parent(containing: n)),
+        let b = bindingDeclaration(containing: castUnchecked(n, to: VariableDeclaration.self))
+      {
+        return self[b].is(.static)
+      } else {
+        return false
+      }
     default:
       return false
     }
+  }
+
+  /// Returns `true` iff `s` is the scope of a type or extension declaration.
+  private func isMemberScope(_ s: ScopeIdentity) -> Bool {
+    s.node.map({ (m) in isTypeDeclaration(m) || isTypeExtendingDeclaration(m) }) ?? false
   }
 
   /// Returns `true` iff `n` is defined in the context of a function.

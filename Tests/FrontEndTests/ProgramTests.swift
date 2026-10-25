@@ -135,6 +135,31 @@ final class ProgramTests: XCTestCase {
     }
   }
 
+  func testIsStatic() async throws {
+    var p = Program(forTesting: true)
+    let m = p.demandModule("Main")
+    _ = p[m].addSource(
+      """
+      enum O {
+        case one
+        case two(x: Void)
+        let i: Void
+        static let s: Void = match O.one { case .one { () } case .two(sink let a) { a } }
+      }
+      """)
+    await p.assignScopes(m)
+
+    /// Returns the variable declared with name `n` in `m`.
+    func variable(_ n: String) throws -> AnySyntaxIdentity {
+      let v = p.select(from: m, .and(.tag(VariableDeclaration.self), .name(.init(identifier: n))))
+      return try XCTUnwrap(v.uniqueElement)
+    }
+
+    XCTAssert(p.isStatic(try variable("s")))
+    XCTAssertFalse(p.isStatic(try variable("i")))
+    XCTAssertFalse(p.isStatic(try variable("a")))
+  }
+
   func testQuerySourceFileWithName() throws {
     var p = Program(forTesting: true)
 

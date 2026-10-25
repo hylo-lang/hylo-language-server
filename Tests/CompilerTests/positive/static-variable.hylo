@@ -1,0 +1,26 @@
+//! stage:typing no-std
+
+// Checks that static variables can be selected on a type and referred to from inside members.
+
+struct B {
+  public memberwise init
+  static let k: Void = ()
+  static let (l, m): {Void, Void} = ((), ())
+  static let b: B = B()
+
+  fun f() {
+    let _ = k
+    let _ = Self.k
+  }
+}
+
+extension B {
+  static let n: Void = ()
+}
+
+fun h() {
+  let _ = B.k
+  let _ = B.l
+  let _ = B.n
+  let _: B = .b
+}
