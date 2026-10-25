@@ -127,6 +127,13 @@ final class LSPIntegrationTests: XCTestCase {
     XCTAssertEqual(symbols.map(\.name), ["f"])
   }
 
+  func testOpenDocumentWithoutFileName() throws {
+    do {
+      try context.openDocument(MarkedSource("fun f() {}"), uri: "file:///")
+      XCTFail("Expected an error")
+    } catch LSPError.invalidParameter(_) {}
+  }
+
   func testRequestOnUnopenedDocument() throws {
     let uri = try XCTUnwrap(URL(string: "file:///test/unopened.hylo"))
     do {
