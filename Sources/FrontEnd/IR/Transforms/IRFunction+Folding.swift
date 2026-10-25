@@ -1,3 +1,5 @@
+import Utilities
+
 extension IRFunction {
 
   /// Combines instructions to form fewer instructions.

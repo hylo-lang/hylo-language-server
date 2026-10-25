@@ -1,3 +1,5 @@
+import Utilities
+
 extension Diagnostic {
 
   /// Writes `self` into `output` using the given output style.

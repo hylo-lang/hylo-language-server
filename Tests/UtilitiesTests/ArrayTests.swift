@@ -30,4 +30,10 @@ final class ArrayTests: XCTestCase {
     XCTAssertEqual(a, [0, 1, 2, 3, 3, 3])
   }
 
+  func testMinimalCounterexample() {
+    let a = [4, 1, 3, 1, 2]
+    XCTAssertEqual(a.minimalCounterexample(to: { (b) in b.reduce(0, +) < 5 }), [3, 2])
+    XCTAssertNil(a.minimalCounterexample(to: { (b) in b.count < 10 }))
+  }
+
 }

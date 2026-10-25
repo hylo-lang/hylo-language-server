@@ -41,4 +41,26 @@ extension Array {
     append(contentsOf: repeatElement(x, count: n))
   }
 
+  /// Returns a subsequence of `self` on which `property` is `false` and from which no element can
+  /// be removed without making it `true`, or `nil` if `property(self)`.
+  ///
+  /// Use this method to shrink an input on which a property-based test fails.
+  ///
+  /// - Complexity: O(n²) calls to `property`, where n is the length of `self`.
+  public func minimalCounterexample(to property: (Self) throws -> Bool) rethrows -> Self? {
+    if try property(self) { return nil }
+    var r = self
+    while let i = try r.indices.first(where: { (i) in try !property(r.removing(at: i)) }) {
+      r.remove(at: i)
+    }
+    return r
+  }
+
+  /// Returns `self` without the element at `i`.
+  private func removing(at i: Int) -> Self {
+    var r = self
+    r.remove(at: i)
+    return r
+  }
+
 }

@@ -1,3 +1,5 @@
+import StableCollections
+
 /// Where an instruction should be inserted in a basic block.
 internal enum InsertionPoint {
 

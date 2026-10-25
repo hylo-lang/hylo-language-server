@@ -1,3 +1,4 @@
+import OrderedCollections
 import Utilities
 
 /// The constraint solving algorithm of Hylo's type system.

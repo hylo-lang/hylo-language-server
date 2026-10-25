@@ -1,3 +1,5 @@
+import Utilities
+
 /// A memory location in an abstract interpreter.
 internal enum AbstractPlace: Hashable, Sendable {
 

@@ -1,3 +1,4 @@
+import OrderedCollections
 import Utilities
 
 extension IRFunction {
