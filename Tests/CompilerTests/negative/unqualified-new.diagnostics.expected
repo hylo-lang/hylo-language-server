@@ -1,0 +1,3 @@
+negative/unqualified-new.hylo:6.11-14: error: undefined symbol 'new'
+  let _ = new
+          ~~~

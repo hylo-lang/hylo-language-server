@@ -1,0 +1,7 @@
+//! no-std stage:typing
+
+fun new() {}
+
+public fun main() {
+  new()
+}
