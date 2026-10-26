@@ -1,0 +1,15 @@
+//! exit-status:42
+
+// Checks that a program passing an implicitly qualified enum case that is not called as an
+// argument runs.
+
+enum E is Deinitializable {
+  case a
+  case b
+}
+
+fun status(of e: E) -> Int32 { 42 }
+
+public fun main() -> Int32 {
+  status(of: .b)
+}
