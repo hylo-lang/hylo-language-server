@@ -1058,6 +1058,25 @@ public struct Program: Sendable {
     }
   }
 
+  /// If `witness` expresses the application of some closed and concrete conformance declaration
+  /// defining a witness table, returns that conformance along with its implementation of
+  /// `requirement`.
+  ///
+  /// This method is `implementation(of:in:)`, except that it returns `nil` rather than trapping
+  /// if the conformance declaration defines no witness table, which is the case if the module
+  /// containing it is not typed, if it is a requirement, or if it is ill-formed.
+  public func implementation(
+    of requirement: DeclarationIdentity, maybeIn witness: WitnessExpression
+  ) -> (ConformanceDeclaration.ID, DeclarationReference)? {
+    if let d = witness.declaration, let c = cast(d, to: ConformanceDeclaration.self),
+      let t = self[c.module].implementations(definedBy: c)
+    {
+      return t.member(implementing: requirement).map({ (m) in (c, m) })
+    } else {
+      return nil
+    }
+  }
+
   /// If `n` is a requirement, returns the traits that introduces it. Otherwise, returns `nil`.
   ///
   /// - Requires: The module containing `n` is scoped.
