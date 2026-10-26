@@ -81,12 +81,22 @@ public struct Workspace: Sendable {
   /// Returns a program containing `d` in a module depending on the standard library.
   ///
   /// - Requires: The standard library has been analyzed.
-  func program(analyzing d: Document) -> Program {
+  private func program(analyzing d: Document) -> Program {
+    var (p, m) = program(scoping: d)
+    type(m, of: &p)
+    return p
+  }
+
+  /// Returns a program containing `d`, scoped but not typed, in a module depending on the standard
+  /// library, and that module.
+  ///
+  /// - Requires: The standard library has been analyzed.
+  func program(scoping d: Document) -> (program: Program, module: Module.ID) {
     guard var p = standardLibrary else { preconditionFailure("unanalyzed standard library") }
     let m = p.demandModule(.init("MainModule"))
     p[m].addDependency(Module.standardLibraryName)
-    analyze([SourceFile(name: d.uri.localFileName, contents: d.text)], into: m, of: &p)
-    return p
+    scope([SourceFile(name: d.uri.localFileName, contents: d.text)], into: m, of: &p)
+    return (p, m)
   }
 
   /// Returns a program containing the standard library, scoped and typed.
@@ -95,17 +105,23 @@ public struct Workspace: Sendable {
     // which is needed because the standard library may be incomplete.
     var p = Program(forTesting: true)
     let m = p.demandModule(Module.standardLibraryName)
-    analyze(standardLibrarySources, into: m, of: &p)
+    scope(standardLibrarySources, into: m, of: &p)
+    type(m, of: &p)
     return p
   }
 
-  /// Parses, scopes and types `sources` in module `m` of `p`, logging the time each phase takes.
-  private func analyze(_ sources: [SourceFile], into m: Module.ID, of p: inout Program) {
+  /// Parses and scopes `sources` in module `m` of `p`, logging the time each phase takes.
+  private func scope(_ sources: [SourceFile], into m: Module.ID, of p: inout Program) {
     let clock = ContinuousClock()
     let parsing = clock.measure { for s in sources { _ = p[m].addSource(s) } }
     let scoping = clock.measure { p.assignScopesSerially(m) }
-    let typing = clock.measure { p.assignTypes(m, loggingInferenceWhere: nil) }
-    logger.debug("Analyzed \(p[m].name): parsing \(parsing), scoping \(scoping), typing \(typing)")
+    logger.debug("Scoped \(p[m].name): parsing \(parsing), scoping \(scoping)")
+  }
+
+  /// Types module `m` of `p`, logging the time it takes and the diagnostics of `m`.
+  private func type(_ m: Module.ID, of p: inout Program) {
+    let typing = ContinuousClock().measure { p.assignTypes(m, loggingInferenceWhere: nil) }
+    logger.debug("Typed \(p[m].name) in \(typing)")
     if p[m].containsError {
       logger.debug("Diagnostics of \(p[m].name):\n\(render(p.diagnostics))")
     }

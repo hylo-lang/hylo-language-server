@@ -5,9 +5,12 @@ extension Workspace {
 
   /// Returns the completions at the position described by `params`.
   ///
-  /// The completions are the names visible at the position if the name being typed there has no
-  /// qualification. They are not filtered by the part of the name already typed, which clients
-  /// do.
+  /// The completions are the members of the qualification of the name being typed at the
+  /// position, if it has one, or the names visible there otherwise. They are not filtered by the
+  /// part of the name already typed, which clients do.
+  ///
+  /// The qualification of an implicitly qualified argument (e.g., `.m` in `f(x: .m)`) is any of
+  /// the types that the front end infers for that argument across the overloads of the call.
   ///
   /// - Complexity: One type check of the document.
   public func completion(_ params: CompletionParams) throws -> CompletionList {
@@ -19,13 +22,9 @@ extension Workspace {
       return CompletionList(isIncomplete: false, items: [])
     }
 
-    let e = Document(uri: d.url, version: d.doc.version, text: s.text)
-    let c = DocumentContext(e, program: program(analyzing: e))
-    var p = c.program
+    var (p, m) = program(scoping: Document(uri: d.url, version: d.doc.version, text: s.text))
     let cs =
-      p.nameExpression(at: s.sentinelOffsets, in: c.source.module).map({ (n) in
-        p.completions(of: n)
-      }) ?? []
+      p.nameExpression(at: s.sentinelOffsets, in: m).map({ (n) in p.completions(of: n) }) ?? []
     return CompletionList(
       isIncomplete: false, items: cs.items(withLabelDetails: isLabelDetailsSupported))
   }
@@ -44,11 +43,55 @@ extension Program {
       .first(where: { (e) in self[e].name.site.utf8Offsets == offsets })
   }
 
-  /// Returns the completions of the name in `e`.
+  /// Type checks the module containing `e` and returns the completions of the name in `e`.
   ///
-  /// - Requires: The module containing `e` has been type checked.
+  /// - Requires: The module containing `e` has been scoped but not type checked; its dependencies
+  ///   have been type checked.
   fileprivate mutating func completions(of e: NameExpression.ID) -> [Completion] {
-    self[e].qualification == nil ? completions(visibleFrom: parent(containing: e)) : []
+    let scope = parent(containing: e)
+    if let (i, c) = implicitlyQualifiedArgument(e) {
+      return completions(ofArgument: i, of: c, visibleFrom: scope)
+    }
+
+    assignTypes(e.module, loggingInferenceWhere: nil)
+    guard let q = self[e].qualification else { return completions(visibleFrom: scope) }
+    guard let t = type(maybeAssignedTo: q), !t[.hasVariable] else { return [] }
+
+    let k: Completion.Qualification = types[types.head(t)] is Metatype ? .metatype : .instance
+    return completions(ofMembersOf: t, qualifiedAs: k, visibleFrom: scope)
+  }
+
+  /// Returns the position of `e` among the arguments of the call of which it is an implicitly
+  /// qualified argument, and that call, if any.
+  ///
+  /// - Complexity: O(n) where n is the number of calls in the module of `e`.
+  private func implicitlyQualifiedArgument(
+    _ e: NameExpression.ID
+  ) -> (position: Int, call: Call.ID)? {
+    guard let q = self[e].qualification, tag(of: q) == ImplicitQualification.self else {
+      return nil
+    }
+    let v = ExpressionIdentity(e)
+    for n in select(from: e.module, .tag(Call.self)) {
+      let c = castUnchecked(n, to: Call.self)
+      if let i = self[c].arguments.firstIndex(where: { (a) in a.value == v }) { return (i, c) }
+    }
+    return nil
+  }
+
+  /// Type checks the module containing `c` and returns the completions of argument `i` of `c`,
+  /// a name in `scope` qualified implicitly by any of the types inferred for it.
+  ///
+  /// - Requires: The module containing `c` has been scoped but not type checked; its dependencies
+  ///   have been type checked.
+  private mutating func completions(
+    ofArgument i: Int, of c: Call.ID, visibleFrom scope: ScopeIdentity
+  ) -> [Completion] {
+    assignTypes(inferringTypesOfArgument: i, of: c).flatMap { (t) in
+      completions(
+        ofMembersOf: types.demand(Metatype(inhabitant: t)).erased, qualifiedAs: .metatype,
+        visibleFrom: scope)
+    }
   }
 
   /// Returns the completions of a name without qualification in `scope`.
@@ -62,7 +105,7 @@ extension Program {
     let visible = Set(ns.compactMap(\.declaration.target))
     let ms =
       ns.first(where: { (n) in n.name.identifier == "self" }).map { (s) in
-        members(of: s.type, visibleFrom: scope).filter { (m) in
+        members(exceptImplementedRequirementsOf: s.type, visibleFrom: scope).filter { (m) in
           !isType(m, declaredByOneOf: visible)
         }
       } ?? []
@@ -80,6 +123,37 @@ extension Program {
     -> Bool
   {
     (types[n.type] is Metatype) && (n.declaration.target.map(declarations.contains) ?? false)
+  }
+
+  /// Returns the completions of the members of `q` in `scope`, qualified as described by `k`.
+  private mutating func completions(
+    ofMembersOf q: AnyTypeIdentity, qualifiedAs k: Completion.Qualification,
+    visibleFrom scope: ScopeIdentity
+  ) -> [Completion] {
+    members(exceptImplementedRequirementsOf: q, visibleFrom: scope).compactMap { (n) in
+      Completion(n, qualifiedAs: k, in: &self)
+    }
+  }
+
+  /// Returns the members of `q` in `scope`, except the requirements whose implementations are
+  /// also members of `q`, which would be completed alike.
+  private mutating func members(
+    exceptImplementedRequirementsOf q: AnyTypeIdentity, visibleFrom scope: ScopeIdentity
+  ) -> [VisibleName] {
+    let ms = members(of: q, visibleFrom: scope)
+    let ds = Set(ms.compactMap(\.declaration.target))
+    return ms.filter { (m) in
+      implementation(of: m.declaration).map({ (d) in !ds.contains(d) }) ?? true
+    }
+  }
+
+  /// Returns the declaration implementing the requirement to which `r` refers, if any.
+  ///
+  /// A requirement inherited through a conformance that defines no witness table, such as one
+  /// required by a trait or one that the front end rejects, has no implementation.
+  private func implementation(of r: DeclarationReference) -> DeclarationIdentity? {
+    guard case .inherited(let w, let d, _) = r, traitRequiring(d) != nil else { return nil }
+    return knownImplementation(of: d, in: w)?.1.target
   }
 
 }
