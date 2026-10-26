@@ -11,6 +11,14 @@ final class CompletionSiteTests: XCTestCase {
     XCTAssertEqual(site(at: 4, in: "é.bc d")?.text, "é.\(CompletionSite.sentinel) d")
   }
 
+  func testTypedPrefix() {
+    XCTAssertEqual(site(at: 4, in: "a.bc d")?.typedPrefix, "bc")
+    XCTAssertEqual(site(at: 3, in: "a.bc d")?.typedPrefix, "b")
+    XCTAssertEqual(site(at: 2, in: "a.bc d")?.typedPrefix, "")
+    XCTAssertEqual(site(at: 2, in: "a. d")?.typedPrefix, "")
+    XCTAssertEqual(site(at: 2, in: "éb d")?.typedPrefix, "éb")
+  }
+
   func testStringLiterals() {
     XCTAssertNil(site(at: 3, in: #""a.""#))
     XCTAssertNil(site(at: 5, in: #""a\".""#))

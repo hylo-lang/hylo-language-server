@@ -14,6 +14,9 @@ struct CompletionSite {
   /// The edited source text.
   let text: String
 
+  /// The part of the replaced name before the cursor.
+  let typedPrefix: String
+
   /// Creates the site `cursor` UTF-8 code units into `source`, replacing the name containing or
   /// touching `cursor` with the sentinel, or inserting the sentinel at `cursor` if there is no
   /// such name, or returns `nil` if `cursor` is in a comment or a string literal.
@@ -27,6 +30,7 @@ struct CompletionSite {
       ?? (cursor ..< cursor)
 
     var t = Array(source.utf8)
+    self.typedPrefix = String(decoding: t[r.lowerBound ..< cursor], as: UTF8.self)
     t.replaceSubrange(r, with: Self.sentinel.utf8)
     self.text = String(decoding: t, as: UTF8.self)
     if !Self.lexesSentinel(in: text, atUTF8Offset: r.lowerBound) { return nil }
