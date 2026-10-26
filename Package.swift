@@ -33,7 +33,6 @@ let package = Package(
     .package(url: "https://github.com/groue/Semaphore", from: "0.0.8"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.1.4"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
-    .package(url: "https://github.com/sushichop/Puppy.git", from: "0.7.0"),
     .package(url: "https://github.com/ChimeHQ/JSONRPC.git", from: "0.9.0"),
     .package(
       url: "https://github.com/ChimeHQ/LanguageServer",
@@ -63,7 +62,6 @@ let package = Package(
         "Semaphore",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Logging", package: "swift-log"),
-        "Puppy",
         "JSONRPC",
         "LanguageServer",
         "LanguageServerProtocol",

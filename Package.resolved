@@ -1,5 +1,5 @@
 {
-  "originHash" : "318ef42565bbc00b63f828272983a155635a0a19064793a1f0eac590d950c5f2",
+  "originHash" : "b4efc22c5690be93fb964eed8192b051d12d10655ae9867898c9d14a670c8bcc",
   "pins" : [
     {
       "identity" : "archivist",
@@ -42,15 +42,6 @@
       "location" : "https://github.com/ChimeHQ/LanguageServerProtocol",
       "state" : {
         "revision" : "48ab36295c56c6cc5ba783a37a0c1324fef54ff6"
-      }
-    },
-    {
-      "identity" : "puppy",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/sushichop/Puppy.git",
-      "state" : {
-        "revision" : "80ebe6ab25fb7050904647cb96f6ad7bee77bad6",
-        "version" : "0.9.0"
       }
     },
     {
