@@ -199,6 +199,7 @@ let package = Package(
       dependencies: [
         .target(name: "FrontEnd"),
         .target(name: "StandardLibrary"),
+        .target(name: "Utilities"),
       ],
       swiftSettings: commonSwiftSettings),
 

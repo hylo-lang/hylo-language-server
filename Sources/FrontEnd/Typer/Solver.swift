@@ -54,19 +54,29 @@ internal struct Solver {
   /// The current indentation level for logging message, or `-1` if logging is disabled.
   private var indentation: Int
 
+  /// The solutions without error found so far, one for each combination of the choices of the
+  /// overload sets that leads to one, or `nil` if they are not collected.
+  internal private(set) var solutionsWithoutError: [Solution]?
+
   /// Creates an instance for discharging `obligations`, logging a trace of inference steps iff
-  /// `loggingIsEnabled` is `true`.
-  internal init(_ obligations: Obligations, withLoggingEnabled loggingIsEnabled: Bool) {
+  /// `loggingIsEnabled` is `true` and collecting the solutions without error of every combination
+  /// of the choices of overload sets iff `collectingSolutionsWithoutError` is `true`.
+  internal init(
+    _ obligations: Obligations, withLoggingEnabled loggingIsEnabled: Bool,
+    collectingSolutionsWithoutError: Bool = false
+  ) {
     self.bindings = obligations.bindings
     self.rootCount = obligations.constraints.count
     self.indentation = loggingIsEnabled ? 0 : -1
+    self.solutionsWithoutError = collectingSolutionsWithoutError ? [] : nil
     insert(fresh: obligations.constraints)
   }
 
-  /// Returns a copy of `base` with its `typer` set to `nil`.
+  /// Returns a copy of `base` with its `typer` set to `nil` and no collected solution.
   private init(forking base: Self) {
     self = base
     self.typer = nil
+    self.solutionsWithoutError = base.solutionsWithoutError.map({ (_) in [] })
   }
 
   /// The program containing the module being typed.
@@ -148,7 +158,9 @@ internal struct Solver {
     }
 
     assert(goals.indices.allSatisfy({ (g) in !outcomes[g].isPending }))
-    return formSolution()
+    let s = formSolution()
+    if let t = s, !t.diagnostics.containsError { solutionsWithoutError?.append(t) }
+    return s
   }
 
   /// Discharges `g`, which is an equality constraint.
@@ -566,7 +578,9 @@ internal struct Solver {
         let subgoal = fork.insert(fresh: equality)
         fork.outcomes[g] = fork.delegate([subgoal])
         fork.bindings[k.name] = choice.reference
-        return fork.solution(betterThanOrEqualTo: me.best, using: &me.typer)
+        let s = fork.solution(betterThanOrEqualTo: me.best, using: &me.typer)
+        if let ss = fork.solutionsWithoutError { me.solutionsWithoutError!.append(contentsOf: ss) }
+        return s
       }
 
       if let newSolution = s {

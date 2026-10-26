@@ -23,6 +23,10 @@ public struct Typer {
   /// The maximum depth of a derivation during implicit search.
   private let maxImplicitDepth = 10
 
+  /// The argument whose types are inferred by `apply(inferringTypesOfArgument:of:)`, identified by
+  /// its call and position, with the types inferred so far, if any.
+  private var probedArgument: (call: Call.ID, index: Int, types: [AnyTypeIdentity])?
+
   /// Creates an instance assigning types to syntax trees in `m`, which is a module in `p`.
   public init(
     typing m: Module.ID, of p: consuming Program,
@@ -41,6 +45,19 @@ public struct Typer {
       program.initializeStandardLibraryCaches()
     }
     for d in program[module].topLevelDeclarations { check(d) }
+  }
+
+  /// Type checks the top-level declarations of `self.module`, which contains `call`, and returns
+  /// the types expected of argument `i` of `call` in each well-typed choice of overloads.
+  ///
+  /// See `Program.assignTypes(inferringTypesOfArgument:of:loggingInferenceWhere:)`.
+  internal mutating func apply(
+    inferringTypesOfArgument i: Int, of call: Call.ID
+  ) -> [AnyTypeIdentity] {
+    probedArgument = (call, i, [])
+    defer { probedArgument = nil }
+    apply()
+    return probedArgument!.types
   }
 
   /// Returns the resources held by this instance.
@@ -2125,8 +2142,15 @@ public struct Typer {
     }
 
     var i: [CallConstraint.Argument] = []
-    for a in program[e].arguments {
-      let t = context.withSubcontext { (ctx) in inferredType(of: a.value, in: &ctx) }
+    for (j, a) in program[e].arguments.enumerated() {
+      let t: AnyTypeIdentity
+      if (probedArgument?.call == e) && (probedArgument?.index == j) {
+        // The probed argument is checked on its own; its type in `e` is inferred from the call.
+        check(a.value)
+        t = fresh().erased
+      } else {
+        t = context.withSubcontext { (ctx) in inferredType(of: a.value, in: &ctx) }
+      }
       i.append(.init(label: a.label?.value, type: t))
     }
 
@@ -3031,27 +3055,45 @@ public struct Typer {
         for c in o.constraints { print("- \(program.show(c))") }
       }
 
-      var solver = Solver(o, withLoggingEnabled: loggingIsEnabled)
+      let h = typeOfProbedArgument(in: o)
+      var solver = Solver(
+        o, withLoggingEnabled: loggingIsEnabled, collectingSolutionsWithoutError: h != nil)
       let s = solver.solution(using: &self)
+      if let t = h {
+        for x in solver.solutionsWithoutError!
+        where syntaxWithoutInferredType(in: o, by: x) == nil {
+          let u = program.types.reify(t, applying: x.substitutions, withVariables: .kept)
+          if !u[.hasVariable] && !u[.hasError] && !probedArgument!.types.contains(u) {
+            probedArgument!.types.append(u)
+          }
+        }
+      }
       commit(s, to: o)
       return s
     }
   }
 
+  /// Returns the type of the probed argument in the constraint of `o` on its call, if any.
+  private func typeOfProbedArgument(in o: Obligations) -> AnyTypeIdentity? {
+    guard let (call, i, _) = probedArgument else { return nil }
+    let k = o.constraints.lazy.compactMap({ (c) in c as? CallConstraint }).first { (c) in
+      c.origin == call
+    }
+    return k?.arguments[i].type
+  }
+
   /// Stores the assignments made in `s` to solve `o` into the program.
   private mutating func commit(_ s: Solution, to o: Obligations) {
+    for d in s.diagnostics.elements { report(d) }
+
     // Failures to assign unification variables are diagnosed only once and only if no other
     // diagnostic was reported by the solver.
-    var inferenceFailureDiagnosed = s.diagnostics.containsError
-
-    for d in s.diagnostics.elements { report(d) }
+    if !s.diagnostics.containsError, let n = syntaxWithoutInferredType(in: o, by: s) {
+      report(program.notEnoughContext(n))
+    }
 
     for (n, t) in o.syntaxToType {
       var u = program.types.reify(t, applying: s.substitutions, withVariables: .kept)
-      if u[.hasVariable] && !inferenceFailureDiagnosed {
-        report(program.notEnoughContext(n))
-        inferenceFailureDiagnosed = true
-      }
       u = program.types.substituteVariableForError(in: u)
       program[n.module].setType(u, for: n)
 
@@ -3065,11 +3107,6 @@ public struct Typer {
 
     for (n, e) in s.elaborations {
       var w = program.types.reify(e, applying: s.substitutions, withVariables: .kept)
-      if w.hasVariable && !inferenceFailureDiagnosed {
-        report(program.notEnoughContext(n.erased))
-        inferenceFailureDiagnosed = true
-      }
-
       let m = program[n.module].clone(n)
       if program.isScope(m) {
         program.reassignScopes(childrenOf: m)
@@ -3085,6 +3122,21 @@ public struct Typer {
       let arguments = e.elements.map({ (b) in elaborate(b, in: n) })
       program[n.module].replace(.init(n), with: program[n].replacing(arguments: arguments))
     }
+  }
+
+  /// Returns the first syntax tree typed or elaborated by `o` whose type still has a unification
+  /// variable once the assignments made in `s` are applied, if any.
+  private mutating func syntaxWithoutInferredType(
+    in o: Obligations, by s: Solution
+  ) -> AnySyntaxIdentity? {
+    let n = o.syntaxToType.first { (_, t) in
+      program.types.reify(t, applying: s.substitutions, withVariables: .kept)[.hasVariable]
+    }
+    if let (m, _) = n { return m }
+    let e = s.elaborations.first { (_, e) in
+      program.types.reify(e, applying: s.substitutions, withVariables: .kept).hasVariable
+    }
+    return e?.0.erased
   }
 
   /// Returns the elaboration of `b` which describes an argument in `n`.
