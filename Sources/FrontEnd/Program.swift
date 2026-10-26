@@ -612,7 +612,7 @@ public struct Program: Sendable {
   /// arbitrary qualification.
   public func isConstructorReference(_ n: NameExpression.ID) -> Bool {
     if let m = cast(n, to: NameExpression.self) {
-      return self[m].name.value.identifier == "new"
+      return (self[m].qualification != nil) && (self[m].name.value.identifier == "new")
     } else {
       return false
     }
