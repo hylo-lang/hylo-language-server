@@ -1,0 +1,27 @@
+//! stage:typing no-std
+
+struct A {
+  public memberwise init
+  public static let k: A = A()
+  public static let v: Void = ()
+}
+
+struct B {
+  public memberwise init
+  public static let k: B = B()
+}
+
+fun f(x: A) {}
+fun f(x: B) {}
+
+fun g<T>(x: T) {}
+
+fun h(x: A) {}
+
+public fun main() {
+  f(.k)
+  g(.k)
+  h(.v)
+  let y = .k
+  let z = .new
+}
