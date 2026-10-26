@@ -51,6 +51,14 @@ func initializeParameters(labelDetailsSupport: Bool) -> InitializeParams {
 func completions(
   _ source: String, at marker: Int = 0, in w: inout Workspace
 ) throws -> [CompletionItem] {
+  try completionList(source, at: marker, in: &w).items
+}
+
+/// Returns the completion list at the marker numbered `marker` of `source` in a document opened
+/// in `w`.
+func completionList(
+  _ source: String, at marker: Int, in w: inout Workspace
+) throws -> CompletionList {
   let s = try MarkedSource(source)
   let u = "file:///completion.hylo"
   try w.open(
@@ -59,7 +67,7 @@ func completions(
   let p = CompletionParams(
     uri: u, position: try XCTUnwrap(s.markerPositions[marker]), triggerKind: .invoked,
     triggerCharacter: nil)
-  return try w.completion(p).items
+  return try w.completion(p)
 }
 
 /// Returns the completions at the marker numbered `marker` of `source` in a workspace analyzing
