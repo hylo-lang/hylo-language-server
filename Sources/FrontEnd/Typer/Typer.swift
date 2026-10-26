@@ -4152,7 +4152,7 @@ public struct Typer {
   }
 
   /// Returns candidates for resolving `n` without qualification in `scopeOfUse`.
-  private mutating func resolve(
+  internal mutating func resolve(
     _ n: Name, unqualifiedIn scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
     var candidates: [NameResolutionCandidate] = []
@@ -4168,6 +4168,58 @@ public struct Typer {
     } else {
       return candidates
     }
+  }
+
+  /// Returns the names visible from `scopeOfUse`, each paired with an entity that it may denote
+  /// without qualification there, in no particular order.
+  ///
+  /// The result contains the candidates for resolving without qualification in `scopeOfUse` each
+  /// identifier that is predefined or declared in a scope visited by unqualified name lookup from
+  /// `scopeOfUse`. These candidates are computed by `resolve(_:unqualifiedIn:)`, so enumeration
+  /// and resolution agree on shadowing and on the types of names by construction.
+  ///
+  /// Candidates referring to variables whose identifiers were synthesized by the parser (e.g., the
+  /// variable of an anonymous given) are omitted. Unlike resolution, which finds these variables
+  /// when their identifiers are written as quoted identifiers, enumeration does not report them
+  /// because they have no name in source.
+  ///
+  /// - Complexity: O(i * s) table lookups, where i is the number of identifiers declared in the
+  ///   scopes visited by unqualified name lookup from `scopeOfUse` and s is the number of these
+  ///   scopes.
+  internal mutating func names(visibleFrom scopeOfUse: ScopeIdentity) -> [VisibleName] {
+    var result: [VisibleName] = []
+    for i in identifiers(visibleFrom: scopeOfUse) {
+      let n = Name(identifier: i)
+      for c in resolve(n, unqualifiedIn: scopeOfUse) where !isSynthesized(c.reference) {
+        let m = c.reference.target.map({ (d) in program.name(of: d)! }) ?? n
+        result.append(.init(name: m, declaration: c.reference, type: c.type))
+      }
+    }
+    return result
+  }
+
+  /// Returns the predefined identifiers and the identifiers declared in the scopes visited by
+  /// unqualified name lookup from `scopeOfUse`.
+  ///
+  /// The scopes visited are those visited by `lookup(_:unqualifiedIn:containedIn:)`: `scopeOfUse`
+  /// and its ancestors, the other source files of its module, and the imported modules.
+  private mutating func identifiers(visibleFrom scopeOfUse: ScopeIdentity) -> Set<String> {
+    var result = Set(Self.predefinedIdentifiers)
+    for s in program.scopes(from: scopeOfUse) {
+      result.formUnion(declarations(lexicallyIn: s).keys)
+    }
+
+    let f = scopeOfUse.file
+    for s in program[f.module].sourceFileIdentities where s != f {
+      result.formUnion(declarations(lexicallyIn: .init(file: s)).keys)
+    }
+
+    for m in imports(of: f) {
+      for d in program[m].topLevelDeclarations {
+        if let n = program.name(of: d) { result.insert(n.identifier) }
+      }
+    }
+    return result
   }
 
   /// Returns candidates for resolving `n` without qualification in `scopeOfUse`.
@@ -4216,6 +4268,11 @@ public struct Typer {
       return candidates
     }
   }
+
+  /// The identifiers of the names denoting built-in entities in any scope unless shadowed.
+  ///
+  /// - Note: Each element must be handled by `resolve(predefined:unqualifiedIn:)`.
+  internal static let predefinedIdentifiers = ["Self", "Metatype", "Never", "Void", "Builtin"]
 
   /// Resolves `n` as a predefined name unqualified in `scopeOfUse`.
   private mutating func resolve(
@@ -4312,6 +4369,94 @@ public struct Typer {
       contentsOf: resolve(n, inheritedMemberOf: r, visibleFrom: scopeOfUse, statically: s))
 
     return candidates
+  }
+
+  /// Returns the members that can be selected on an instance of `q` in `scopeOfUse`, in no
+  /// particular order.
+  ///
+  /// The result contains the candidates for resolving as a member of `q` in `scopeOfUse` each
+  /// identifier declared in the primary declaration of the type on which members of `q` are
+  /// selected, in an extension visible from `scopeOfUse`, or in a trait visible from `scopeOfUse`.
+  /// These candidates are computed by `resolve(_:memberOf:visibleFrom:)`, so enumeration and
+  /// resolution agree on which members are selectable and on their types by construction. A
+  /// declaration reachable in more than one way (e.g., through different witnesses of the same
+  /// conformance) occurs once. As in `names(visibleFrom:)`, members whose identifiers were
+  /// synthesized by the parser are omitted although resolution finds them. The result is empty if
+  /// `q` is `.error`, whose members are never resolved.
+  ///
+  /// - Requires: `q` is not a unification variable.
+  /// - Complexity: O(i * (e + t)) witness lookups, where i is the number of identifiers collected
+  ///   and e and t are the numbers of extensions and traits visible from `scopeOfUse`.
+  internal mutating func members(
+    of q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity
+  ) -> [VisibleName] {
+    if q == .error { return [] }
+    if let s = program.types.cast(q, to: Namespace.self) { return members(of: s) }
+
+    var result: [VisibleName] = []
+    var visited: Set<DeclarationIdentity> = []
+    for i in identifiers(ofMembersOf: q, visibleFrom: scopeOfUse) {
+      let cs = resolve(Name(identifier: i), memberOf: q, visibleFrom: scopeOfUse)
+      for c in cs where !isSynthesized(c.reference) {
+        let m = c.reference.target!
+        if visited.insert(m).inserted {
+          result.append(.init(name: program.name(of: m)!, declaration: c.reference, type: c.type))
+        }
+      }
+    }
+    return result
+  }
+
+  /// Returns the identifiers declared in the primary declaration of the type on which members of
+  /// `q` are selected, in the extensions visible from `scopeOfUse`, and in the traits visible from
+  /// `scopeOfUse`.
+  ///
+  /// - Requires: `q` is not a unification variable or a namespace.
+  private mutating func identifiers(
+    ofMembersOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity
+  ) -> Set<String> {
+    let r = qualificationForSelection(on: q).type
+    var result = Set(declarations(nativeMembersOf: r).keys)
+    for e in extensions(visibleFrom: scopeOfUse) {
+      result.formUnion(declarations(lexicallyIn: .init(node: e)).keys)
+    }
+    for t in traits(visibleFrom: scopeOfUse) {
+      result.formUnion(declarations(lexicallyIn: .init(node: t)).keys)
+    }
+    return result
+  }
+
+  /// Returns `true` iff `r` refers to a variable whose identifier was synthesized by the parser.
+  private func isSynthesized(_ r: DeclarationReference) -> Bool {
+    if let d = r.target, let v = program.cast(d, to: VariableDeclaration.self) {
+      return program[v].isSynthesized
+    } else {
+      return false
+    }
+  }
+
+  /// Returns the members of `q`, except if `q` is the built-in module.
+  ///
+  /// The members of the built-in module are recognized by their names and not enumerated. The
+  /// members of a module are the names visible at the top level of any of its source files.
+  ///
+  /// - Complexity: O(f * n) where f is the number of source files in `q` and n is the complexity
+  ///   of enumerating the names visible at the top level of a source file in `q`.
+  private mutating func members(of q: Namespace.ID) -> [VisibleName] {
+    switch program.types[q].identifier {
+    case .builtin:
+      return []
+
+    case .module(let m):
+      var result: [VisibleName] = []
+      var visited: Set<DeclarationReference> = []
+      for f in program[m].sourceFileIdentities {
+        for n in names(visibleFrom: .init(file: f)) where visited.insert(n.declaration).inserted {
+          result.append(n)
+        }
+      }
+      return result
+    }
   }
 
   /// Returns candidates for resolving `n` as a member of `q` in `scopeOfUse`.
