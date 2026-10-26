@@ -1,4 +1,5 @@
 import StableCollections
+import Utilities
 
 /// A basic block in a Hylo IR function.
 ///

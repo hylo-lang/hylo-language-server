@@ -1,4 +1,5 @@
 import Archivist
+import OrderedCollections
 import Utilities
 
 /// A half-open range of textual positions in a source file.

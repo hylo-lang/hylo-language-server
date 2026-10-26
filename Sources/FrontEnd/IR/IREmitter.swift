@@ -1,4 +1,6 @@
 import BigInt
+import OrderedCollections
+import StableCollections
 import Utilities
 
 /// A constructor of Hylo IR.

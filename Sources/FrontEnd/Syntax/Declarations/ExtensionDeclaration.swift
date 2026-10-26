@@ -1,4 +1,5 @@
 import Archivist
+import Utilities
 
 /// The declaration of a type extension.
 @Archivable

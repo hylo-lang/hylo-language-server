@@ -2,6 +2,7 @@ import Archivist
 import BigInt
 import Foundation
 import StableCollections
+import Utilities
 
 extension ReadableArchive {
 

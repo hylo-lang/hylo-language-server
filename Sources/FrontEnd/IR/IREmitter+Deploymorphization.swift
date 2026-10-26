@@ -1,3 +1,5 @@
+import OrderedCollections
+import StableCollections
 import Utilities
 
 extension IREmitter {

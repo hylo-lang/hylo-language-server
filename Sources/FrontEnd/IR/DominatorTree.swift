@@ -1,3 +1,4 @@
+import StableCollections
 import Utilities
 
 /// A tree whose nodes are basic blocks and where a node immediately dominates its children.
