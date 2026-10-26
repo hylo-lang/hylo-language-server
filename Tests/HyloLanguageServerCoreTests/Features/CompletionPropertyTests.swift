@@ -1,3 +1,4 @@
+import Foundation
 import FrontEnd
 import LanguageServerProtocol
 import XCTest
@@ -24,25 +25,41 @@ final class CompletionPropertyTests: XCTestCase {
       shrinkingBy: \.reductions, counterexample(in:))
   }
 
+  /// Checks that completion answers at every position of random programs, well-formed or not.
+  ///
+  /// A trap aborts the test without shrinking; the smallest value of `HYLO_PROPERTY_SEEDS` for
+  /// which it traps is one more than the seed of the program trapping.
+  func testCompletionEverywhere() throws {
+    try assertHolds(
+      for: { (g) in CompletionProgram(using: &g, inArgument: Bool.random(using: &g)) },
+      shrinkingBy: \.reductions
+    ) { (program) in
+      var w = workspace()
+      let text = program.prefix + program.suffix
+      for i in text.indices + [text.endIndex] {
+        _ = try completions(at: Position(in: text, at: i), in: text, in: &w)
+      }
+      return nil
+    }
+  }
+
   /// Returns a description of how the completions at the site of `program` differ from the names
   /// resolving there, if they do.
   ///
-  /// The completions are sound iff inserting each one at the site, without arguments if it is a
-  /// call, yields a name expression with that name and no diagnostic of an unresolved name there.
-  /// They are complete iff each name `n` of `program` such that `n` or, at an unqualified site
-  /// where `self` resolves, `self.n` resolves at the site is completed. At an argument, where the
-  /// overloads of the callee make the expected type ambiguous, a name resolves iff it resolves in
-  /// some program with one of these overloads only, which all accept the argument.
+  /// The completions are sound iff inserting each one at the site of one of the `oracles(of:
+  /// program)`, without arguments if it is a call, yields a name expression with that name and no
+  /// diagnostic of an unresolved name there. They are complete iff each name `n` of `program` such
+  /// that `n` resolves at the site of one of these oracles or, at an unqualified site where `self`
+  /// resolves, `self.n` resolves at the site is completed.
   ///
   /// The property is vacuous if inserting the undefined name `zz` at the site yields a diagnostic
-  /// elsewhere than at the site or, if the site is an argument, at its callee, because `program`
-  /// is then outside the domain of the property. Otherwise, inserting `zz` at a site where some
-  /// names are completed must be diagnosed as an unresolved name, or soundness would hold
-  /// vacuously.
+  /// elsewhere than at the site or, if the site is an argument, in the call before the site,
+  /// because `program` is then outside the domain of the property. Otherwise, inserting `zz` at a
+  /// site where some names are completed must be diagnosed as an unresolved name, or soundness
+  /// would hold vacuously.
   private func counterexample(in program: CompletionProgram) throws -> String? {
     var w = workspace()
-    let start = program.prefix.utf8.count - (program.isArgument ? "take(.".utf8.count : 0)
-    let site = start ..< program.prefix.utf8.count + 2
+    let site = program.siteStart ..< program.prefix.utf8.count + 2
     let probe = try document(inserting: "zz", in: program, in: &w).program.diagnostics
     if probe.contains(where: { (d) in !d.site.utf8Offsets.overlaps(site) }) { return nil }
 
@@ -54,7 +71,7 @@ final class CompletionPropertyTests: XCTestCase {
       return "inserting 'zz' is not diagnosed as an unresolved name"
     }
 
-    let oracles = program.withEachOverload
+    let oracles = try self.oracles(of: program, in: &w)
     for i in items {
       let (callee, arguments) = insertion(of: i)
       let n = i.filterText ?? i.label
@@ -77,6 +94,24 @@ final class CompletionPropertyTests: XCTestCase {
       }
     }
     return nil
+  }
+
+  /// Returns the programs in which the names resolving at the site of `program` are the names
+  /// completed there, analyzing them in `w`.
+  ///
+  /// These programs are `program` if its site is not an argument, or else the programs keeping a
+  /// single overload of the callee of `program`, which accepts the call with an argument of some
+  /// type of `program`, projected by `todo`.
+  private func oracles(
+    of program: CompletionProgram, in w: inout Workspace
+  ) throws -> [CompletionProgram] {
+    if !program.isArgument { return [program] }
+    return try program.withEachOverload.filter { (o) in
+      try o.types.contains { (t) in
+        try document(replacingArgumentWith: "todo[t: \(t)]", in: o, in: &w).program.diagnostics
+          .isEmpty
+      }
+    }
   }
 
   /// Returns a description of how `typedItems`, the completions at the site of `program` once its
@@ -136,6 +171,22 @@ final class CompletionPropertyTests: XCTestCase {
       DidOpenTextDocumentParams(
         textDocument: .init(
           uri: u, languageId: "hylo", version: 0, text: program.prefix + t + program.suffix)))
+    return try w.document(at: u)
+  }
+
+  /// Returns the document of `program` with the argument at its site replaced by `e`, opened in
+  /// `w`.
+  ///
+  /// - Requires: The site of `program` is an argument.
+  private func document(
+    replacingArgumentWith e: String, in program: CompletionProgram, in w: inout Workspace
+  ) throws -> DocumentContext {
+    let u = "file:///argument.hylo"
+    try w.open(
+      DidOpenTextDocumentParams(
+        textDocument: .init(
+          uri: u, languageId: "hylo", version: 0,
+          text: program.prefix.dropLast() + e + program.suffix)))
     return try w.document(at: u)
   }
 
@@ -240,6 +291,12 @@ private struct CompletionProgram: CustomStringConvertible {
   /// The marker of the site in the text of the program.
   private static let marker = "0️⃣"
 
+  /// `true` iff the site of `self` is an argument of a call to `take`.
+  let isArgument: Bool
+
+  /// The names of the types declared at the top level of `self`.
+  let types: [String]
+
   /// Creates a random instance using `g`, whose site is an implicitly qualified argument of a
   /// call to overloads iff `inArgument` is `true` and that has a non-empty typed prefix iff
   /// `isPrefixTyped` is `true`.
@@ -247,9 +304,10 @@ private struct CompletionProgram: CustomStringConvertible {
   /// - Requires: `inArgument` and `isPrefixTyped` are not both `true`.
   init(using g: inout SplitMix64, inArgument: Bool = false, isPrefixTyped: Bool = false) {
     precondition(!(inArgument && isPrefixTyped), "argument with typed prefix")
+    isArgument = inArgument
     typedPrefix = isPrefixTyped ? ["S", "s", "A", "a", "B", "C"].randomElement(using: &g)! : ""
     let typeCount = Int.random(in: 1 ... 3, using: &g)
-    let types = (0 ..< typeCount).map({ (i) in "S\(i)" })
+    types = (0 ..< typeCount).map({ (i) in "S\(i)" })
     var serial = 0
 
     declarations = types.map { (t) in
@@ -265,10 +323,16 @@ private struct CompletionProgram: CustomStringConvertible {
           members: Self.members(isExtension: true, serial: &serial, using: &g)))
     }
     if Bool.random(using: &g) {
-      let t = types.randomElement(using: &g)!
-      declarations.append(.init(header: "trait P", members: ["fun a()", "static fun b()"]))
-      declarations.append(
-        .init(header: "given \(t) is P", members: ["fun a() {}", "static fun b() {}"]))
+      let i = Int.random(in: types.indices, using: &g)
+      let (requirements, implementations) = Self.requirementsAndImplementations(using: &g)
+      declarations.append(.init(header: "trait P", members: requirements))
+      if Bool.random(using: &g) {
+        declarations.append(.init(header: "given \(types[i]) is P", members: implementations))
+      } else {
+        declarations[i] = .init(
+          header: declarations[i].header + " is P",
+          members: declarations[i].members! + implementations)
+      }
       declarations.append(.init(header: "extension P", members: ["fun c() {}"]))
     }
     for _ in 0 ..< Int.random(in: 0 ... 2, using: &g) {
@@ -282,14 +346,16 @@ private struct CompletionProgram: CustomStringConvertible {
     let qualified = [
       "let _ = q.\(Self.marker)", "let _ = \(q).\(Self.marker)", "let _: \(q) = .\(Self.marker)",
     ]
-    let expression =
-      if inArgument {
-        "take(.\(Self.marker))"
-      } else {
-        Bool.random(using: &g) ? "let _ = \(Self.marker)" : qualified.randomElement(using: &g)!
-      }
+    let expression: String
     if inArgument {
-      declarations.append(contentsOf: types.map({ (t) in .init(header: "fun take(x: \(t)) {}") }))
+      let call = ["(.\(Self.marker))", "(.\(Self.marker), q)", "(k: .\(Self.marker))"]
+        .randomElement(using: &g)!
+      expression = (Bool.random(using: &g) ? "" : "let _: \(q) = ") + "take" + call
+      declarations.append(
+        contentsOf: types.map({ (t) in .init(header: Self.take(t, among: types, using: &g)) }))
+    } else {
+      expression =
+        Bool.random(using: &g) ? "let _ = \(Self.marker)" : qualified.randomElement(using: &g)!
     }
     let use = "fun use(q: \(q)) { \(expression) }"
     let extending = declarations.indices.filter({ (i) in declarations[i].isExtending })
@@ -306,6 +372,35 @@ private struct CompletionProgram: CustomStringConvertible {
       let i = extending.randomElement(using: &g) ?? 0
       declarations[i].members!.append((Bool.random(using: &g) ? "static " : "") + use)
     }
+  }
+
+  /// Returns random requirements of a trait and the members of a conformance to that trait
+  /// implementing all or some of them, using `g`.
+  private static func requirementsAndImplementations(
+    using g: inout SplitMix64
+  ) -> (requirements: [String], implementations: [String]) {
+    var requirements = ["fun a()", "static fun b()"]
+    var implementations = ["fun a() {}", "static fun b() {}"]
+    if Bool.random(using: &g) {
+      requirements.append("type X")
+      if Bool.random(using: &g) { implementations.append("type X = Void") }
+    }
+    if Bool.random(using: &g) {
+      requirements.append("init(_ x: Void)")
+      implementations.append("init(_ x: Void) {}")
+    }
+    return (requirements, implementations)
+  }
+
+  /// Returns a random overload of `take` accepting an argument of type `t` and maybe another of
+  /// one of `types`, using `g`.
+  private static func take(
+    _ t: String, among types: [String], using g: inout SplitMix64
+  ) -> String {
+    let u = types.randomElement(using: &g)!
+    let signature = ["(x: \(t))", "(x: \(t), y: \(u))", "(k x: \(t))"].randomElement(using: &g)!
+    let result = Bool.random(using: &g) ? " {}" : " -> \(u) { Builtin.trap() }"
+    return "fun take" + signature + result
   }
 
   /// Returns random members of a type, or of an extension iff `isExtension` is `true`, using `g`
@@ -334,15 +429,17 @@ private struct CompletionProgram: CustomStringConvertible {
     prefix.hasSuffix(".")
   }
 
-  /// `true` iff the site of `self` is an argument.
-  var isArgument: Bool {
-    prefix.hasSuffix("take(.")
+  /// The offset of the call containing the site of `self` if it is an argument, or of the site
+  /// otherwise, in the UTF-8 encoding of the text of `self`.
+  var siteStart: Int {
+    let p = prefix
+    let start = isArgument ? p.range(of: "take(", options: .backwards)!.lowerBound : p.endIndex
+    return p.utf8.distance(from: p.startIndex, to: start)
   }
 
   /// The programs obtained by removing the overloads of `take` but one from `self`, one for each
-  /// overload, if the site of `self` is an argument, or `self` otherwise.
+  /// overload.
   var withEachOverload: [CompletionProgram] {
-    if !isArgument { return [self] }
     let overloads = declarations.map(\.header).filter({ (h) in h.hasPrefix("fun take") })
     return overloads.map { (kept) in
       var p = self
@@ -390,9 +487,13 @@ private struct CompletionProgram: CustomStringConvertible {
     }
   }
 
+  /// The declaration of a subscript projecting an instance of any type, which is not reduced.
+  private static let todo = "subscript todo<T>(_ t: Metatype<T>) -> T { Builtin.trap() }"
+
   var description: String {
     let typed = typedPrefix.isEmpty ? "" : "// typed: \(typedPrefix)\n"
-    return typed + declarations.map(\.description).joined(separator: "\n")
+    let ds = declarations.map(\.description) + (isArgument ? [Self.todo] : [])
+    return typed + ds.joined(separator: "\n")
   }
 
 }
