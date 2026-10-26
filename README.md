@@ -60,6 +60,9 @@ HYLO_LSP_WASM=1 swift build --product hylo-language-server-wasm \
   --toolset hylo-new/foundation-essentials.toolset.json
 ```
 
+A release build, like those of the native server, also optimizes across modules: add
+`-c release -Xswiftc -cross-module-optimization`.
+
 The build needs patched versions of three dependencies, which use Foundation APIs that
 FoundationEssentials or WebAssembly lack. Until the patches are upstream, use patched clones with
 `swift package edit <dependency> --path <clone>`:

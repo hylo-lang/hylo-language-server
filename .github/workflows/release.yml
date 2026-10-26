@@ -67,7 +67,9 @@ jobs:
           swift-version: "6.3"
 
       - name: Build distributable
-        run: swift build -c release --verbose --product hylo-language-server --static-swift-stdlib
+        run: >-
+          swift build -c release --verbose --product hylo-language-server --static-swift-stdlib
+          -Xswiftc -cross-module-optimization
         shell: pwsh
 
       - name: Locate distributable
