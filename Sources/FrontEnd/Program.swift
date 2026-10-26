@@ -1,3 +1,4 @@
+import Algorithms
 import Archivist
 import OrderedCollections
 import Utilities
@@ -82,6 +83,14 @@ public struct Program: Sendable {
   /// Computes the scoping relationships in `m`.
   public mutating func assignScopes(_ m: Module.ID) async {
     await Scoper().visit(m, of: &self)
+  }
+
+  /// Computes the scoping relationships in `m` on the calling thread.
+  ///
+  /// Use this method rather than `assignScopes(_:)` when no executor can run tasks, as in a
+  /// WebAssembly module whose host calls its exported functions.
+  public mutating func assignScopesSerially(_ m: Module.ID) {
+    Scoper().visitSerially(m, of: &self)
   }
 
   /// Re-compute the scoping relationships of `n`'s immediate children.

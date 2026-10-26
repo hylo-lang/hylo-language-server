@@ -12,6 +12,13 @@ let commonSwiftSettings: [SwiftSetting] = [
   .unsafeFlags(["-warnings-as-errors"])
 ]
 
+/// Settings of the Swift targets that a WebAssembly build of the front end links.
+///
+/// Member import visibility stops a file from using members of Foundation that another file of
+/// its module imports, which would otherwise go unnoticed until a build linking only
+/// FoundationEssentials fails.
+let frontEndSwiftSettings = commonSwiftSettings + [.enableUpcomingFeature("MemberImportVisibility")]
+
 let package = Package(
   name: "Hylo",
   platforms: [
@@ -75,8 +82,7 @@ let package = Package(
     .executableTarget(
       name: "frontend-smoke-test",
       dependencies: [
-        .target(name: "FrontEnd"),
-        .target(name: "StandardLibrary"),
+        .target(name: "FrontEnd")
       ],
       swiftSettings: commonSwiftSettings),
 
@@ -123,14 +129,14 @@ let package = Package(
         .product(name: "Collections", package: "swift-collections"),
         .product(name: "BigInt", package: "BigInt"),
       ],
-      swiftSettings: commonSwiftSettings),
+      swiftSettings: frontEndSwiftSettings),
 
     .target(
       name: "StableCollections",
       dependencies: [
         .target(name: "Utilities")
       ],
-      swiftSettings: commonSwiftSettings),
+      swiftSettings: frontEndSwiftSettings),
 
     .target(
       name: "StandardLibrary",
@@ -145,7 +151,7 @@ let package = Package(
         .product(name: "Algorithms", package: "swift-algorithms"),
         .product(name: "Collections", package: "swift-collections"),
       ],
-      swiftSettings: commonSwiftSettings),
+      swiftSettings: frontEndSwiftSettings),
 
     .target(
       name: "HostUtilities",

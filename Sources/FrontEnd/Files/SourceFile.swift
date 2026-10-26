@@ -194,19 +194,36 @@ public struct SourceFile: Hashable, Sendable {
     return e ?? endIndex
   }
 
-  /// Calls `action` on each source file URL in `directory` having the extension `pathExtension`.
+  /// Calls `action` on the URL of each file having the extension `pathExtension` in `directory`
+  /// and its subdirectories, skipping hidden items and symbolic links to directories.
+  ///
+  /// - Complexity: O(n) where n is the number of visible items in `directory` and its visible
+  ///   subdirectories.
   public static func forEachURL(
     in directory: URL, withPathExtension pathExtension: String = "hylo",
     _ action: (URL) throws -> Void
-  ) rethrows {
-    let items = FileManager.default.enumerator(
-      at: directory,
-      includingPropertiesForKeys: [.isRegularFileKey],
-      options: [.skipsHiddenFiles, .skipsPackageDescendants])!
-
-    for case let f as URL in items where f.pathExtension == pathExtension {
-      try action(f)
+  ) throws {
+    let m = FileManager.default
+    for p in try m.contentsOfDirectory(atPath: directory.path) where !isHidden(p) {
+      let f = directory.appendingPathComponent(p)
+      if try m.attributesOfItem(atPath: f.path)[.type] as? FileAttributeType == .typeDirectory {
+        try forEachURL(in: f, withPathExtension: pathExtension, action)
+      } else if (f.pathExtension == pathExtension) && isFile(f) {
+        try action(f)
+      }
     }
+  }
+
+  /// Returns `true` iff `pathComponent` names a hidden file or directory.
+  private static func isHidden(_ pathComponent: String) -> Bool {
+    pathComponent.hasPrefix(".")
+  }
+
+  /// Returns `true` iff `u` locates a file other than a directory, following symbolic links.
+  private static func isFile(_ u: URL) -> Bool {
+    var isDirectory = false
+    return FileManager.default.fileExists(atPath: u.path, isDirectory: &isDirectory)
+      && !isDirectory
   }
 
   /// Calls `action` on each source file in `directory` having the extension `pathExtension`.
