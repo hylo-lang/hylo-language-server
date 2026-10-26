@@ -1,0 +1,7 @@
+//! no-std stage:typing
+
+fun newsert() {}
+
+fun main() {
+  let _ = new
+}
