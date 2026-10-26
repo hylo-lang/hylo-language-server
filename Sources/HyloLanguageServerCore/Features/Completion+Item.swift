@@ -58,6 +58,10 @@ struct Completion {
 
   }
 
+}
+
+extension Completion {
+
   /// Creates the completion of `n`, a name visible in `p` and qualified as described by `q`, or
   /// returns `nil` if `n` cannot be spelled there or if its type is erroneous.
   ///
@@ -93,6 +97,17 @@ struct Completion {
       } else {
         .variable
       }
+  }
+
+  /// Creates the completion of the application of the type completed by `t` to `n`, a member of
+  /// that type in `p`, or returns `nil` if `n` is not an initializer.
+  init?(applying t: Completion, to n: VisibleName, in p: inout Program) {
+    guard let c = Completion(n, qualifiedAs: .metatype, in: &p), c.kind == .constructor else {
+      return nil
+    }
+    self.init(
+      name: t.name, prefix: t.prefix, kind: .constructor, detail: c.detail, call: c.call,
+      isUnbound: false, origin: t.origin)
   }
 
 }

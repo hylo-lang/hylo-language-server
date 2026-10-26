@@ -18,6 +18,19 @@ final class CompletionPropertyTests: XCTestCase {
       counterexample(in:))
   }
 
+  func testSoundnessAndCompletenessWithTypedPrefix() throws {
+    try assertHolds(
+      for: { (g) in CompletionProgram(using: &g, isPrefixTyped: true) },
+      shrinkingBy: \.reductions, counterexample(in:))
+  }
+
+  func testSubsequence() {
+    assertHolds(for: WordPair.init(using:), shrinkingBy: \.reductions) { (p) in
+      let expected = p.isSubsequenceByEnumeration
+      return p.first.isSubsequence(of: p.second) == expected ? nil : "expected \(expected)"
+    }
+  }
+
   /// Returns a description of how the completions at the site of `program` differ from the names
   /// resolving there, if they do.
   ///
@@ -40,9 +53,8 @@ final class CompletionPropertyTests: XCTestCase {
     let probe = try document(inserting: "zz", in: program, in: &w).program.diagnostics
     if probe.contains(where: { (d) in !d.site.utf8Offsets.overlaps(site) }) { return nil }
 
-    let source = program.prefix + program.suffix
-    let cursor = source.index(source.startIndex, offsetBy: program.prefix.count)
-    let items = try completions(at: Position(in: source, at: cursor), in: source, in: &w)
+    let items = try completions(at: program, typing: program.typedPrefix, in: &w)
+    if let d = try differenceInApplications(at: program, typedItems: items, in: &w) { return d }
 
     let isProbeUnresolved = probe.contains(where: { (d) in isUnresolvedName(d.message) })
     if !items.isEmpty && !isProbeUnresolved {
@@ -72,6 +84,42 @@ final class CompletionPropertyTests: XCTestCase {
       }
     }
     return nil
+  }
+
+  /// Returns a description of how `typedItems`, the completions at the site of `program` once its
+  /// typed prefix is typed, differ from the completions there without typed prefix, other than by
+  /// applications of types whose names have the characters of that prefix in order regardless of
+  /// case to their initializers, if they do.
+  ///
+  /// Typing a prefix of a name does not change the names completed, but it completes the
+  /// applications of the types whose names have its characters in order to their initializers.
+  private func differenceInApplications(
+    at program: CompletionProgram, typedItems: [CompletionItem], in w: inout Workspace
+  ) throws -> String? {
+    if program.typedPrefix.isEmpty { return nil }
+    let items = try completions(at: program, typing: "", in: &w)
+    if let i = items.first(where: { (i) in !typedItems.contains(i) }) {
+      return "'\(i.label)' is offered only without typed prefix"
+    }
+    let added = typedItems.filter({ (i) in !items.contains(i) })
+    if let i = added.first(where: { (i) in
+      (i.kind != .constructor)
+        || !program.typedPrefix.lowercased().isSubsequence(
+          of: (i.filterText ?? i.label).lowercased())
+    }) {
+      return "'\(i.label)' is offered only with typed prefix"
+    }
+    return nil
+  }
+
+  /// Returns the completions at the site of `program` once `typed` is typed there, analyzing the
+  /// result in `w`.
+  private func completions(
+    at program: CompletionProgram, typing typed: String, in w: inout Workspace
+  ) throws -> [CompletionItem] {
+    let source = program.prefix + typed + program.suffix
+    let cursor = source.index(source.startIndex, offsetBy: (program.prefix + typed).count)
+    return try completions(at: Position(in: source, at: cursor), in: source, in: &w)
   }
 
   /// Returns the completions at `p` in a document with `text` opened in `w`.
@@ -194,12 +242,20 @@ private struct CompletionProgram: CustomStringConvertible {
   /// The identifiers of the members and global entities.
   private static let identifiers = ["a", "b", "c"]
 
+  /// The part of the name completed at the site that is typed.
+  let typedPrefix: String
+
   /// The marker of the site in the text of the program.
   private static let marker = "0️⃣"
 
   /// Creates a random instance using `g`, whose site is an implicitly qualified argument of a
-  /// call to overloads iff `inArgument` is `true`.
-  init(using g: inout SplitMix64, inArgument: Bool = false) {
+  /// call to overloads iff `inArgument` is `true` and that has a non-empty typed prefix iff
+  /// `isPrefixTyped` is `true`.
+  ///
+  /// - Requires: `inArgument` and `isPrefixTyped` are not both `true`.
+  init(using g: inout SplitMix64, inArgument: Bool = false, isPrefixTyped: Bool = false) {
+    precondition(!(inArgument && isPrefixTyped), "argument with typed prefix")
+    typedPrefix = isPrefixTyped ? ["S", "s", "A", "a", "B", "C"].randomElement(using: &g)! : ""
     let typeCount = Int.random(in: 1 ... 3, using: &g)
     let types = (0 ..< typeCount).map({ (i) in "S\(i)" })
     var serial = 0
@@ -343,7 +399,8 @@ private struct CompletionProgram: CustomStringConvertible {
   }
 
   var description: String {
-    declarations.map(\.description).joined(separator: "\n")
+    let typed = typedPrefix.isEmpty ? "" : "// typed: \(typedPrefix)\n"
+    return typed + declarations.map(\.description).joined(separator: "\n")
   }
 
 }
@@ -353,6 +410,55 @@ extension CompletionProgram.Declaration: CustomStringConvertible {
   var description: String {
     guard let ms = members else { return header }
     return "\(header) {\n" + ms.map({ (m) in "  \(m)\n" }).joined() + "}"
+  }
+
+}
+
+/// Two random words, the first of which may be a subsequence of the second.
+private struct WordPair: CustomStringConvertible {
+
+  /// The word that may be a subsequence.
+  var first: [Character]
+
+  /// The word that may have a subsequence.
+  var second: [Character]
+
+  /// Creates a random instance using `g`, on an alphabet small enough that the first word is often
+  /// a subsequence of the second.
+  init(using g: inout SplitMix64) {
+    first = Self.word(ofLengthAtMost: 4, using: &g)
+    second = Self.word(ofLengthAtMost: 6, using: &g)
+  }
+
+  /// Returns a random word of `a`s and `b`s of at most `n` characters, using `g`.
+  private static func word(ofLengthAtMost n: Int, using g: inout SplitMix64) -> [Character] {
+    (0 ..< Int.random(in: 0 ... n, using: &g)).map({ (_) in "ab".randomElement(using: &g)! })
+  }
+
+  var description: String {
+    "'\(String(first))' in '\(String(second))'"
+  }
+
+  /// The pairs obtained by removing a character from one of the words of `self`.
+  var reductions: [WordPair] {
+    first.indices.map({ (i) in with(\.first, removingAt: i) })
+      + second.indices.map({ (i) in with(\.second, removingAt: i) })
+  }
+
+  /// `true` iff `first` is the sequence of the characters of `second` at some of its positions,
+  /// which is checked by enumerating the sets of positions of `second`.
+  var isSubsequenceByEnumeration: Bool {
+    (0 ..< 1 << second.count).contains { (positions) in
+      second.indices.filter({ (i) in positions & (1 << i) != 0 }).map({ (i) in second[i] })
+        == first
+    }
+  }
+
+  /// Returns `self` without the character at position `i` of the word at `w`.
+  private func with(_ w: WritableKeyPath<WordPair, [Character]>, removingAt i: Int) -> WordPair {
+    var p = self
+    p[keyPath: w].remove(at: i)
+    return p
   }
 
 }

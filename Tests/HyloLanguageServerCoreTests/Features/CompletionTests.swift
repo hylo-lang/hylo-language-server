@@ -410,6 +410,106 @@ final class CompletionTests: XCTestCase {
     }
   }
 
+  // MARK: Constructors
+
+  func testConstructorSugar() throws {
+    let items = try completions(
+      """
+      struct Point {
+        let x: Void
+        let y: Void
+        memberwise init
+        init(_ all: Void) { self.x = (); self.y = () }
+      }
+      fun main() { let _ = P0️⃣ }
+      """)
+    let ps = items.completing("Point")
+    XCTAssertEqual(Set(ps.map(\.label)), ["Point", "Point(x:y:)", "Point(all:)"])
+    let xy = try XCTUnwrap(ps.first(where: { (i) in i.label == "Point(x:y:)" }))
+    XCTAssertEqual(xy.insertText, "Point(x: ${1:Void}, y: ${2:Void})$0")
+    XCTAssertEqual(xy.kind, .constructor)
+    XCTAssertEqual(xy.detail, "[Void](x: sink Void, y: sink Void) let -> Point")
+  }
+
+  func testConstructorSugarNeedsTypedPrefix() throws {
+    let source = """
+      struct A { memberwise init }
+      struct B { memberwise init }
+      fun main() { let _ = 0️⃣; let _ = A1️⃣ }
+      """
+    var w = workspace()
+    let list = try completionList(source, at: 0, in: &w)
+    XCTAssertEqual(list.items.completing("A").map(\.label), ["A"])
+    let typed = try completionList(source, at: 1, in: &w)
+    XCTAssertEqual(Set(typed.items.completing("A").map(\.label)), ["A", "A()"])
+    XCTAssertEqual(typed.items.completing("B").map(\.label), ["B"])
+  }
+
+  /// Checks that the applications of a type are completed once its name is typed in any case,
+  /// since clients filter completions regardless of case.
+  func testConstructorSugarRegardlessOfCase() throws {
+    let items = try completions("struct Point { memberwise init }\nfun main() { let _ = p0️⃣ }")
+    XCTAssertEqual(Set(items.completing("Point").map(\.label)), ["Point", "Point()"])
+  }
+
+  /// Checks that the applications of a type are completed once some of the characters of its name
+  /// are typed in order, since clients filter completions so.
+  func testConstructorSugarOfSubsequence() throws {
+    let items = try completions(
+      "struct Pointer { memberwise init }\nfun main() { let _ = pt0️⃣ }")
+    XCTAssertEqual(Set(items.completing("Pointer").map(\.label)), ["Pointer", "Pointer()"])
+  }
+
+  /// Checks that a list is incomplete iff it omits the applications of some type to its
+  /// initializers, so that clients request it again as the name is typed.
+  func testIncompleteIffApplicationsAreOmitted() throws {
+    let source = """
+      struct A { let x: Void }
+      struct B { struct N { memberwise init } }
+      fun main(a: A) { let _ = a.0️⃣; let _ = B.1️⃣; let _ = B.N2️⃣; let _ = B.x3️⃣ }
+      """
+    var w = workspace()
+    XCTAssertFalse(try completionList(source, at: 0, in: &w).isIncomplete)
+    XCTAssert(try completionList(source, at: 1, in: &w).isIncomplete)
+    XCTAssertFalse(try completionList(source, at: 2, in: &w).isIncomplete)
+    XCTAssert(try completionList(source, at: 3, in: &w).isIncomplete)
+  }
+
+  func testNoConstructorSugarOfInstances() throws {
+    let items = try completions(
+      """
+      struct A { memberwise init }
+      fun main() { let a = A(); let _ = a0️⃣ }
+      """)
+    XCTAssertEqual(items.completing("a").map(\.label), ["a"])
+  }
+
+  func testConstructorSugarOfMembers() throws {
+    let items = try completions(
+      """
+      struct A { struct N { memberwise init } }
+      fun main() { let _ = A.N0️⃣ }
+      """)
+    XCTAssertEqual(Set(items.completing("N").map(\.label)), ["N", "N()"])
+  }
+
+  func testConstructorSugarOfNestedTypes() throws {
+    let items = try completions(
+      "struct A { struct N { memberwise init }; fun f() { let _ = N0️⃣ } }")
+    XCTAssertEqual(Set(items.completing("N").map(\.label)), ["N", "N()"])
+    XCTAssertEqual(Set(insertions(items.completing("N"))), ["N", "N()$0"])
+  }
+
+  func testConstructorSugarOfGenericParameters() throws {
+    let source = """
+      trait P { init(_ x: Void) }
+      fun f<T is P>() { let _ = T0️⃣; let _ = P1️⃣ }
+      """
+    let items = try completions(source)
+    XCTAssertEqual(Set(items.completing("T").map(\.label)), ["T", "T(x:)"])
+    XCTAssertEqual(try completions(source, at: 1).completing("P").map(\.label), ["P"])
+  }
+
   // MARK: Presentation
 
   func testCallSnippet() throws {

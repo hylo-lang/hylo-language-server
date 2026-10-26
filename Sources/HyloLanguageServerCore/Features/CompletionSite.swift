@@ -17,6 +17,9 @@ struct CompletionSite {
   /// The offsets of the UTF-8 code units of the sentinel in `text`.
   let sentinelOffsets: Range<Int>
 
+  /// The part of the replaced word before the cursor.
+  let typedPrefix: String
+
   /// Creates the site `cursor` UTF-8 code units into `source`, replacing the word containing or
   /// touching `cursor` with the sentinel, or inserting the sentinel at `cursor` if there is no
   /// such word, or returns `nil` if `cursor` is in a comment or a string literal.
@@ -36,6 +39,7 @@ struct CompletionSite {
       })
       ?? (cursor ..< cursor)
 
+    self.typedPrefix = String(decoding: t[r.lowerBound ..< cursor], as: UTF8.self)
     t.replaceSubrange(r, with: Self.sentinel.utf8)
     self.text = String(decoding: t, as: UTF8.self)
     self.sentinelOffsets = r.lowerBound ..< r.lowerBound + Self.sentinel.utf8.count
