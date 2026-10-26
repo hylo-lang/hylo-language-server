@@ -1,4 +1,13 @@
 negative/static-member-via-instance.hylo:5.17-18: error: type 'A' has no member 'f'
 fun g(a: A) { a.f() }
                 ^
+negative/static-member-via-instance.hylo:19.13-14: error: type 'B' has no member 'k'
+  let _ = b.k
+            ^
+negative/static-member-via-instance.hylo:20.13-14: error: type 'B' has no member 'l'
+  let _ = b.l
+            ^
+negative/static-member-via-instance.hylo:21.13-14: error: type 'B' has no member 'n'
+  let _ = b.n
+            ^
 
