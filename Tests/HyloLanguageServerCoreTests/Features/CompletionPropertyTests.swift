@@ -8,7 +8,14 @@ final class CompletionPropertyTests: XCTestCase {
 
   func testSoundnessAndCompleteness() throws {
     try assertHolds(
-      for: CompletionProgram.init(using:), shrinkingBy: \.reductions, counterexample(in:))
+      for: { (g) in CompletionProgram(using: &g) }, shrinkingBy: \.reductions,
+      counterexample(in:))
+  }
+
+  func testSoundnessAndCompletenessInArguments() throws {
+    try assertHolds(
+      for: { (g) in CompletionProgram(using: &g, inArgument: true) }, shrinkingBy: \.reductions,
+      counterexample(in:))
   }
 
   /// Returns a description of how the completions at the site of `program` differ from the names
@@ -16,16 +23,20 @@ final class CompletionPropertyTests: XCTestCase {
   ///
   /// The completions are sound iff inserting each one at the site, without arguments if it is a
   /// call, yields a name expression with that name and no diagnostic of an unresolved name there.
-  /// They are complete iff each name `n` of `program` such that `n` or, where `self` resolves,
-  /// `self.n` resolves at the site is completed.
+  /// They are complete iff each name `n` of `program` such that `n` or, at an unqualified site
+  /// where `self` resolves, `self.n` resolves at the site is completed. At an argument, where the
+  /// overloads of the callee make the expected type ambiguous, a name resolves iff it resolves in
+  /// some program with one of these overloads only, which all accept the argument.
   ///
   /// The property is vacuous if inserting the undefined name `zz` at the site yields a diagnostic
-  /// elsewhere, because `program` is then outside the domain of the property. Otherwise, inserting
-  /// `zz` at a site where some names are completed must be diagnosed as an unresolved name, or
-  /// soundness would hold vacuously.
+  /// elsewhere than at the site or, if the site is an argument, at its callee, because `program`
+  /// is then outside the domain of the property. Otherwise, inserting `zz` at a site where some
+  /// names are completed must be diagnosed as an unresolved name, or soundness would hold
+  /// vacuously.
   private func counterexample(in program: CompletionProgram) throws -> String? {
     var w = workspace()
-    let site = program.prefix.utf8.count ..< program.prefix.utf8.count + 2
+    let start = program.prefix.utf8.count - (program.isArgument ? "take(.".utf8.count : 0)
+    let site = start ..< program.prefix.utf8.count + 2
     let probe = try document(inserting: "zz", in: program, in: &w).program.diagnostics
     if probe.contains(where: { (d) in !d.site.utf8Offsets.overlaps(site) }) { return nil }
 
@@ -38,19 +49,24 @@ final class CompletionPropertyTests: XCTestCase {
       return "inserting 'zz' is not diagnosed as an unresolved name"
     }
 
+    let oracles = program.withEachOverload
     for i in items {
       let (callee, arguments) = insertion(of: i)
-      if try !resolves(
-        callee, appliedTo: arguments, named: i.filterText ?? i.label, in: program, in: &w)
-      {
+      let n = i.filterText ?? i.label
+      if try !oracles.contains(where: { (o) in
+        try resolves(callee, appliedTo: arguments, named: n, in: o, in: &w)
+      }) {
         return "offered '\(callee)\(arguments)' does not resolve"
       }
     }
 
-    let offered = Set(items.map({ (i) in i.filterText ?? i.label }))
-    let isSelfVisible = try resolves("self", named: "self", in: program, in: &w)
+    let offered = Set(items.map({ (i) in i.filterText ?? i.label }).map(canonical))
+    let isSelfVisible =
+      try !program.isQualified && resolves("self", named: "self", in: program, in: &w)
     for n in program.candidateNames.sorted() where !offered.contains(n) {
-      if try resolves(n, named: n, in: program, in: &w) { return "'\(n)' is not offered" }
+      if try oracles.contains(where: { (o) in try resolves(n, named: n, in: o, in: &w) }) {
+        return "'\(n)' is not offered"
+      }
       if try isSelfVisible && resolves("self." + n, named: n, in: program, in: &w) {
         return "'self.\(n)' is not offered"
       }
@@ -140,6 +156,11 @@ final class CompletionPropertyTests: XCTestCase {
     }
   }
 
+  /// Returns the identifier of the name spelled `n`.
+  private func canonical(_ n: String) -> String {
+    n == "new" ? "init" : n
+  }
+
   /// `true` iff `m` is the message of a diagnostic of a name that does not resolve.
   private func isUnresolvedName(_ m: String) -> Bool {
     m.hasPrefix("undefined symbol") || m.contains("has no member")
@@ -176,8 +197,9 @@ private struct CompletionProgram: CustomStringConvertible {
   /// The marker of the site in the text of the program.
   private static let marker = "0️⃣"
 
-  /// Creates a random instance using `g`.
-  init(using g: inout SplitMix64) {
+  /// Creates a random instance using `g`, whose site is an implicitly qualified argument of a
+  /// call to overloads iff `inArgument` is `true`.
+  init(using g: inout SplitMix64, inArgument: Bool = false) {
     let typeCount = Int.random(in: 1 ... 3, using: &g)
     let types = (0 ..< typeCount).map({ (i) in "S\(i)" })
     var serial = 0
@@ -209,7 +231,19 @@ private struct CompletionProgram: CustomStringConvertible {
     }
 
     let q = types.randomElement(using: &g)!
-    let use = "fun use(q: \(q)) { let _ = \(Self.marker) }"
+    let qualified = [
+      "let _ = q.\(Self.marker)", "let _ = \(q).\(Self.marker)", "let _: \(q) = .\(Self.marker)",
+    ]
+    let expression =
+      if inArgument {
+        "take(.\(Self.marker))"
+      } else {
+        Bool.random(using: &g) ? "let _ = \(Self.marker)" : qualified.randomElement(using: &g)!
+      }
+    if inArgument {
+      declarations.append(contentsOf: types.map({ (t) in .init(header: "fun take(x: \(t)) {}") }))
+    }
+    let use = "fun use(q: \(q)) { \(expression) }"
     let extending = declarations.indices.filter({ (i) in declarations[i].isExtending })
     switch Int.random(in: 0 ..< 5, using: &g) {
     case 0:
@@ -244,6 +278,28 @@ private struct CompletionProgram: CustomStringConvertible {
           "static fun \(n)() {}", "subscript \(n)(_ x: Void) -> Void { yield x }",
           "struct \(u.uppercased()) {}",
         ]).randomElement(using: &g)!
+    }
+  }
+
+  /// `true` iff the site of `self` is qualified.
+  var isQualified: Bool {
+    prefix.hasSuffix(".")
+  }
+
+  /// `true` iff the site of `self` is an argument.
+  var isArgument: Bool {
+    prefix.hasSuffix("take(.")
+  }
+
+  /// The programs obtained by removing the overloads of `take` but one from `self`, one for each
+  /// overload, if the site of `self` is an argument, or `self` otherwise.
+  var withEachOverload: [CompletionProgram] {
+    if !isArgument { return [self] }
+    let overloads = declarations.map(\.header).filter({ (h) in h.hasPrefix("fun take") })
+    return overloads.map { (kept) in
+      var p = self
+      p.declarations.removeAll(where: { (d) in overloads.contains(d.header) && (d.header != kept) })
+      return p
     }
   }
 
