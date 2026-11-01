@@ -69,7 +69,9 @@ Configuration variables (all cache entries, advanced)::
                         ``CMAKE_C_COMPILER_TARGET`` when that is set (experimental).
   Hylo_PROJECT_MANIFEST Path of the LSP-facing ``hylo-project.json`` written at
                         generate time (default ``${CMAKE_BINARY_DIR}/hylo-project.json``;
-                        empty disables it).
+                        empty disables it).  Under a multi-config generator, one
+                        manifest per configuration, in a ``<config>`` directory
+                        next to the file name.
 
 Requires CMake 3.30 (custom transitive target properties).
 #]=======================================================================]

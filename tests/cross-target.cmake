@@ -11,6 +11,11 @@ fixture_configure(ARGS "-DHylo_TARGET_TRIPLE=aarch64-unknown-linux-gnu")
 file(READ "${WORK_DIR}/build/build.ninja" _ninja)
 assert_contains("${_ninja}" "--target aarch64-unknown-linux-gnu"
   "the triple must reach the hc command lines")
+file(READ "${WORK_DIR}/build/hylo-project.json" _manifest)
+string(JSON _target GET "${_manifest}" target)
+if(NOT _target STREQUAL "aarch64-unknown-linux-gnu")
+  message(FATAL_ERROR "the manifest must name the target triple, got '${_target}'")
+endif()
 
 # Build just the Hylo object (the host C toolchain cannot link aarch64).
 # MAKE_PROGRAM, not a PATH lookup: it is the ninja the fixture was configured

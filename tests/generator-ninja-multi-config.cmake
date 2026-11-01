@@ -3,6 +3,12 @@
 include("${CMAKE_CURRENT_LIST_DIR}/Harness.cmake")
 fixture_create(diamond multi-module)
 fixture_configure(GENERATOR "Ninja Multi-Config" MAKE_PROGRAM "${NINJA}")
+# One project manifest per configuration, none shared.
+assert_exists("${WORK_DIR}/build/Debug/hylo-project.json" "Debug manifest")
+assert_exists("${WORK_DIR}/build/Release/hylo-project.json" "Release manifest")
+if(EXISTS "${WORK_DIR}/build/hylo-project.json")
+  message(FATAL_ERROR "a multi-config build must not write a shared manifest")
+endif()
 fixture_build(out CONFIG Debug)
 assert_build_ok(out)
 fixture_build(out CONFIG Release)

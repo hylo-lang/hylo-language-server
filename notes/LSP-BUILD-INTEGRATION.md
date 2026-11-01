@@ -52,7 +52,10 @@ describing all eight modules (`hello`'s two-file module, the `Support`←`Main` 
 additive: it reads target properties and writes a file, without affecting the build.
 
 The manifest holds only what the language server reads; it is not a build description.
-Archives, search paths, the target triple and the standard library root stay in the build.
+Archives, search paths and the standard library root stay in the build. The target triple
+is written when `Hylo_TARGET_TRIPLE` is set, because analysis may come to depend on it;
+absent, hc targets the build machine. Under a multi-config generator each configuration
+gets its own manifest in `<build>/<config>/`, and the language server chooses among them.
 
 ```jsonc
 {

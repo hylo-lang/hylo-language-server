@@ -504,6 +504,8 @@ endfunction()
 # build description.  Each hylo_target_module call records one entry; at the
 # end of the top-level directory the entries are written with file(GENERATE),
 # so that the generator-expression parts (sources, imports) are resolved.
+# Under a multi-config generator each configuration gets its own manifest in a
+# <config> directory, and the language server chooses among them.
 # ---------------------------------------------------------------------------
 
 # Wraps each element of a (generator-expression) list in JSON quotes and joins
@@ -540,25 +542,26 @@ function(_hylo_write_project_manifest)
   endif()
   get_property(_modules GLOBAL PROPERTY HYLO_MANIFEST_MODULES)
   list(JOIN _modules ",\n" _modules_json)
+  # Absent when Hylo_TARGET_TRIPLE is empty: hc then targets the build machine.
+  set(_target_line "")
+  if(Hylo_TARGET_TRIPLE)
+    set(_target_line "  \"target\": \"${Hylo_TARGET_TRIPLE}\",\n")
+  endif()
   set(_content
 "{
   \"schemaVersion\": 1,
-  \"modules\": [
+${_target_line}  \"modules\": [
 ${_modules_json}
   ]
 }
 ")
-  # Under a multi-config generator, sources may depend on the configuration;
-  # the manifest describes the first configuration.
-  get_property(_multi GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-  if(_multi)
-    list(GET CMAKE_CONFIGURATION_TYPES 0 _first)
-    file(GENERATE OUTPUT "${Hylo_PROJECT_MANIFEST}" CONTENT "${_content}"
-      CONDITION "$<CONFIG:${_first}>")
-  else()
-    file(GENERATE OUTPUT "${Hylo_PROJECT_MANIFEST}" CONTENT "${_content}")
-  endif()
-  message(STATUS "Hylo: project manifest will be written to ${Hylo_PROJECT_MANIFEST}")
+  # One manifest per configuration under a multi-config generator, in a
+  # <config> directory next to Hylo_PROJECT_MANIFEST's file name.
+  get_filename_component(_directory "${Hylo_PROJECT_MANIFEST}" DIRECTORY)
+  get_filename_component(_name "${Hylo_PROJECT_MANIFEST}" NAME)
+  _hylo_config_subdir(_config)
+  file(GENERATE OUTPUT "${_directory}${_config}/${_name}" CONTENT "${_content}")
+  message(STATUS "Hylo: project manifest will be written to ${_directory}${_config}/${_name}")
 endfunction()
 
 cmake_policy(POP)
