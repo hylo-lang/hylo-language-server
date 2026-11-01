@@ -45,19 +45,20 @@ properties), never the owner of the target's linker language or custom command.
 
 ## What this repo contributes: CMake → manifest
 
-`../cmake/HyloProjectManifest.cmake` + hooks in `../cmake/AddHylo.cmake` emit
-`hylo-project.json` at configure time from the module info `AddHylo` already has.
-Configuring this experiment writes a manifest describing all eight modules (`hello`'s
-two-file module, the `Support`←`Main` pair, the `Base`←`Left`/`Right`←`App` diamond) with
-correct `sources`, `imports`, and library `archive` paths. The emission is additive: it
-reads target properties and writes a file, without affecting the build.
+`../cmake/HyloTargets.cmake` emits `hylo-project.json` at generate time from the module
+info `hylo_target_module` already has. Configuring this experiment writes a manifest
+describing all eight modules (`hello`'s two-file module, the `Support`←`Main` pair, the
+`Base`←`Left`/`Right`←`App` diamond) with correct `sources` and `imports`. The emission is
+additive: it reads target properties and writes a file, without affecting the build.
+
+The manifest holds only what the language server reads; it is not a build description.
+Archives, search paths, the target triple and the standard library root stay in the build.
 
 ```jsonc
 {
   "schemaVersion": 1,
-  "stdlibRoot": "…/StandardLibrary/Sources",
   "modules": [
-    { "name": "Support", "originTarget": "Support", "archive": "…/Support.hylomodule",
+    { "name": "Support", "originTarget": "Support",
       "imports": [], "sources": ["…/Support.hylo", "…/Extra.hylo"] },
     { "name": "Main", "originTarget": "multi", "imports": ["Support"],
       "sources": ["…/Main.hylo"] }

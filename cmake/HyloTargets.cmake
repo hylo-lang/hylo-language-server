@@ -368,11 +368,7 @@ function(hylo_target_module target)
   endif()
 
   # ---- Project manifest (for the language server) --------------------------
-  if(_is_library)
-    _hylo_manifest_record("${target}" "${_module}" "${_archive}" "${_sources}" "${_imports}" "${_search_paths}")
-  else()
-    _hylo_manifest_record("${target}" "${_module}" "" "${_sources}" "${_imports}" "${_search_paths}")
-  endif()
+  _hylo_manifest_record("${target}" "${_module}" "${_sources}" "${_imports}")
 endfunction()
 
 function(hylo_add_library target)
@@ -504,9 +500,10 @@ endfunction()
 # A language server needs, for any file it is asked about, the MODULE the file
 # belongs to, that module's other sources, and what it imports -- a per-module
 # view (the shape of rust-project.json), not compile_commands.json's per-source
-# one.  Each hylo_target_module call records one entry; at the end of the
-# top-level directory the entries are written with file(GENERATE), so that the
-# generator-expression parts (sources, imports) are resolved.
+# one.  The manifest holds only what the language server reads; it is not a
+# build description.  Each hylo_target_module call records one entry; at the
+# end of the top-level directory the entries are written with file(GENERATE),
+# so that the generator-expression parts (sources, imports) are resolved.
 # ---------------------------------------------------------------------------
 
 # Wraps each element of a (generator-expression) list in JSON quotes and joins
@@ -518,20 +515,14 @@ function(_hylo_json_string_array out list_genex)
     PARENT_SCOPE)
 endfunction()
 
-function(_hylo_manifest_record target module archive sources_genex imports_genex search_paths_genex)
+function(_hylo_manifest_record target module sources_genex imports_genex)
   _hylo_json_string_array(_sources "${sources_genex}")
   _hylo_json_string_array(_imports "${imports_genex}")
-  _hylo_json_string_array(_search_paths "${search_paths_genex}")
-  set(_archive_line "")
-  if(archive)
-    set(_archive_line "      \"archive\": \"${archive}\",\n")
-  endif()
   set(_entry
 "    {
       \"name\": \"${module}\",
       \"originTarget\": \"${target}\",
-${_archive_line}      \"imports\": [${_imports}],
-      \"moduleSearchPaths\": [${_search_paths}],
+      \"imports\": [${_imports}],
       \"sources\": [${_sources}]
     }")
   set_property(GLOBAL APPEND PROPERTY HYLO_MANIFEST_MODULES "${_entry}")
@@ -549,21 +540,15 @@ function(_hylo_write_project_manifest)
   endif()
   get_property(_modules GLOBAL PROPERTY HYLO_MANIFEST_MODULES)
   list(JOIN _modules ",\n" _modules_json)
-  set(_version "${Hylo_VERSION_STRING}")
   set(_content
 "{
   \"schemaVersion\": 1,
-  \"generator\": \"cmake/FindHylo.cmake\",
-  \"compiler\": \"${Hylo_COMPILER}\",
-  \"compilerVersion\": \"${_version}\",
-  \"stdlibRoot\": \"${Hylo_STDLIB_ROOT}\",
-  \"target\": \"${Hylo_TARGET_TRIPLE}\",
   \"modules\": [
 ${_modules_json}
   ]
 }
 ")
-  # Under a multi-config generator the archive paths differ per configuration;
+  # Under a multi-config generator, sources may depend on the configuration;
   # the manifest describes the first configuration.
   get_property(_multi GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
   if(_multi)
