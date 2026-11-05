@@ -1,0 +1,348 @@
+<title>Hylo LSP Rework</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Public+Sans:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column (~70ch) with wide figures; three architecture questions as the spine. */
+:root {
+  --bg: #f6f7f5; --surface: #ffffff; --fg: #1d2421; --muted: #5b6661; --line: #d8ddd9;
+  --accent: #1f6f5c; --accent-soft: #e2efe9; --warn: #9a5b0b; --warn-soft: #f7ecdc;
+  --done: #2f6b2f; --done-soft: #e3f0e1;
+  --font-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131816; --surface: #1a201e; --fg: #e3e8e5; --muted: #9aa6a0; --line: #2e3733;
+    --accent: #6cc4a8; --accent-soft: #1f3a32; --warn: #e3ac5c; --warn-soft: #3a2d18;
+    --done: #8fd08f; --done-soft: #20351f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131816; --surface: #1a201e; --fg: #e3e8e5; --muted: #9aa6a0; --line: #2e3733;
+  --accent: #6cc4a8; --accent-soft: #1f3a32; --warn: #e3ac5c; --warn-soft: #3a2d18;
+  --done: #8fd08f; --done-soft: #20351f; color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+main { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+section { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.prose { max-width: 70ch; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; line-height: 1.2; text-wrap: balance; margin: 0; }
+h1 { font-size: 2.6rem; } h2 { font-size: 1.8rem; } h3 { font-size: 1.2rem; font-family: var(--font-body); }
+p, ul, ol { margin: 0; }
+ul, ol { padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font: 600 0.75rem/1 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 64ch; }
+.question { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; font-family: var(--font-display); font-size: 1.25rem; font-style: italic; color: var(--muted); }
+.status-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { font: 600 0.75rem/1 var(--font-body); padding: 5px 9px; border-radius: 999px; letter-spacing: 0.04em; white-space: nowrap; }
+.pill.done { background: var(--done-soft); color: var(--done); }
+.pill.wip { background: var(--warn-soft); color: var(--warn); }
+.pill.next { background: var(--accent-soft); color: var(--accent); }
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; }
+.figure svg { display: block; min-width: 720px; width: 100%; height: auto; }
+.caption { font-size: 0.85rem; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.element { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.element h3 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.element .where { font: 0.78rem var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+.element p, .element li { font-size: 0.93rem; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+td.mono { white-space: nowrap; font-family: var(--font-mono); font-size: 0.82rem; }
+.flow { display: flex; flex-direction: column; counter-reset: step; padding-left: 0; }
+.flow li { list-style: none; position: relative; padding: 0 0 16px 40px; }
+.flow li::before { counter-increment: step; content: counter(step); position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font: 600 0.8rem/26px var(--font-mono); text-align: center; }
+.flow li::after { content: ""; position: absolute; left: 12px; top: 28px; bottom: 2px; width: 2px; background: var(--line); }
+.flow li:last-child::after { display: none; }
+.principle { display: grid; gap: 4px; padding: 14px 0; border-top: 1px solid var(--line); }
+.principle:first-of-type { border-top: none; }
+.principle strong { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; }
+.principle .why { color: var(--muted); font-size: 0.93rem; }
+.callout { background: var(--warn-soft); border-radius: 10px; padding: 14px 16px; font-size: 0.95rem; }
+.callout strong { color: var(--warn); }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+details summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 10px; }
+details ol, details ul, details p { font-size: 0.93rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.d-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.d-host { fill: var(--bg); stroke: var(--line); stroke-dasharray: 4 3; stroke-width: 1.5; }
+.d-core { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.d-up { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.2; }
+.d-title { fill: var(--fg); font: 600 14px var(--font-body); }
+.d-sub { fill: var(--muted); font: 11.5px var(--font-mono); }
+.d-label { fill: var(--muted); font: 600 10.5px var(--font-body); letter-spacing: 0.1em; text-transform: uppercase; }
+.d-arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.d-head { fill: var(--muted); }
+</style>
+
+<main>
+
+<header style="display:flex;flex-direction:column;gap:14px">
+  <span class="eyebrow">hylo-language-server · PR #37 rework · final state 27 Oct 2026</span>
+  <h1>Hylo LSP Rework</h1>
+  <p class="lede">The finished rework, ready for your review. The page is organised around three questions: what the parts are, how they relate, and which principles shaped them. After that come the branches, the measurements and the decisions still yours to make.</p>
+  <div class="status-row">
+    <span class="pill done">All rounds reviewed and fixed</span>
+    <span class="pill done">Every commit builds and passes</span>
+    <span class="pill done">Wasm driver links and runs</span>
+    <span class="pill next">Nothing pushed · no attribution</span>
+  </div>
+</header>
+
+<section>
+  <span class="eyebrow">Context</span>
+  <h2>Where this started</h2>
+  <div class="prose" style="display:flex;flex-direction:column;gap:12px">
+    <p>PR #37 combined completion with a project model, file watching, push diagnostics, a toolchain bump and about 4,000 lines of notes. It pinned hylo-new to an unmerged branch far behind main, and LanguageServerProtocol to a personal fork. Since then hylo-new #591 made static members unselectable on instances, which contradicts the PR's own ranking design. The fork's only change was merged upstream.</p>
+    <p>Following your decisions, completion was rebuilt on a clean branch and the project-model work was parked on <code>project-model-wip</code>. The language server now has a core with no host attached and one driver per host. Every language rule comes from hylo-new, through small queries that each sit on their own branch.</p>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Question 1</span>
+  <h2>What are the structural elements?</h2>
+  <p class="question">Five units in two repositories. Each has a single reason to change.</p>
+
+  <div class="grid2">
+    <div class="element">
+      <h3>HyloLanguageServerCore</h3>
+      <span class="where">lsp · Sources/HyloLanguageServerCore</span>
+      <p>The language server with no host attached. <code>Workspace</code> is a synchronous value that holds the open documents. Each document is analysed in its own <code>Program</code> on top of a standard library that is type-checked once and cached. Every feature, completion included, is a plain method that returns LanguageServerProtocol types.</p>
+      <p>Its dependencies are the front end, the LSP types and swift-log. It does not use stdio, Process, JSONRPC, Bundle, Dispatch or file watching.</p>
+    </div>
+    <div class="element">
+      <h3>Native driver</h3>
+      <span class="where">lsp · Sources/hylo-language-server</span>
+      <p>The executable that editors launch. It uses ChimeHQ's <code>LanguageServer</code> and <code>JSONRPC</code> over stdio, ArgumentParser, and the standard library bundled from disk. <code>DocumentProvider</code> is a plain actor around the core. Release builds use cross-module optimization.</p>
+    </div>
+    <div class="element">
+      <h3>MessageDriver</h3>
+      <span class="where">lsp · Sources/MessageDriver</span>
+      <p><code>MessageServer</code> (<code>~Copyable</code>) takes one JSON-RPC message and returns one JSON array: queued logs, then the response, then notifications. A hand-written method switch covers every request, completion included.</p>
+      <p>Malformed JSON and messages that are neither requests, notifications nor responses get proper JSON-RPC errors. It is plain Swift, tested natively with 22 tests, including a property that every method answers exactly as the core does.</p>
+    </div>
+    <div class="element">
+      <h3>Wasm driver</h3>
+      <span class="where">lsp · Sources/hylo-language-server-wasm</span>
+      <p>A reactor module for the yukibana light worker. It exports <code>lsp_alloc</code>, <code>lsp_free</code>, <code>lsp_init</code>, <code>lsp_handle</code> and <code>lsp_output</code>. It is built only when <code>HYLO_LSP_WASM</code> is set, using hylo-new's FoundationEssentials-only toolset.</p>
+      <p>It links in debug and in release with cross-module optimization. <code>Tools/wasm-smoke-test.mjs</code> runs it under node:wasi and checks exact hover text, symbol names, and completion labels at a member site, an unqualified site and an argument site.</p>
+    </div>
+    <div class="element" style="grid-column: 1 / -1">
+      <h3>Front-end queries in hylo-new</h3>
+      <span class="where">hylo-new · lsp-integration 590b5ea (the language server's pin)</span>
+      <ul>
+        <li><code>Program.members(of:visibleFrom:)</code> takes the qualification's type exactly as the checker assigns it and returns what a member selection would accept, with types. Static versus instance follows the checker's own rule, including #591.</li>
+        <li><code>Program.names(visibleFrom:)</code> returns the unqualified names visible at a scope, with lookup's own shadowing rule, including <code>Self</code>, <code>Void</code> and <code>Never</code>.</li>
+        <li><code>Program.assignTypes(inferringTypesOfArgument:of:)</code> returns the types an argument may have across all viable overloads. The solver collects every error-free solution, so labels, defaults, generics and the other arguments narrow the result without any copied rules.</li>
+        <li><code>Program.knownImplementation(of:in:)</code> finds a requirement's implementation without trapping when a conformance is ill-formed.</li>
+        <li>FoundationEssentials-only linking, and scope assignment on the calling thread for a reactor with no executor.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Question 2</span>
+  <h2>How are they related?</h2>
+  <p class="question">Dependencies point one way: host to driver to core to front end. Only the drivers know where they run.</p>
+
+  <div class="figure" role="img" aria-label="Layer diagram: editors use the native driver over stdio; the browser worker uses the wasm driver through MessageDriver; both drivers depend on the core, which depends on hylo-new's front-end queries.">
+    <svg viewBox="0 0 860 560" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+      </defs>
+      <text x="20" y="28" class="d-label">Hosts</text>
+      <rect x="20" y="40" width="380" height="64" rx="8" class="d-host"/>
+      <text x="40" y="66" class="d-title">Editors (VS Code, Neovim, …)</text>
+      <text x="40" y="88" class="d-sub">stdio, Content-Length framing</text>
+      <rect x="460" y="40" width="380" height="64" rx="8" class="d-host"/>
+      <text x="480" y="66" class="d-title">yukibana light Web Worker</text>
+      <text x="480" y="88" class="d-sub">one JSON-RPC object per postMessage</text>
+      <text x="20" y="140" class="d-label">Drivers (link host-specific dependencies)</text>
+      <rect x="20" y="152" width="380" height="96" rx="8" class="d-box"/>
+      <text x="40" y="178" class="d-title">hylo-language-server</text>
+      <text x="40" y="200" class="d-sub">ChimeHQ LanguageServer + JSONRPC</text>
+      <text x="40" y="218" class="d-sub">ArgumentParser · bundled stdlib</text>
+      <text x="40" y="236" class="d-sub">actor around the core · CMO release</text>
+      <rect x="460" y="152" width="380" height="96" rx="8" class="d-box"/>
+      <text x="480" y="178" class="d-title">hylo-language-server-wasm</text>
+      <text x="480" y="200" class="d-sub">reactor · FoundationEssentials toolset</text>
+      <text x="480" y="218" class="d-sub">lsp_init · lsp_handle · lsp_output</text>
+      <text x="480" y="236" class="d-sub">patched LSP / JSONRPC / BigInt</text>
+      <rect x="460" y="282" width="380" height="64" rx="8" class="d-box"/>
+      <text x="480" y="308" class="d-title">MessageDriver · MessageServer</text>
+      <text x="480" y="330" class="d-sub">message in → [logs, response, notifications]</text>
+      <text x="20" y="378" class="d-label">Core (host-agnostic)</text>
+      <rect x="20" y="390" width="820" height="64" rx="8" class="d-core"/>
+      <text x="40" y="416" class="d-title">HyloLanguageServerCore · Workspace</text>
+      <text x="40" y="438" class="d-sub">synchronous · features incl. completion → LanguageServerProtocol types</text>
+      <text x="20" y="486" class="d-label">hylo-new front end (lsp-integration)</text>
+      <rect x="20" y="496" width="820" height="56" rx="8" class="d-up"/>
+      <text x="40" y="520" class="d-title">Program queries</text>
+      <text x="40" y="540" class="d-sub">members · names · assignTypes(inferringTypesOfArgument:) · knownImplementation</text>
+      <path d="M210 104 V150" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M650 104 V150" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M650 248 V280" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M650 346 V388" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M210 248 V388" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M430 454 V494" class="d-arrow" marker-end="url(#ah)"/>
+    </svg>
+  </div>
+  <p class="caption">Arrows mean "depends on". The native driver calls the core directly. The wasm driver goes through MessageDriver, which is how its behaviour is tested natively.</p>
+
+  <h3>How completion works</h3>
+  <ol class="flow prose">
+    <li>The lexer finds the completion site: the word touching the cursor, including keyword-shaped prefixes such as <code>as</code> or <code>if</code>, but never inside comments or string literals. The word is replaced by a sentinel name, so <code>x.</code>, <code>T.</code>, <code>.m</code> and half-typed names all parse.</li>
+    <li>The edited copy is scoped. If the sentinel is an implicit member inside a call argument, the copy is typed with <code>assignTypes(inferringTypesOfArgument:of:)</code>, which returns the argument's possible types across every viable overload. Otherwise it is typed normally. The sentinel is found again by its position, not by its name.</li>
+    <li>Qualified site: <code>members(of:)</code> on the qualification's type as the checker assigned it. Unqualified site: <code>names(visibleFrom:)</code>. Argument site: <code>members(of: Metatype&lt;T&gt;)</code> for each possible type <code>T</code>. A trait requirement and its implementation are offered once, using <code>knownImplementation</code>.</li>
+    <li>Presentation is the only logic the language server owns:
+      <ul>
+        <li>call snippets, signatures in <code>labelDetails</code>, and overload disambiguation</li>
+        <li>a <code>self.</code> prefix for instance members (types visible lexically don't get it)</li>
+        <li><code>Point(x:y:)</code> offered when the typed prefix is a subsequence of the type name; the list is marked incomplete whenever such items were left out</li>
+      </ul>
+    </li>
+  </ol>
+
+  <h3>Branches</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Branch</th><th>Repo</th><th>Base</th><th>Commits</th><th>Content</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">core-driver-split</td><td>lsp</td><td class="mono">origin/main 075a59c</td><td>15</td><td>Upstream LSP types, core / native / MessageDriver / wasm split, pin 590b5ea, Puppy removed, CMO release builds, smoke test.</td></tr>
+        <tr><td class="mono">completion</td><td>lsp</td><td class="mono">core-driver-split</td><td>7</td><td>Completion sites, unqualified names, members and arguments, constructor shorthand, wider property tests, both drivers, smoke test.</td></tr>
+        <tr><td class="mono">lsp-integration</td><td>hylo-new</td><td class="mono">main d89e85b</td><td>7 merges + 1</td><td>Merges the seven branches below, plus one test that only makes sense with all of them together.</td></tr>
+        <tr><td class="mono">lsp-member-enumeration</td><td>hylo-new</td><td class="mono">d89e85b</td><td>3</td><td>Lists names and members. 0 changes to resolution, shown by comparing old and new <code>hc</code> output on 603 inputs.</td></tr>
+        <tr><td class="mono">static-variable-selection</td><td>hylo-new</td><td class="mono">d89e85b</td><td>1</td><td><code>a.k</code> is rejected for a <code>static let k</code>.</td></tr>
+        <tr><td class="mono">wasm-foundation-essentials</td><td>hylo-new</td><td class="mono">d89e85b</td><td>6</td><td>FoundationEssentials-only linking, scoping on the calling thread, a CI check.</td></tr>
+        <tr><td class="mono">argument-expected-types</td><td>hylo-new</td><td class="mono">d89e85b</td><td>2</td><td>The argument-type query. 0 changes to existing type checking on the same 603 inputs.</td></tr>
+        <tr><td class="mono">implicit-member-arguments</td><td>hylo-new</td><td class="mono">d89e85b</td><td>2</td><td>Types <code>f(.k)</code> in argument position. A typing change, needed by completion (see the open questions).</td></tr>
+        <tr><td class="mono">witness-table-query</td><td>hylo-new</td><td class="mono">d89e85b</td><td>1</td><td><code>knownImplementation(of:in:)</code>. 0 changes on the 603 inputs.</td></tr>
+        <tr><td class="mono">unqualified-new</td><td>hylo-new</td><td class="mono">d89e85b</td><td>1</td><td>A bare <code>new</code> is diagnosed instead of crashing the checker, so the server survives typing <code>new…</code>.</td></tr>
+        <tr><td class="mono">extension-member-introducers</td><td>hylo-new</td><td class="mono">d89e85b</td><td>1</td><td>Separate proposal, not merged into the pin: <code>x.f@inout</code> on extension members. 136 of 603 inputs change, all of them using introducers.</td></tr>
+        <tr><td class="mono">project-model-wip</td><td>lsp</td><td class="mono">PR #37 head</td><td>-</td><td>The parked project model, watcher and push diagnostics.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">Earlier tips are kept as <code>-v1</code>, <code>-v2</code>, … branches. Patched copies of three external dependencies live in <code>/home/hylo/wt/deps</code> on branch <code>hylo-local-patches</code>, with exported patch files for upstreaming.</p>
+</section>
+
+<section>
+  <span class="eyebrow">Question 3</span>
+  <h2>What principles guide these answers?</h2>
+  <p class="question">Four principles decided where each line of code lives.</p>
+  <div>
+    <div class="principle">
+      <strong>The type checker is the single source of truth.</strong>
+      <p>The language server never decides what is static, visible, shadowed, applicable or well-typed. Listing is built on resolution without changing it, and argument types come from the solver itself.</p>
+      <p class="why">PR #37's own copy of <code>qualificationForSelection</code> went out of date the moment #591 landed. Any change to resolution or typing had to clear your bar and come with evidence: <code>hc</code> built before and after each branch, compared over 603 inputs.</p>
+    </div>
+    <div class="principle">
+      <strong>Hosts sit at the edge.</strong>
+      <p>Transport, threading, file access and the standard library's location belong to the drivers. The core is synchronous and gets everything as values.</p>
+      <p class="why">The browser has no stdio, no Process and no executor. A synchronous core can be called directly from a wasm export, and the native driver adds concurrency around it.</p>
+    </div>
+    <div class="principle">
+      <strong>Pay only for what each host links.</strong>
+      <p>Each driver is its own target with its own dependencies. The wasm build links FoundationEssentials, not full Foundation and ICU. External packages are patched locally and minimally, and are not forked.</p>
+      <p class="why">Full Foundation would add about 15.5 MB gzipped. The final wasm module is 5.98 MB gzipped.</p>
+    </div>
+    <div class="principle">
+      <strong>Properties pin behaviour; examples document it.</strong>
+      <p>Every branch was written test-first. Where a law exists, a seeded generator checks it and shrinks failures to a small program:</p>
+      <ul>
+        <li>listing agrees with what the type checker accepts</li>
+        <li>argument types are exactly those the checker accepts for that argument</li>
+        <li>offered completions resolve, and every name that would resolve is offered</li>
+        <li>completion answers at every position of random, even broken, programs</li>
+        <li>MessageServer answers exactly as the core does</li>
+      </ul>
+      <p class="why">Deliberately broken versions of the code were caught by these checks. That is how a property that had become trivially true was found and replaced.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Measurements</span>
+  <h2>Size and speed</h2>
+  <p class="caption">Linux x86-64, Swift 6.4, release builds. The wasm figures were measured in node.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Measure</th><th>Without CMO</th><th>With CMO</th></tr></thead>
+      <tbody>
+        <tr><td>Native binary, stripped</td><td>11.17 MB</td><td>11.47 MB (+2.7%)</td></tr>
+        <tr><td>Native: open a document with the standard library</td><td>1300 ms</td><td>944 ms</td></tr>
+        <tr><td>Wasm module, stripped and gzip -9</td><td>5.93 MB</td><td>5.98 MB (+0.8%)</td></tr>
+        <tr><td>Wasm: first document opened, including the standard library</td><td>2065 ms</td><td>1318 ms</td></tr>
+        <tr><td>Wasm memory</td><td colspan="2">25 MiB</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Completion latency, 263-line file, release with CMO</th><th>Native</th><th>Wasm</th></tr></thead>
+      <tbody>
+        <tr><td>Member site</td><td>247 ms</td><td>308 ms</td></tr>
+        <tr><td>Unqualified site</td><td>254 ms</td><td>307 ms</td></tr>
+        <tr><td>Argument site, 269 items</td><td>303 ms</td><td>342 ms</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="prose">Completion type-checks the edited document again. The typed program can't be reused, because type checking rewrites the tree in place. This is recorded as a known limitation.</p>
+</section>
+
+<section>
+  <span class="eyebrow">Your call</span>
+  <h2>Decisions before merging</h2>
+  <div class="callout"><strong>Publishing:</strong> both language-server branches pin hylo-new <code>590b5ea</code>, which exists only in your local clone. The hylo-new branches have to reach a remote before CI can check out the submodule. The <code>release.yml</code> build with cross-module optimization also has to run once on macOS, Windows and Linux arm64.</div>
+  <ol class="prose">
+    <li><strong>Typing changes in the pin.</strong> These need your approval:
+      <ul>
+        <li><code>implicit-member-arguments</code>: without it, the property test of argument completion fails for seeds 0, 7, 10, 12, 13 and 22, because the checker rejects every <code>.x</code> in an argument.</li>
+        <li><code>static-variable-selection</code>.</li>
+        <li><code>unqualified-new</code>: it only replaces a crash with a diagnostic.</li>
+      </ul>
+      <code>extension-member-introducers</code> stays a separate proposal.</li>
+    <li><strong>Incomplete argument lists.</strong> Completing <code>a(.|</code> against overloads with more parameters returns nothing. Supporting it would need an open-ended matching mode used only by the argument-type query.</li>
+    <li><strong>Member semantics</strong> that completion currently mirrors from the checker:
+      <ul>
+        <li><code>a.init</code> on an instance</li>
+        <li>a stored property on its type, <code>A.x</code></li>
+        <li>an unqualified <code>x</code> inside a method type-checks without <code>self.</code></li>
+        <li><code>struct A is P { type X = Void }</code> is rejected</li>
+      </ul>
+      Which of these are intended?</li>
+    <li><strong>Incomplete standard library.</strong> Code that uses a missing standard-library entity, such as an integer literal when <code>Int</code> is missing, still crashes the front end. Should it be typed as an error instead? That would be a type-checker change.</li>
+    <li><strong>Narrower argument completion.</strong> Should argument completion offer only members whose type matches the expected type? Today it offers every static member of each possible type.</li>
+    <li><strong>Incomplete-list rule.</strong> After a typed prefix, the list is usually marked incomplete, so clients re-ask on every keystroke. Each re-ask costs one type check.</li>
+    <li><strong>Test runtime.</strong> The property that completes at every position takes about 2 minutes with 25 seeds. Keep checking every position, or only token boundaries?</li>
+    <li><strong>Upstream patches</strong> in <code>/home/hylo/wt/deps</code>:
+      <ul>
+        <li>LanguageServerProtocol: header trimming and <code>Snippet</code> left out of WASI builds</li>
+        <li>JSONRPC: the stdio channel built only where Dispatch exists</li>
+        <li>BigInt: <code>Decimal</code> conversion without <code>NSDecimalRound</code></li>
+      </ul>
+      Upstream them?</li>
+    <li><strong>Unreported hylo-new crashes during lowering:</strong>
+      <ul>
+        <li>#133</li>
+        <li>an unbound member such as <code>A.f</code></li>
+        <li>a <code>static let</code> declared in an extension</li>
+      </ul>
+      Draft issues?</li>
+  </ol>
+</section>
+
+</main>

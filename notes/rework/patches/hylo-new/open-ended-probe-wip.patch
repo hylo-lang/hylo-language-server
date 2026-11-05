@@ -1,0 +1,567 @@
+diff --git a/Sources/FrontEnd/Typer/Constraint.swift b/Sources/FrontEnd/Typer/Constraint.swift
+index 4960f48..0e7610c 100644
+--- a/Sources/FrontEnd/Typer/Constraint.swift
++++ b/Sources/FrontEnd/Typer/Constraint.swift
+@@ -239,6 +239,10 @@ internal struct CallConstraint: Constraint {
+   /// The labels and types of the arguments.
+   internal private(set) var arguments: [Argument]
+ 
++  /// `true` iff `arguments` may be followed by arguments yet to be written, whose labels and types
++  /// are unknown.
++  internal let isOpenEnded: Bool
++
+   /// The expected type of the application.
+   internal private(set) var output: AnyTypeIdentity
+ 
+@@ -276,6 +280,7 @@ extension CallConstraint: Showable {
+       if let l = arguments[i].label { s.write("\(l): ") }
+       s.write(printer.show(arguments[i].type))
+     }
++    if isOpenEnded { s.write(arguments.isEmpty ? "..." : ", ...") }
+     s.write(printer.program[origin].style == .parenthesized ? ")" : "]")
+     s.write(" gives ")
+     s.write(printer.show(output))
+diff --git a/Sources/FrontEnd/Typer/Solution.swift b/Sources/FrontEnd/Typer/Solution.swift
+index 920ba3a..1ef57ee 100644
+--- a/Sources/FrontEnd/Typer/Solution.swift
++++ b/Sources/FrontEnd/Typer/Solution.swift
+@@ -17,6 +17,10 @@ internal struct Solution {
+   /// A table from call expression to its arguments after elaboration.
+   internal let argumentElaborations: [(Call.ID, ParameterBindings)]
+ 
++  /// The types of the parameters left to arguments yet to be written in open-ended calls, whose
++  /// arguments are not elaborated.
++  internal let elidedParameterTypes: [AnyTypeIdentity]
++
+   /// The diagnostics associated with the solution.
+   internal private(set) var diagnostics: DiagnosticSet
+ 
+@@ -26,12 +30,14 @@ internal struct Solution {
+     bindings: BindingTable = .init(),
+     elaborations: [(ExpressionIdentity, WitnessExpression)] = .init(),
+     argumentElaborations: [(Call.ID, ParameterBindings)] = .init(),
++    elidedParameterTypes: [AnyTypeIdentity] = .init(),
+     diagnostics: DiagnosticSet = .init()
+   ) {
+     self.substitutions = substitutions
+     self.bindings = bindings
+     self.elaborations = elaborations
+     self.argumentElaborations = argumentElaborations
++    self.elidedParameterTypes = elidedParameterTypes
+     self.diagnostics = diagnostics
+   }
+ 
+diff --git a/Sources/FrontEnd/Typer/Solver.swift b/Sources/FrontEnd/Typer/Solver.swift
+index ebb7166..3adca18 100644
+--- a/Sources/FrontEnd/Typer/Solver.swift
++++ b/Sources/FrontEnd/Typer/Solver.swift
+@@ -53,6 +53,9 @@ internal struct Solver {
+   /// The current indentation level for logging message, or `-1` if logging is disabled.
+   private var indentation: Int
+ 
++  /// The types of the parameters left to arguments yet to be written in open-ended calls.
++  private var elidedParameterTypes: [AnyTypeIdentity] = []
++
+   /// The solutions without error found so far, one for each combination of the choices of the
+   /// overload sets that leads to one, or `nil` if they are not collected.
+   internal private(set) var solutionsWithoutError: [Solution]?
+@@ -345,7 +348,7 @@ internal struct Solver {
+ 
+     // Argument list has the right shape?
+     let w = program.types.seenAsTermAbstraction(callee)!
+-    guard let (bs, ss, inplace) = matches(k, w) else {
++    guard let (bs, ss, inplace, elided) = matches(k, w) else {
+       let expected = program.types[w].labels
+       return .failure { (_, _, tp, ds) in
+         ds.insert(tp.program.incompatibleLabels(found: k.labels, expected: expected, at: k.site))
+@@ -365,7 +368,10 @@ internal struct Solver {
+       }
+     }
+ 
+-    if bs.hasDefaulted {
++    // Arguments are elaborated unless some are yet to be written.
++    if !elided.isEmpty {
++      elidedParameterTypes.append(contentsOf: elided)
++    } else if bs.hasDefaulted {
+       argumentElaborations.append((k.origin, bs))
+     }
+ 
+@@ -385,21 +391,26 @@ internal struct Solver {
+ 
+   /// Returns how the types of the arguments in `k` match the parameters of `f`.
+   ///
+-  /// If the arguments in `k` match, this method returns a triple `(bs, ss, inplace)` where `bs`
+-  /// maps each parameter of `f` to its value, `ss` contains coercion constraints resulting from
+-  /// argument passing, and `inplace` is `true` iff at least one of the arguments passed to an
+-  /// `auto` parameter is  marked for mutation.
++  /// If the arguments in `k` match, this method returns a tuple `(bs, ss, inplace, elided)` where
++  /// `bs` maps each parameter of `f` but those in `elided` to its value, `ss` contains coercion
++  /// constraints resulting from argument passing, `inplace` is `true` iff at least one of the
++  /// arguments passed to an `auto` parameter is  marked for mutation, and `elided` contains the
++  /// types of the trailing parameters of `f` left to arguments yet to be written, which is empty
++  /// unless `k` is open-ended.
+   ///
+   /// If the arguments in `k` do not match, this method returns `nil`.
+   private mutating func matches(
+     _ k: CallConstraint, _ f: Arrow.ID
+-  ) -> (bingings: ParameterBindings, subgoals: [CoercionConstraint], inplace: Bool)? {
++  ) -> (
++    bingings: ParameterBindings, subgoals: [CoercionConstraint], inplace: Bool,
++    elided: [AnyTypeIdentity]
++  )? {
+     var bindings = ParameterBindings()
+     var subgoals: [CoercionConstraint] = []
+ 
+     var inplace = false
+     var i = 0
+-    for p in program.types[f].inputs {
++    for (j, p) in program.types[f].inputs.enumerated() {
+       // Is there's an explicit argument with the right label?
+       if (k.arguments.count > i) && (k.arguments[i].label == p.label) {
+         let v = program[k.origin].arguments[i].value
+@@ -420,12 +431,18 @@ internal struct Solver {
+         continue
+       }
+ 
++      // The parameter and those after it are left to arguments yet to be written?
++      else if k.isOpenEnded && (i == k.arguments.count) {
++        let elided = program.types[f].inputs[j...].map(\.type)
++        return (bindings, subgoals, inplace, elided)
++      }
++
+       // Arguments do not match.
+       else { return nil }
+     }
+ 
+     assert(bindings.elements.count == program.types[f].inputs.count)
+-    return i == k.arguments.count ? (bindings, subgoals, inplace) : nil
++    return i == k.arguments.count ? (bindings, subgoals, inplace, []) : nil
+   }
+ 
+   /// Returns a failure to solve a `k` due to an invalid callee type.
+@@ -633,6 +650,7 @@ internal struct Solver {
+       bindings: bindings,
+       elaborations: elaborations,
+       argumentElaborations: argumentElaborations,
++      elidedParameterTypes: elidedParameterTypes,
+       diagnostics: ds)
+   }
+ 
+diff --git a/Sources/FrontEnd/Typer/SyntaxRole.swift b/Sources/FrontEnd/Typer/SyntaxRole.swift
+index 4b131cd..d5cdccd 100644
+--- a/Sources/FrontEnd/Typer/SyntaxRole.swift
++++ b/Sources/FrontEnd/Typer/SyntaxRole.swift
+@@ -7,19 +7,22 @@ internal enum SyntaxRole: Equatable {
+   /// The tree denotes a type ascription.
+   case ascription
+ 
+-  /// The tree denotes as the callee of a function call.
+-  case function(labels: [String?])
++  /// The tree denotes as the callee of a function call whose arguments have the given `labels`,
++  /// followed by arguments yet to be written iff `isOpenEnded` is `true`.
++  case function(labels: [String?], isOpenEnded: Bool)
+ 
+-  /// The tree denotes as the callee of a subscript call.
+-  case `subscript`(labels: [String?])
++  /// The tree denotes as the callee of a subscript call whose arguments have the given `labels`,
++  /// followed by arguments yet to be written iff `isOpenEnded` is `true`.
++  case `subscript`(labels: [String?], isOpenEnded: Bool)
+ 
+-  /// Creates the role of a callee applied with given `style` and `labels`.
+-  internal init(_ style: Call.Style, labels: [String?]) {
++  /// Creates the role of a callee applied with given `style` and `labels`, followed by arguments
++  /// yet to be written iff `isOpenEnded` is `true`.
++  internal init(_ style: Call.Style, labels: [String?], isOpenEnded: Bool) {
+     switch style {
+     case .parenthesized:
+-      self = .function(labels: labels)
++      self = .function(labels: labels, isOpenEnded: isOpenEnded)
+     case .bracketed:
+-      self = .subscript(labels: labels)
++      self = .subscript(labels: labels, isOpenEnded: isOpenEnded)
+     }
+   }
+ 
+diff --git a/Sources/FrontEnd/Typer/Typer.swift b/Sources/FrontEnd/Typer/Typer.swift
+index 3a827d7..5524aa6 100644
+--- a/Sources/FrontEnd/Typer/Typer.swift
++++ b/Sources/FrontEnd/Typer/Typer.swift
+@@ -2144,7 +2144,7 @@ public struct Typer {
+     var i: [CallConstraint.Argument] = []
+     for (j, a) in program[e].arguments.enumerated() {
+       let t: AnyTypeIdentity
+-      if (probedArgument?.call == e) && (probedArgument?.index == j) {
++      if isProbed(e) && (probedArgument?.index == j) {
+         // The probed argument is checked on its own; its type in `e` is inferred from the call.
+         check(a.value)
+         t = fresh().erased
+@@ -2157,7 +2157,9 @@ public struct Typer {
+     // We cannot use the expected type to constrain the result of the callee. It would cause the
+     // solver to commit prematurely in the presence of overloads.
+     let o = fresh().erased
+-    let k = CallConstraint(callee: f, arguments: i, output: o, origin: e, site: program[e].site)
++    let k = CallConstraint(
++      callee: f, arguments: i, isOpenEnded: isProbed(e), output: o, origin: e,
++      site: program[e].site)
+ 
+     context.obligations.assume(k)
+     return context.obligations.assume(e, hasType: o, at: program[e].site)
+@@ -2213,7 +2215,7 @@ public struct Typer {
+       _ = context.withSubcontext(expectedType: u) { (ctx) in inferredType(of: q, in: &ctx) }
+     }
+ 
+-    let r = SyntaxRole(program[e].style, labels: program[e].labels)
++    let r = SyntaxRole(program[e].style, labels: program[e].labels, isOpenEnded: isProbed(e))
+     let f = context.withSubcontext(role: r) { (ctx) in
+       inferredType(of: callee, in: &ctx)
+     }
+@@ -2537,8 +2539,8 @@ public struct Typer {
+     // If the expression is used as a callee, account for the label of the elided `self` parameter
+     // of the underlying initializer.
+     let role: SyntaxRole
+-    if case .function(let ls) = context.role {
+-      role = .function(labels: Array("self" as Optional, prependedTo: ls))
++    if case .function(let ls, let isOpenEnded) = context.role {
++      role = .function(labels: Array("self" as Optional, prependedTo: ls), isOpenEnded: isOpenEnded)
+     } else {
+       role = .unspecified
+     }
+@@ -2977,24 +2979,28 @@ public struct Typer {
+       return nil
+     case .ascription, .unspecified:
+       return nil
+-    case .function(let labels):
+-      return filterInPlace(&cs, callable: .parenthesized, withLabels: labels, at: site)
+-    case .subscript(let labels):
+-      return filterInPlace(&cs, callable: .bracketed, withLabels: labels, at: site)
++    case .function(let labels, let isOpenEnded):
++      return filterInPlace(
++        &cs, callable: .parenthesized, withLabels: labels, openEnded: isOpenEnded, at: site)
++    case .subscript(let labels, let isOpenEnded):
++      return filterInPlace(
++        &cs, callable: .bracketed, withLabels: labels, openEnded: isOpenEnded, at: site)
+     }
+   }
+ 
+   /// Narrows the overloaded candidates in `cs` to keep those that can be applied with the given
+-  /// style and argument labels, returning a diagnostic iff no candidate survived.
++  /// style and argument labels, followed by other arguments iff `isOpenEnded` is `true`,
++  /// returning a diagnostic iff no candidate survived.
+   ///
+   /// - Requires: `cs` is not empty.
+   private func filterInPlace(
+     _ cs: inout [NameResolutionCandidate],
+-    callable style: Call.Style, withLabels labels: [String?], at site: SourceSpan
++    callable style: Call.Style, withLabels labels: [String?], openEnded isOpenEnded: Bool,
++    at site: SourceSpan
+   ) -> Diagnostic? {
+     // Non-viable candidates moved at the end.
+     let i = cs.stablePartition { (c) in
+-      !program.types.isCallable(c.type, style, withLabels: labels)
++      !program.types.isCallable(c.type, style, withLabels: labels, openEnded: isOpenEnded)
+     }
+     defer { cs.removeSubrange(i...) }
+ 
+@@ -3055,6 +3061,13 @@ public struct Typer {
+     }
+   }
+ 
++  /// Returns `true` iff `e` is the call of the argument whose types are inferred by
++  /// `apply(inferringTypesOfArgument:of:)`, which is checked as if it were followed by arguments
++  /// yet to be written.
++  private func isProbed(_ e: Call.ID) -> Bool {
++    probedArgument?.call == e
++  }
++
+   /// Returns the type of the probed argument in the constraint of `o` on its call, if any.
+   private func typeOfProbedArgument(in o: Obligations) -> AnyTypeIdentity? {
+     guard let (call, i, _) = probedArgument else { return nil }
+diff --git a/Sources/FrontEnd/Types/Arrow.swift b/Sources/FrontEnd/Types/Arrow.swift
+index 5dceb01..e2f2284 100644
+--- a/Sources/FrontEnd/Types/Arrow.swift
++++ b/Sources/FrontEnd/Types/Arrow.swift
+@@ -60,8 +60,11 @@ public struct Arrow: TypeTree {
+     inputs.lazy.map(\.label)
+   }
+ 
+-  /// Returns `true` iff instances of `self` can be applied with `labels`.
+-  public func labelsCompatible<T: Collection<String?>>(with labels: T) -> Bool {
++  /// Returns `true` iff instances of `self` can be applied with `labels` or, if `isOpenEnded` is
++  /// `true`, with `labels` followed by other labels.
++  public func labelsCompatible<T: Collection<String?>>(
++    with labels: T, openEnded isOpenEnded: Bool = false
++  ) -> Bool {
+     var i = labels.startIndex
+     for p in inputs {
+       // Is there's an explicit argument with the right label?
+@@ -74,6 +77,11 @@ public struct Arrow: TypeTree {
+         continue
+       }
+ 
++      // The parameter and those after it can be given the labels following `labels`?
++      else if isOpenEnded && (i == labels.endIndex) {
++        return true
++      }
++
+       // Arguments do not match.
+       else {
+         return false
+diff --git a/Sources/FrontEnd/Types/TypeStore.swift b/Sources/FrontEnd/Types/TypeStore.swift
+index de3c994..d20a095 100644
+--- a/Sources/FrontEnd/Types/TypeStore.swift
++++ b/Sources/FrontEnd/Types/TypeStore.swift
+@@ -143,12 +143,14 @@ public struct TypeStore: Sendable {
+     }
+   }
+ 
+-  /// Returns `true` iff `n` is the type of an entity callable with the given style and labels.
++  /// Returns `true` iff `n` is the type of an entity callable with the given style and labels or,
++  /// if `isOpenEnded` is `true`, with the given style and labels followed by other labels.
+   public func isCallable<T: TypeIdentity, S: Collection<String?>>(
+-    _ n: T, _ style: Call.Style, withLabels labels: S
++    _ n: T, _ style: Call.Style, withLabels labels: S, openEnded isOpenEnded: Bool = false
+   ) -> Bool {
+     if let w = seenAsTermAbstraction(n) {
+-      return (self[w].style == style) && self[w].labelsCompatible(with: labels)
++      return (self[w].style == style)
++        && self[w].labelsCompatible(with: labels, openEnded: isOpenEnded)
+     } else {
+       return false
+     }
+diff --git a/Tests/FrontEndTests/Typer/ArgumentTypeTests.swift b/Tests/FrontEndTests/Typer/ArgumentTypeTests.swift
+index 7b744da..5431c7d 100644
+--- a/Tests/FrontEndTests/Typer/ArgumentTypeTests.swift
++++ b/Tests/FrontEndTests/Typer/ArgumentTypeTests.swift
+@@ -120,11 +120,29 @@ final class ArgumentTypeTests: XCTestCase {
+       fun f(x v0: C, z v1: C = C()) {}
+       """
+     let trailing = await typesOfHole(in: declarations + "\nfun main() { f(x: .hole) }")
+-    XCTAssertEqual(trailing, ["C"])
++    XCTAssertEqual(trailing, ["A", "C"])
+     let skipped = await typesOfHole(in: declarations + "\nfun main() { f(y: .hole) }")
+     XCTAssertEqual(skipped, ["B"])
+   }
+ 
++  func testDefaultsBeforeMissingArguments() async {
++    let declarations = """
++      struct A { public memberwise init }
++      struct B { public memberwise init }
++      struct C { public memberwise init }
++      fun f(x v0: A, y v1: B = B(), z v2: C) {}
++      """
++    let first = await typesOfHole(in: declarations + "\nfun main() { f(x: .hole) }")
++    XCTAssertEqual(first, ["A"])
++    let defaulted = await typesOfHole(in: declarations + "\nfun main() { f(x: A(), y: .hole) }")
++    XCTAssertEqual(defaulted, ["B"])
++    let afterDefaulted = await typesOfHole(
++      in: declarations + "\nfun main() { f(x: A(), z: .hole) }")
++    XCTAssertEqual(afterDefaulted, ["C"])
++    let skippingMissing = await typesOfHole(in: declarations + "\nfun main() { f(z: .hole) }")
++    XCTAssertEqual(skippingMissing, [])
++  }
++
+   func testMemberCallee() async {
+     let ts = await typesOfHole(
+       in: """
+@@ -170,13 +188,200 @@ final class ArgumentTypeTests: XCTestCase {
+     XCTAssertEqual(ts, ["B"])
+   }
+ 
+-  func testIncompleteArguments() async {
++  func testMissingTrailingArguments() async {
+     let ts = await typesOfHole(
+       in: """
+         struct A { public memberwise init }
+         fun f(x v0: A, y v1: A) {}
+         fun main() { f(x: .hole) }
+         """)
++    XCTAssertEqual(ts, ["A"])
++  }
++
++  func testOpenEndedOverloads() async {
++    let declarations = """
++      struct I {
++        public memberwise init
++        public static fun the_int() -> I { I() }
++      }
++      struct B {
++        public memberwise init
++        public static fun the_bool() -> B { B() }
++      }
++      struct Z { public memberwise init }
++      struct W { public memberwise init }
++      fun a(x v0: I) {}
++      fun a(x v0: I, y v1: I) {}
++      fun a(x v0: B, y v1: B) {}
++      fun a(x v0: B, z v1: Z) {}
++      fun a(x v0: I, v1: W) {}
++      """
++    let alone = await typesOfHole(in: declarations + "\nfun main() { a(x: .hole) }")
++    XCTAssertEqual(alone, ["B", "I"])
++    let before = await typesOfHole(
++      in: declarations + "\nfun main() { a(x: .hole, y: .the_bool()) }")
++    XCTAssertEqual(before, ["B"])
++    let after = await typesOfHole(in: declarations + "\nfun main() { a(x: .the_int(), y: .hole) }")
++    XCTAssertEqual(after, ["I"])
++    let otherLabel = await typesOfHole(
++      in: declarations + "\nfun main() { a(x: .the_bool(), z: .hole) }")
++    XCTAssertEqual(otherLabel, ["Z"])
++    let unlabeled = await typesOfHole(in: declarations + "\nfun main() { a(x: .the_int(), .hole) }")
++    XCTAssertEqual(unlabeled, ["W"])
++    let unlabeledAfterBool = await typesOfHole(
++      in: declarations + "\nfun main() { a(x: .the_bool(), .hole) }")
++    XCTAssertEqual(unlabeledAfterBool, [])
++    let tooMany = await typesOfHole(
++      in: declarations + "\nfun main() { a(x: .hole, y: .the_int(), z: Z()) }")
++    XCTAssertEqual(tooMany, [])
++  }
++
++  func testWrittenArgumentsAfterHole() async {
++    let ts = await typesOfHole(
++      in: """
++        struct A { public memberwise init }
++        struct B { public memberwise init }
++        struct C { public memberwise init }
++        fun f(x v0: A, y v1: B, z v2: C) {}
++        fun f(x v0: B, y v1: A, z v2: C) {}
++        fun f(x v0: C, z v1: C) {}
++        fun main() { f(x: .hole, y: B()) }
++        """)
++    XCTAssertEqual(ts, ["A"])
++  }
++
++  func testNoReordering() async {
++    let ts = await typesOfHole(
++      in: """
++        struct A { public memberwise init }
++        struct B { public memberwise init }
++        struct C { public memberwise init }
++        struct D { public memberwise init }
++        fun f(x v0: A, y v1: B) {}
++        fun f(y v0: C, x v1: D) {}
++        fun main() { f(y: .hole) }
++        """)
++    XCTAssertEqual(ts, ["C"])
++  }
++
++  func testGenericWithMissingArguments() async {
++    let declarations = """
++      struct A { public memberwise init }
++      struct X { public memberwise init }
++      fun f<T>(x v0: A, y v1: T) {}
++      fun g<T>(x v0: T, y v1: T, z v2: A) {}
++      """
++    let unconstrainedMissing = await typesOfHole(
++      in: declarations + "\nfun main() { f(x: .hole) }")
++    XCTAssertEqual(unconstrainedMissing, ["A"])
++    let undetermined = await typesOfHole(in: declarations + "\nfun main() { g(x: .hole) }")
++    XCTAssertEqual(undetermined, [])
++    let determined = await typesOfHole(in: declarations + "\nfun main() { g(x: X(), y: .hole) }")
++    XCTAssertEqual(determined, ["X"])
++  }
++
++  func testGenericResultWithMissingArguments() async {
++    let ts = await typesOfHole(
++      in: """
++        struct A { public memberwise init }
++        fun any<X>() -> X { any() }
++        fun f<T>(x v0: A, y v1: T) -> T { any() }
++        fun main() { f(x: .hole) }
++        """)
++    XCTAssertEqual(ts, ["A"])
++  }
++
++  func testMemberCalleeWithMissingArguments() async {
++    let ts = await typesOfHole(
++      in: """
++        struct A { public memberwise init }
++        struct B { public memberwise init }
++        struct S {
++          public memberwise init
++          public fun f(x v0: A) {}
++          public fun f(x v0: B, y v1: B) {}
++        }
++        fun main() {
++          let s = S()
++          s.f(x: .hole)
++        }
++        """)
++    XCTAssertEqual(ts, ["A", "B"])
++  }
++
++  func testStaticCalleeWithMissingArguments() async {
++    let ts = await typesOfHole(
++      in: """
++        struct A { public memberwise init }
++        struct B { public memberwise init }
++        struct S {
++          public static fun f(x v0: A, y v1: A) {}
++          public static fun f(x v0: B, y v1: B) {}
++        }
++        fun main() { S.f(x: .hole) }
++        """)
++    XCTAssertEqual(ts, ["A", "B"])
++  }
++
++  func testSingleCandidateWithMissingArguments() async {
++    let ts = await typesOfHole(
++      in: """
++        struct A { public memberwise init }
++        struct B { public memberwise init }
++        struct S {
++          public memberwise init
++          public fun f(x v0: A, y v1: B) {}
++        }
++        fun main() { S().f(x: .hole) }
++        """)
++    XCTAssertEqual(ts, ["A"])
++  }
++
++  func testConstructorWithMissingArguments() async {
++    let ts = await typesOfHole(
++      in: """
++        struct A { public memberwise init }
++        struct B { public memberwise init }
++        struct S {
++          public var a: A
++          public var b: B
++          public memberwise init
++        }
++        fun main() { let s = S(a: .hole) }
++        """)
++    XCTAssertEqual(ts, ["A"])
++  }
++
++  func testNestedCallWithMissingArguments() async {
++    let declarations = """
++      struct A { public memberwise init }
++      struct B { public memberwise init }
++      struct Z { public memberwise init }
++      fun g(x v0: A, w v1: Z) -> A { A() }
++      fun g(x v0: B) -> B { B() }
++      fun h(y v0: A) {}
++      fun k(y v0: A, z v1: Z) {}
++      """
++    let inner = await typesOfHole(in: declarations + "\nfun main() { h(y: g(x: .hole)) }")
++    XCTAssertEqual(inner, ["A"])
++    // Only the call of which the hole is an argument is open-ended.
++    let enclosing = await typesOfHole(in: declarations + "\nfun main() { k(y: g(x: .hole)) }")
++    XCTAssertEqual(enclosing, [])
++    let enclosed = await typesOfHole(in: declarations + "\nfun main() { h(y: .hole) }")
++    XCTAssertEqual(enclosed, ["A"])
++  }
++
++  func testOtherCallsAreNotOpenEnded() async {
++    let ts = await typesOfHole(
++      in: """
++        struct A { public memberwise init }
++        struct B { public memberwise init }
++        fun f(x v0: A, v1: A) {}
++        fun f(x v0: B, v1: B) {}
++        fun g(x v0: A, y v1: A) -> A { A() }
++        fun g(x v0: B) -> B { B() }
++        fun main() { f(x: .hole, g(x: A())) }
++        """)
+     XCTAssertEqual(ts, [])
+   }
+ 

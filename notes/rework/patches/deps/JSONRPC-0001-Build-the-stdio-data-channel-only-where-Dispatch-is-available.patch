@@ -1,0 +1,47 @@
+From 75bc8cefa3d584a92bfd974843e2ee277b26a59e Mon Sep 17 00:00:00 2001
+From: Ambrus Toth <ping@ambrus.dev>
+Date: Sun, 25 Oct 2026 22:43:59 +0100
+Subject: [PATCH] Build the stdio data channel only where Dispatch is available
+
+`FileHandle.dataStream` and `DataChannel.stdioPipe()` rely on
+`FileHandle.readabilityHandler`, which swift-corelibs-foundation only
+declares `#if canImport(Dispatch)`. The WebAssembly Swift SDK
+(wasm32-unknown-wasip1) has no Dispatch, so the package does not compile
+for WASI at all, whether the program links the full Foundation or only
+FoundationEssentials:
+
+    DataChannel+StdioPipe.swift:7:3: error: cannot find 'readabilityHandler' in scope
+
+Compile this file under the same condition as the API it uses. This also
+keeps it if a WASI SDK with Dispatch (e.g. with threads) provides
+`readabilityHandler`, which an `os(WASI)` check would not.
+
+Nothing changes on other platforms, which all have Dispatch. On WASI, the
+rest of the package now builds; `stdioPipe()` and `dataStream` are absent
+there, as they could not compile before.
+---
+ Sources/JSONRPC/DataChannel+StdioPipe.swift | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/Sources/JSONRPC/DataChannel+StdioPipe.swift b/Sources/JSONRPC/DataChannel+StdioPipe.swift
+index 9de2eb5..8e1a0ef 100644
+--- a/Sources/JSONRPC/DataChannel+StdioPipe.swift
++++ b/Sources/JSONRPC/DataChannel+StdioPipe.swift
+@@ -1,5 +1,8 @@
+ import Foundation
+ 
++// `FileHandle.readabilityHandler` is only available where Foundation has Dispatch, unlike on WASI.
++#if canImport(Dispatch)
++
+ extension FileHandle {
+ 	public var dataStream: AsyncStream<Data> {
+ 		let (stream, continuation) = AsyncStream<Data>.makeStream()
+@@ -30,3 +33,5 @@ extension DataChannel {
+ 		return DataChannel(writeHandler: writeHandler, dataSequence: FileHandle.standardInput.dataStream)
+ 	}
+ }
++
++#endif
+-- 
+2.53.0
+
