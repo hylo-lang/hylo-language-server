@@ -23,8 +23,8 @@ and `./lint.sh` on Linux x86_64 with Swift 6.4, `-j 4`.
 
 | Branch | Head | Base | State |
 |---|---|---|---|
-| `core-driver-split` | `b3346f4` | `main` (`075a59c`) | **Draft PR #42.** 16 commits: synchronous `Workspace` core, native stdio driver, message driver, WebAssembly reactor driver with a Node smoke test, cross-module optimization in release builds. Every commit builds, tests and lints, except `8399b16`, whose first build failed and passed on rerun. The head runs 92 XCTest tests, all passing. The wasm smoke test passes in debug and in release with cross-module optimization. |
-| `completion` | `d42cf9a` | `core-driver-split` | **Draft PR #43, stacked on #42.** 7 commits: completion sites from the lexer, unqualified names and members from the front end's enumeration, initializers of applied types, completion in both drivers and in the smoke test, with property-based checks. Every commit builds, tests and lints, except `643b2a5`, whose first build failed and passed on rerun. The head runs 167 XCTest tests, all passing. |
+| `core-driver-split` | `9cf9161` | `main` (`075a59c`) | **Draft PR #42.** 17 commits: synchronous `Workspace` core, native stdio driver, message driver, WebAssembly reactor driver with a Node smoke test, cross-module optimization in release builds, and the submodule fetched from the hylo-new fork. Every commit up to `b3346f4` builds, tests and lints, except `8399b16`, whose first build failed and passed on rerun. The head runs 92 XCTest tests, all passing. The wasm smoke test passes in debug and in release with cross-module optimization. |
+| `completion` | `e163820` | `core-driver-split` | **Draft PR #43, stacked on #42.** 7 commits: completion sites from the lexer, unqualified names and members from the front end's enumeration, initializers of applied types, completion in both drivers and in the smoke test, with property-based checks. Verified as `d42cf9a`, before its rebase onto the fork change: every commit builds, tests and lints, except `643b2a5`, whose first build failed and passed on rerun. The head runs 167 XCTest tests, all passing. |
 | `rework-status` | | `main` | **Draft PR #44.** This folder. |
 | `wip-completion` | `6fdb824` | old `main` | PR #37, the original work. The rework supersedes it: `core-driver-split` and `completion` take its completion; its project model, file watcher, push diagnostics and docs are replanned in `project-model-plan.md` and not yet reimplemented. Its hylo-new pin, `dfc0ef6`, is on `hylo-new/rebased-new-list-memberss`. |
 | `plan` | `966a3e6` | `main` | The maintainer's plan (`plan.md`). Untouched. |
@@ -40,15 +40,12 @@ and `./lint.sh` on Linux x86_64 with Swift 6.4, `-j 4`.
 
 ## Branches of hylo-new
 
-hylo-new has none of these branches. They are pushed to **this** repository
-under `hylo-new/`, so that the commits are kept. CI of `core-driver-split` and
-`completion` checks out the `hylo-new` submodule from hylo-lang/hylo-new, so it
-fails until `lsp-integration` (`590b5ea`) is pushed there:
-
-```
-git -C <hylo-new clone> fetch https://github.com/hylo-lang/hylo-language-server.git hylo-new/lsp-integration
-git -C <hylo-new clone> push origin FETCH_HEAD:refs/heads/lsp-integration
-```
+hylo-lang/hylo-new has none of these branches. The non-archived ones are on
+the fork **tothambrus11/hylo-new** under the same names, and all of them are in
+**this** repository under `hylo-new/`. `core-driver-split` and `completion`
+fetch the `hylo-new` submodule from the fork (last commit of
+`core-driver-split`, `9cf9161`), which holds the pinned `590b5ea`. That commit
+is to be reverted once the branches are merged into hylo-lang/hylo-new.
 
 All topic branches start from hylo-new `main` at `d89e85b` (now 56 commits
 behind) and were each kept to one concern, so that each can become its own
@@ -120,8 +117,8 @@ patches are also in `patches/deps/`.
 
 1. Approval of the typing changes in the pin: `static-variable-selection` and
    `implicit-member-arguments`.
-2. Pushing the hylo-new branches to hylo-lang/hylo-new, which LSP CI needs, and
-   opening one hylo-new PR per topic branch.
+2. Opening one hylo-lang/hylo-new PR per topic branch, then fetching the
+   submodule from hylo-lang/hylo-new again.
 3. Open-ended argument completion: finish `open-ended-probe-wip`.
 4. Crashes of the front end during lowering, found while testing and not yet
    reported upstream (see the report).
