@@ -1,39 +1,15 @@
 import FrontEnd
-import JSONRPC
-import LanguageServer
 import LanguageServerProtocol
 import Logging
 
-extension HyloRequestHandler {
+extension Workspace {
 
-  public func semanticTokensFull(
-    id: JSONId, params: SemanticTokensParams
-  ) async -> Response<SemanticTokensResponse> {
-    await reportingLSPError {
-      let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-      let p = try await documentProvider.getDocumentContext(at: source).program
-      return try await semanticTokensFull(id: id, params: params, program: p)
-    }
-  }
-
-  public func semanticTokensFull(
-    id: JSONId, params: SemanticTokensParams, program: Program
-  ) async throws -> SemanticTokensResponse {
-    logger.debug("List semantic tokens in document: \(params.textDocument.uri)")
-
-    let source = try AbsoluteURL(fromUrlString: params.textDocument.uri)
-    guard let s = program.sourceFile(named: source.localFileName) else {
-      logger.error("Failed to locate translation unit for document: \(params.textDocument.uri)")
-      throw LSPError.invalidParameter(
-        message:
-          "Failed to locate translation unit for document: \(params.textDocument.uri)")
-    }
-
-    let ds = program.topLevelDeclarations(in: s)
-
+  /// Returns the semantic tokens of the document identified in `params`.
+  public func semanticTokens(_ params: SemanticTokensParams) throws -> SemanticTokensResponse {
+    let d = try document(at: params.textDocument.uri)
     let luke = SemanticTokensWalker(
-      topLevelDeclarations: ds, program: program, logger: logger)
-
+      topLevelDeclarations: d.program.topLevelDeclarations(in: d.source), program: d.program,
+      logger: logger)
     return SemanticTokens(tokens: luke.walk())
   }
 

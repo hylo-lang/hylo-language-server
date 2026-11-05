@@ -1,84 +1,29 @@
 import Foundation
 import FrontEnd
 import HyloLanguageServerCore
-import JSONRPC
-import LanguageServer
 import LanguageServerProtocol
 import Logging
-import Semaphore
 import StandardLibrary
 import XCTest
 
-/// A test context that manages documents and provides direct access to LSP handlers
-/// for testing without needing a full client-server connection.
-public actor LSPTestContext {
+/// A workspace that tests drive as a client would.
+final class LSPTestContext {
 
-  public let documentProvider: DocumentProvider
-  public let requestHandler: HyloRequestHandler
-  let notificationHandler: HyloNotificationHandler
-  public let logger: Logger
+  /// The workspace under test.
+  private(set) var workspace: Workspace
 
-  private init(
-    documentProvider: DocumentProvider,
-    requestHandler: HyloRequestHandler,
-    notificationHandler: HyloNotificationHandler,
-    logger: Logger
-  ) {
-    self.documentProvider = documentProvider
-    self.requestHandler = requestHandler
-    self.notificationHandler = notificationHandler
-    self.logger = logger
+  /// Creates an instance whose workspace analyzes documents with `standardLibrary`, logging
+  /// messages of at least `logLevel` under `tag`.
+  init(tag: String, standardLibrary: [SourceFile], logLevel: Logger.Level = .debug) {
+    var logger = Logger(label: tag)
+    logger.logLevel = logLevel
+    workspace = Workspace(standardLibrary: standardLibrary, logger: logger)
   }
 
-  /// Creates a fully initialized test context with the given workspace configuration.
-  public static func make(
-    tag: String,
-    rootUri: String? = nil,
-    workspaceFolders: [WorkspaceFolder] = []
-  ) async throws -> LSPTestContext {
-    var logger = Logger(label: tag)
-    logger.logLevel = .debug
-
-    let dataChannel = DataChannel.stdioPipe()
-    let connection = JSONRPCClientConnection(dataChannel)
-
-    let capabilities = ClientCapabilities(
-      workspace: nil, textDocument: nil, window: nil, general: nil, experimental: nil)
-    let params = InitializeParams(
-      processId: nil,
-      locale: nil,
-      rootPath: nil,
-      rootUri: rootUri,
-      initializationOptions: nil,
-      capabilities: capabilities,
-      trace: nil,
-      workspaceFolders: workspaceFolders
-    )
-
-    let (documentProvider, _) = try await DocumentProvider.make(
-      connection: connection,
-      logger: logger,
-      standardLibrary: StandardLibrary.bundledStandardLibrarySources,
-      parameters: params
-    )
-
-    let requestHandler = HyloRequestHandler(
-      connection: connection, logger: logger, documentProvider: documentProvider)
-
-    let exitSemaphore = AsyncSemaphore(value: 0)
-    let notificationHandler = HyloNotificationHandler(
-      connection: connection,
-      logger: logger,
-      documentProvider: documentProvider,
-      exitSemaphore: exitSemaphore
-    )
-
-    return LSPTestContext(
-      documentProvider: documentProvider,
-      requestHandler: requestHandler,
-      notificationHandler: notificationHandler,
-      logger: logger
-    )
+  /// Creates an instance whose workspace analyzes documents with the bundled standard library,
+  /// logging under `tag`.
+  convenience init(tag: String) throws {
+    self.init(tag: tag, standardLibrary: try bundledStandardLibrary())
   }
 
   /// Opens a document with the given content
@@ -87,10 +32,10 @@ public actor LSPTestContext {
   ///   - uri: Optional URI for the document (auto-generated if not provided)
   /// - Returns: the URL of the opened document.
   @discardableResult
-  public func openDocument(
+  func openDocument(
     _ source: MarkedSource,
     uri: String? = nil
-  ) async throws -> URL {
+  ) throws -> URL {
     let documentUri = uri ?? "file://hylo-test/\(UUID()).hylo"
 
     let params = DidOpenTextDocumentParams(
@@ -102,28 +47,28 @@ public actor LSPTestContext {
       )
     )
 
-    try await documentProvider.registerDocument(params)
+    try workspace.open(params)
     return URL(string: documentUri)!
   }
 
   /// Closes a document
-  public func closeDocument(_ uri: String) async throws {
+  func closeDocument(_ uri: String) throws {
     let params = DidCloseTextDocumentParams(
       textDocument: TextDocumentIdentifier(uri: uri)
     )
-    try await documentProvider.unregisterDocument(params)
+    try workspace.close(params)
   }
 
-  public func closeDocument(_ uri: URL) async throws {
-    try await closeDocument(uri.absoluteString)
+  func closeDocument(_ uri: URL) throws {
+    try closeDocument(uri.absoluteString)
   }
 
   /// Updates a document with new content.
-  public func updateDocument(
+  func updateDocument(
     _ uri: String,
     newSource: MarkedSource,
     version: Int
-  ) async throws {
+  ) throws {
     let params = DidChangeTextDocumentParams(
       textDocument: VersionedTextDocumentIdentifier(uri: uri, version: version),
       contentChanges: [
@@ -134,66 +79,44 @@ public actor LSPTestContext {
         )
       ]
     )
-    try await documentProvider.updateDocument(params)
+    try workspace.change(params)
   }
 
-  public func definition(uri: URL, at position: Position) async throws -> DefinitionResponse {
+  func definition(uri: URL, at position: Position) throws -> DefinitionResponse {
     let params = TextDocumentPositionParams(
       textDocument: TextDocumentIdentifier(uri: uri.absoluteString),
       position: position
     )
-
-    return try await requestHandler.definition(id: .numericId(1), params: params).get()
+    return try workspace.definition(params)
   }
 
-  public func references(
+  func references(
     uri: URL,
     at position: Position,
     includeDeclaration: Bool = false
-  ) async throws -> ReferenceResponse {
+  ) throws -> ReferenceResponse {
     let params = ReferenceParams(
       textDocument: TextDocumentIdentifier(uri: uri.absoluteString),
       position: position,
       context: ReferenceContext(includeDeclaration: includeDeclaration)
     )
-    switch await requestHandler.references(id: .numericId(1), params: params) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw TestFailure(error.message)
-    }
+    return try workspace.references(params)
   }
 
-  public func documentSymbols(at: URL) async throws -> DocumentSymbolResponse {
+  func documentSymbols(at: URL) throws -> DocumentSymbolResponse {
     let params = DocumentSymbolParams(
       textDocument: TextDocumentIdentifier(uri: at.absoluteString)
     )
-    switch await requestHandler.documentSymbol(id: .numericId(1), params: params) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw TestFailure(error.message)
-    }
+    return try workspace.documentSymbols(params)
   }
 
 }
 
-/// Represents a test document with convenient access to LSP operations
-public struct TestDocument: Sendable {
-
-  public let uri: String
-  public let source: MarkedSource
-
-  init(uri: String, source: MarkedSource) {
-    self.uri = uri
-    self.source = source
-  }
-
-  /// The LSP text document identifier of this document.
-  public var identifier: TextDocumentIdentifier {
-    TextDocumentIdentifier(uri: uri)
-  }
-
+/// Returns the sources of the standard library bundled with the frontend.
+func bundledStandardLibrary() throws -> [SourceFile] {
+  var sources: [SourceFile] = []
+  try SourceFile.forEach(in: bundledStandardLibrarySources) { (s) in sources.append(s) }
+  return sources
 }
 
 /// Error type used for propagating test failures.

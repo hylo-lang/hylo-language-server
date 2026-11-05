@@ -1,5 +1,10 @@
-import Foundation
 import FrontEnd
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// Represents a URL that's guaranteed to be absolute.
 ///
@@ -12,15 +17,21 @@ public struct AbsoluteURL: Sendable, Hashable, CustomStringConvertible {
   ///
   /// If the path is not absolute, it will be interpreted relative to the current working directory.
   public init(fromPath path: String) {
-    precondition(!path.contains("://"))
+    precondition(path.firstRange(of: "://") == nil)
     // TODO: avoid standardizedFileURL, it's doing file access
     self.url = URL(fileURLWithPath: path).standardizedFileURL
   }
 
-  /// Creates an AbsoluteUrl from a URL string.
+  /// Creates an instance from `urlString`.
+  ///
+  /// - Throws iff `urlString` is not an absolute URL naming a file.
   public init(fromUrlString urlString: String) throws {
     guard let url = URL(string: urlString), url.scheme != nil else {
       throw LSPError.invalidParameter(message: "Invalid URL string: \(urlString)")
+    }
+    // The first path component is `/`; the frontend traps on a source name without a file.
+    guard url.pathComponents.count > 1 else {
+      throw LSPError.invalidParameter(message: "URL names no file: \(urlString)")
     }
     self.init(url.absoluteURL)
   }

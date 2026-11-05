@@ -1,6 +1,11 @@
-import Foundation
 import FrontEnd
 import LanguageServerProtocol
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// A virtual representation of a source file.
 public struct Document: Sendable {
@@ -18,11 +23,11 @@ public struct Document: Sendable {
 
   /// Creates an instance from the given `textDocument`.
   ///
-  /// - Throws iff the url is invalid.
+  /// - Throws iff the URI of `textDocument` is invalid or names no file.
   public init(textDocument: TextDocumentItem) throws {
-    uri = try AbsoluteURL(fromUrlString: textDocument.uri)
-    version = textDocument.version
-    text = textDocument.text
+    self.init(
+      uri: try AbsoluteURL(fromUrlString: textDocument.uri), version: textDocument.version,
+      text: textDocument.text)
   }
 
   /// Applies `changes` sequentially and sets the version of `self` to `version`.
@@ -55,10 +60,11 @@ private func applyChange(
   }
 }
 
-/// Returns the String index range corresponding to the given LSP range.
+/// Returns the indices in `text` of `range`, if `range` is a valid range of `text`.
 private func findRange(_ range: LSPRange, in text: String) -> Range<String.Index>? {
   if let start = range.start.stringIndex(in: text),
-    let end = range.end.stringIndex(in: text)
+    let end = range.end.stringIndex(in: text),
+    start <= end
   {
     start ..< end
   } else {

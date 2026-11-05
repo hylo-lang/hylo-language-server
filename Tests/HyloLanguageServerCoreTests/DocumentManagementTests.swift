@@ -1,39 +1,12 @@
-import JSONRPC
-import LanguageServer
 import LanguageServerProtocol
-import Logging
-import Puppy
-import StandardLibrary
 import XCTest
 
 @testable import HyloLanguageServerCore
 
-// swift-format-ignore: AlwaysUseLowerCamelCase
-func XCTUnwrapAsync<T>(
-  _ expression: @autoclosure () async throws -> T?, _ message: @autoclosure () -> String = "",
-  file: StaticString = #filePath, line: UInt = #line
-) async throws -> T {
-  let val = try await expression()
-  return try XCTUnwrap(val, message(), file: file, line: line)
-}
-
-/// Tests for document management functionality.
-///
-/// These tests verify:
-/// - Document change application
-/// - Workspace path resolution
+/// Tests for the application of changes to documents.
 final class DocumentManagementTests: XCTestCase {
 
-  func createLogger() -> Logger {
-    var logger = Logger(label: loggerLabel) { label in
-      StreamLogHandler.standardOutput(label: label)
-    }
-
-    logger.logLevel = .debug
-    return logger
-  }
-
-  func testApplyDocumentChanges() async throws {
+  func testApplyDocumentChanges() throws {
     let uri = "file:///factorial.hylo"
     let beforeEdit = """
       fun factorial(_ n: Int) -> Int {
@@ -71,6 +44,19 @@ final class DocumentManagementTests: XCTestCase {
 
     try doc.applyChanges(changes, version: 2)
     XCTAssertEqual(doc.text, afterEdit)
+  }
+
+  func testChangeEndingBeforeItsStart() throws {
+    let item = TextDocumentItem(
+      uri: "file:///a.hylo", languageId: "hylo", version: 0, text: "abcdef")
+    var d = try Document(textDocument: item)
+    let c = TextDocumentContentChangeEvent(
+      range: LSPRange(startPair: (0, 5), endPair: (0, 1)), rangeLength: nil, text: "")
+    do {
+      try d.applyChanges([c], version: 1)
+      XCTFail("Expected an error")
+    } catch LSPError.invalidParameter(_) {}
+    XCTAssertEqual(d.text, "abcdef")
   }
 
 }

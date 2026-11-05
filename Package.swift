@@ -22,7 +22,7 @@ let package = Package(
   name: "hylo-lsp",
 
   platforms: [
-    .macOS(.v15)
+    .macOS(.v26)
   ],
 
   products: [
@@ -33,11 +33,13 @@ let package = Package(
     .package(url: "https://github.com/groue/Semaphore", from: "0.0.8"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.1.4"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
-    .package(url: "https://github.com/sushichop/Puppy.git", from: "0.7.0"),
     .package(url: "https://github.com/ChimeHQ/JSONRPC.git", from: "0.9.0"),
     .package(
       url: "https://github.com/ChimeHQ/LanguageServer",
       revision: "2bbf9508fdf6f7a17b2c34776b7485af73de338a"),
+    .package(
+      url: "https://github.com/ChimeHQ/LanguageServerProtocol",
+      revision: "48ab36295c56c6cc5ba783a37a0c1324fef54ff6"),
     .package(path: "./hylo-new"),
   ],
   targets: [
@@ -45,12 +47,9 @@ let package = Package(
     .target(
       name: "HyloLanguageServerCore",
       dependencies: [
-        "Semaphore",
-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Logging", package: "swift-log"),
-        "Puppy",
-        "LanguageServer",
-        .product(name: "HyloStandardLibrary", package: "hylo-new"),
+        "JSONRPC",
+        "LanguageServerProtocol",
         .product(name: "HyloFrontEnd", package: "hylo-new"),
       ],
       swiftSettings: commonCompileSettings
@@ -60,14 +59,92 @@ let package = Package(
       name: "hylo-language-server",
       dependencies: [
         "HyloLanguageServerCore",
+        "Semaphore",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "Logging", package: "swift-log"),
+        "JSONRPC",
+        "LanguageServer",
+        "LanguageServerProtocol",
+        .product(name: "HyloFrontEnd", package: "hylo-new"),
         .product(name: "HyloStandardLibrary", package: "hylo-new"),
       ],
       swiftSettings: toolCompileSettings
     ),
 
+    .target(
+      name: "MessageDriver",
+      dependencies: [
+        "HyloLanguageServerCore",
+        .product(name: "Logging", package: "swift-log"),
+        "JSONRPC",
+        "LanguageServerProtocol",
+        .product(name: "HyloFrontEnd", package: "hylo-new"),
+      ],
+      swiftSettings: commonCompileSettings
+    ),
+
+    .testTarget(
+      name: "MessageDriverTests",
+      dependencies: [
+        "MessageDriver",
+        "HyloLanguageServerCore",
+        .product(name: "Logging", package: "swift-log"),
+        "JSONRPC",
+        "LanguageServerProtocol",
+        .product(name: "HyloFrontEnd", package: "hylo-new"),
+        .product(name: "HyloStandardLibrary", package: "hylo-new"),
+      ]
+    ),
+
+    .testTarget(
+      name: "NativeDriverTests",
+      dependencies: [
+        "hylo-language-server",
+        "HyloLanguageServerCore",
+        .product(name: "Logging", package: "swift-log"),
+        "LanguageServerProtocol",
+      ]
+    ),
+
     .testTarget(
       name: "HyloLanguageServerCoreTests",
-      dependencies: ["HyloLanguageServerCore", "JSONRPC"],
+      dependencies: [
+        "HyloLanguageServerCore",
+        "JSONRPC",
+        .product(name: "HyloFrontEnd", package: "hylo-new"),
+        .product(name: "HyloStandardLibrary", package: "hylo-new"),
+      ],
     ),
   ]
 )
+
+/// `true` iff the WebAssembly driver is built, which needs a WebAssembly Swift SDK.
+let buildsWebAssemblyDriver = ProcessInfo.processInfo.environment["HYLO_LSP_WASM"] != nil
+
+/// The size in bytes of the WebAssembly driver's stack, 8 MB because the frontend recurses once
+/// per nesting level of a program.
+let reactorStackSize = 8 << 20
+
+/// The linker flags of the WebAssembly driver.
+///
+/// The driver is a reactor: it has no main loop, and its host calls the functions it exports. Its
+/// stack comes first in memory, so that overflowing the stack traps instead of overwriting data.
+/// Data must then start past the stack, overriding the address at which the Swift driver makes it
+/// start.
+let reactorLinkerFlags = [
+  "-Xclang-linker", "-mexec-model=reactor",
+  "-Xlinker", "--stack-first",
+  "-Xlinker", "-z", "-Xlinker", "stack-size=\(reactorStackSize)",
+  "-Xlinker", "--global-base=\(reactorStackSize)",
+]
+
+if buildsWebAssemblyDriver {
+  package.products.append(
+    .executable(name: "hylo-language-server-wasm", targets: ["hylo-language-server-wasm"]))
+  package.targets.append(
+    .executableTarget(
+      name: "hylo-language-server-wasm",
+      dependencies: ["MessageDriver"],
+      swiftSettings: commonCompileSettings,
+      linkerSettings: [.unsafeFlags(reactorLinkerFlags)]))
+}

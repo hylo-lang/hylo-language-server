@@ -7,11 +7,11 @@ final class RenameFeatureTests: XCTestCase {
 
   var context: LSPTestContext!
 
-  override func setUp() async throws {
-    context = try await LSPTestContext.make(tag: "RenameFeatureTests", rootUri: "file:///test")
+  override func setUpWithError() throws {
+    context = try LSPTestContext(tag: "RenameFeatureTests")
   }
 
-  func testRenameProducesExpectedEditsAndUpdatedSource() async throws {
+  func testRenameProducesExpectedEditsAndUpdatedSource() throws {
     let source = try MarkedSource(
       """
       fun 0️⃣foo1️⃣() -> Int { 42 }
@@ -22,9 +22,9 @@ final class RenameFeatureTests: XCTestCase {
       }
       """)
 
-    let uri = try await context.openDocument(source)
+    let uri = try context.openDocument(source)
 
-    let prepare = try await context.prepareRename(uri: uri, at: source.markers[2])
+    let prepare = try context.prepareRename(uri: uri, at: source.markers[2])
     guard case .optionA(let prepareRange) = try XCTUnwrap(prepare) else {
       XCTFail("Expected prepareRename to return an editable range")
       return
@@ -32,7 +32,7 @@ final class RenameFeatureTests: XCTestCase {
 
     XCTAssertEqual(prepareRange, LSPRange(start: source.markers[2], end: source.markers[3]))
 
-    let rename = try await context.rename(uri: uri, at: source.markers[2], newName: "renamed")
+    let rename = try context.rename(uri: uri, at: source.markers[2], newName: "renamed")
     let edit = try XCTUnwrap(rename, "Expected rename response to contain workspace edits")
 
     let uriKey = DocumentUri(uri.absoluteString)
@@ -81,7 +81,7 @@ final class RenameFeatureTests: XCTestCase {
 
 extension LSPTestContext {
 
-  func prepareRename(uri: URL, at position: Position) async throws
+  func prepareRename(uri: URL, at position: Position) throws
     -> PrepareRenameResponse
   {
     let params = PrepareRenameParams(
@@ -89,15 +89,10 @@ extension LSPTestContext {
       position: position
     )
 
-    switch await requestHandler.prepareRename(id: .numericId(1), params: params) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw TestFailure(error.message)
-    }
+    return try workspace.prepareRename(params)
   }
 
-  func rename(uri: URL, at position: Position, newName: String) async throws
+  func rename(uri: URL, at position: Position, newName: String) throws
     -> RenameResponse
   {
     let params = RenameParams(
@@ -106,12 +101,7 @@ extension LSPTestContext {
       newName: newName
     )
 
-    switch await requestHandler.rename(id: .numericId(1), params: params) {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw TestFailure(error.message)
-    }
+    return try workspace.rename(params)
   }
 
 }
