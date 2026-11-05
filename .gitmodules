@@ -1,6 +1,6 @@
 [submodule "hylo-new"]
 	path = hylo-new
-	url = https://github.com/hylo-lang/hylo-new
+	url = https://github.com/tothambrus11/hylo-new
 [submodule "vscode-hylo"]
 	path = vscode-hylo
 	url = https://github.com/hylo-lang/vscode-hylo/
