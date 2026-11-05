@@ -1,0 +1,61 @@
+diff --git a/Sources/hc/CommandLine.swift b/Sources/hc/CommandLine.swift
+index 95fc94b..643c924 100644
+--- a/Sources/hc/CommandLine.swift
++++ b/Sources/hc/CommandLine.swift
+@@ -202,7 +202,9 @@ private typealias Module = FrontEnd.Module
+     if (inputs.isEmpty && !printStandardLibraryRoot){
+       throw ValidationError("expected argument")
+     }
+-    if (moduleArchiveURL != nil) && !outputType.supportsModuleEmission {
++    if (moduleArchiveURL != nil) && !outputType.supportsModuleEmission
++      && !((outputType == .typedAST) && (ProcessInfo.processInfo.environment["HYLO_DIFF_DUMP"] != nil))
++    {
+       throw ValidationError(
+         "'--emit-module-to' cannot be used with '--emit \(outputType.rawValue)'")
+     }
+@@ -280,6 +282,10 @@ private typealias Module = FrontEnd.Module
+       }
+       if outputType == .typedAST {
+         try emitAst(module, in: driver.program, name: product)
++        if ProcessInfo.processInfo.environment["HYLO_DIFF_DUMP"] != nil {
++          // Differential testing only: archive the typed module so that others can import it.
++          try emitArchiveIfNeeded(of: module, from: driver)
++        }
+         return
+       }
+ 
+@@ -343,6 +349,12 @@ private typealias Module = FrontEnd.Module
+       _ action: () async throws -> Driver.PhaseResult) async rethrows {
+       let a = try await action()
+       note("\(phase) completed in \(a.elapsed.human)")
++      if ProcessInfo.processInfo.environment["HYLO_DIFF_DUMP"] != nil,
++        phase == "typing", outputType == .typedAST
++      {
++        // Differential testing only: dump the typed program even if it contains errors.
++        try? emitAst(module, in: driver.program, name: effectiveModuleName)
++      }
+       exitOnError(driver.program[module])
+     }
+   }
+@@ -416,7 +428,20 @@ private typealias Module = FrontEnd.Module
+     let target = astFile(name)
+     let c = treePrinterConfiguration(for: treePrinterFlags)
+     let a = program.select(from: module, .satisfies({ program.parent(containing: $0).isFile }))
+-    let r = a.joinedString(separator: "\n") { d in program.show(d, configuration: c) }
++    var r = a.joinedString(separator: "\n") { d in program.show(d, configuration: c) }
++    if ProcessInfo.processInfo.environment["HYLO_DIFF_DUMP"] != nil {
++      // Differential testing only: the type of each node and the referent of each name.
++      for n in program.select(from: module, .all) {
++        guard let t = program.type(maybeAssignedTo: n) else { continue }
++        r += "\n\(program[n].site): \(program.show(t))"
++        if let e = program.cast(n, to: NameExpression.self),
++          let d = program.declaration(maybeReferredToBy: e)
++        {
++          r += " -> \(program.show(d))"
++          if let x = d.target { r += " @\(program[x].site)" }
++        }
++      }
++    }
+     try write(r, to: target)
+   }
+ 

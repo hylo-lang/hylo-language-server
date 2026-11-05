@@ -9,7 +9,10 @@ are kept only for reference.
 
 | File | What it is |
 |---|---|
+| `HANDOFF.md` | Start here: how to continue the work on another machine. |
 | `README.md` | This status: branches, decisions, open questions. |
+| `memory/` | The maintainer's decisions and working rules, as recorded during the work. |
+| `tools/` | Per-commit verification, differential typed-AST testing and mutation scripts used for hylo-new branches. |
 | `project-model-plan.md` | The plan for projects (`hylo-project.json`), caches, pull diagnostics and request coalescing. Not implemented. |
 | `hylo-lsp-report.html` | The report of the rework as of 2026-10-27 (also published at https://claude.ai/artifact/G6WUDKNz3kBRbiNHBp9quH). Its project-model section predates the plan. |
 | `hylo-cmake-support-pr.md` | The description of tothambrus11/hylo-cmake-support#5. |
@@ -88,8 +91,9 @@ patches are also in `patches/deps/`.
 
 - **tothambrus11/hylo-cmake-support#5** (draft, branch `minimal-lsp-manifest`):
   the manifest writer emits only what the server reads. `fce9727` passed all 24
-  CI jobs. `fa157e3` (target field, one manifest per configuration) has not
-  been tested locally, because no CMake or `hc` was available; CI tests it.
+  CI jobs. `fa157e3` (target field, one manifest per configuration) is not
+  pushed there yet; it is backed up in this repository as
+  `hylo-cmake-support/minimal-lsp-manifest`. It has not been tested locally, because no CMake or `hc` was available; CI tests it.
 - **vscode-hylo**, **yukibana-cloud#71**: unchanged. The plan lists what they
   need: a `hylo-project.json` file watcher and a configuration command in VS
   Code, and pull diagnostics with a refresh handler in Yukibana light.
