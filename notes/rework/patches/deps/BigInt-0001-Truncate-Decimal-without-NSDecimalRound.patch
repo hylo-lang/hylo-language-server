@@ -1,0 +1,89 @@
+From 7edfb70b7a8adf8126d7c180bcf538bb301a99db Mon Sep 17 00:00:00 2001
+From: Ambrus Toth <ping@ambrus.dev>
+Date: Sun, 25 Oct 2026 22:45:23 +0100
+Subject: [PATCH] Truncate Decimal without NSDecimalRound
+
+`BigUInt(exactly:)` and `BigUInt(truncating:)` taking a `Decimal`, and the
+`BigInt` initializers built on them, rounded the value toward zero with
+`NSDecimalRound`. With swift-foundation, `Decimal` lives in
+FoundationEssentials but `NSDecimalRound` lives in the full Foundation
+module. A WebAssembly (wasm32-unknown-wasip1) program that links only
+FoundationEssentials, to avoid the size of Foundation and its ICU data,
+therefore fails to link in debug builds:
+
+    wasm-ld: error: floating point conversion.o: undefined symbol:
+      Foundation.NSDecimalRound(_:_:_:_:)
+
+Optimized builds happen to link only because the reference disappears
+once the initializers are inlined and specialized away.
+
+Compute the integral part with BigUInt arithmetic instead: take the
+significand and multiply it by 10^exponent, or divide it by 10^-exponent,
+which truncates. The checks for zero, non-finite and negative values now
+apply to the source value; since `NSDecimalRound(..., .down)` rounds
+toward negative infinity, a negative non-zero value never rounded to zero
+before, so the result is still nil for all of them, and zero for values
+in [0, 1).
+
+Nothing changes on any platform, and the Decimal API stays available
+wherever Foundation is: on Linux, the new code returns the same result as
+the previous one for 200,000 random decimals of up to 38 digits with
+exponents in -60...60, as well as for NaN and the extreme magnitudes.
+---
+ Sources/Floating Point Conversion.swift | 26 ++++++++++++-------------
+ 1 file changed, 12 insertions(+), 14 deletions(-)
+
+diff --git a/Sources/Floating Point Conversion.swift b/Sources/Floating Point Conversion.swift
+index f51e8b2..9358e70 100644
+--- a/Sources/Floating Point Conversion.swift	
++++ b/Sources/Floating Point Conversion.swift	
+@@ -38,34 +38,32 @@ extension BigUInt {
+     }
+ 
+     private init?(commonDecimal source: Decimal) {
+-        var integer = source
+-        if source.exponent < 0 {
+-            var source = source
+-            NSDecimalRound(&integer, &source, 0, .down)
+-        }
+-
+-        guard !integer.isZero else { self = 0; return }
+-        guard integer.isFinite else { return nil }
+-        guard integer.sign == .plus else { return nil }
+-        assert(integer.floatingPointClass == .positiveNormal)
++        guard !source.isZero else { self = 0; return }
++        guard source.isFinite else { return nil }
++        guard source.sign == .plus else { return nil }
++        assert(source.floatingPointClass == .positiveNormal)
+ 
+         #if os(Linux) || os(Android) || os(Windows) || os(WASI)
+         // `Decimal._mantissa` has an internal access level on linux, and it might get
+         // deprecated in the future, so keeping the string implementation around for now.
+-        let significand = BigUInt("\(integer.significand)")!
++        let significand = BigUInt("\(source.significand)")!
+         #else
+         let significand = {
+             var start = BigUInt(0)
+-            for (place, value) in integer.significand.mantissaParts.enumerated() {
++            for (place, value) in source.significand.mantissaParts.enumerated() {
+                 guard value > 0 else { continue }
+                 start += (1 << (place * 16)) * BigUInt(value)
+             }
+             return start
+         }()
+         #endif
+-        let exponent = BigUInt(10).power(integer.exponent)
+ 
+-        self = significand * exponent
++        // Dividing by a power of ten truncates the fractional part, like rounding toward zero.
++        if source.exponent >= 0 {
++            self = significand * BigUInt(10).power(source.exponent)
++        } else {
++            self = significand / BigUInt(10).power(-source.exponent)
++        }
+     }
+     #endif
+ }
+-- 
+2.53.0
+

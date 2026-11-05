@@ -1,0 +1,68 @@
+Differential test: implicit-member-arguments (0afd349) vs origin/main (d89e85b)
+===============================================================================
+
+Setup
+- base: /home/hylo/wt/hn-diff-base (d89e85b + dump.patch), .build/debug/hc
+- tip:  /home/hylo/wt/hn-diff-implicit (0afd349 + dump.patch), .build/debug/hc
+- corpus: /home/hylo/wt/difftest/corpus-implicit, jobs: jobs-implicit.txt (606 jobs), built with
+    CORPUS=$PWD/corpus-implicit JOBS=$PWD/jobs-implicit.txt \
+      ./jobs.sh /home/hylo/wt/hn-implicit /home/hylo/wt/hn-diff-base/.build/debug/hc random-src
+  i.e. Tests/ of the branch (a superset of main's: it adds 3 test programs and changes 1),
+  extra/*.hylo, the standard library, and the 400 generated programs of random-src.
+  (run.sh, jobs.sh and compare.sh now accept CORPUS/JOBS overrides; defaults unchanged.)
+- runs: out-implicit-base (4m37s), out-implicit-tip (5m20s), both with -P 4.
+- compare: JOBS=jobs-implicit.txt ./compare.sh out-implicit-base out-implicit-tip
+
+Result: 18 differing result files, in 5 jobs.
+
+1. stdlib (type checking of the standard library as module Hylo)
+   60 differing lines of the typed dump, all of the form
+     ...BuiltinFunction.zeroinitializer(...MachineType>(erased: 23227)) -> (erased: 23236)
+   i.e. only the raw identity of an interned machine type printed inside the name of a builtin
+   function. After normalizing 'erased: [0-9]+' the dumps are identical (0 lines). No type, name
+   referent or diagnostic of the standard library changes. The shift comes from the extra type
+   variables now created for implicit qualifications (184 lexical occurrences of '.name' in 5
+   stdlib files, mostly '.new(...)').
+
+2. The 4 test programs that the branch adds or changes (all in Tests/CompilerTests):
+   - positive/implicit-member-argument.hylo (new, no-std)
+       exit 1 -> 0 (raw IR now produced, exit 0). 25 errors disappear:
+       "no context to resolve implicit qualification" + "cannot pass value of type '#!'" for
+       f(.k), g(.a), h(.k, .a), p(.k), p(.a, ()), q(.k), q(.a), r(.k), two(.k, A()),
+       "ambiguous use of 'q'/'r'" (overloads now selected by the member's type), and
+       "no coercion from '<T> [Void](let T, let T) ...'" for two(A(), .k).
+       Dump: 15 node types change from '#!' to real types, 12 nodes gain a type/referent.
+   - positive/implicit-member-argument-execution.hylo (new)
+       exit 1 -> 0 (raw IR exit 0); 2 errors on status(of: .b) disappear.
+   - positive/implicit-qualification.hylo (branch adds 'use(.k, .b)')
+       exit 1 -> 0 (raw IR exit 0); 4 errors on line 45 disappear; .k : C -> C.k and
+       .b : E -> E.b, their qualifications typed Metatype<C> / Metatype<E>.
+   - negative/unresolved-implicit-member.hylo (new, no-std; expected errors in both)
+       exit 1 -> 1. Diagnostics change as intended by the branch:
+         f(.k) with f(x: A), f(x: B), both having k: base "no context..." + "cannot pass '#!'
+           to 'A'"; tip "ambiguous use of 'f'" only.
+         g<T>(x: T) with g(.k): base "no context..." + "no coercion from '<T> ...'"; tip
+           "not enough context to infer a type" on '.k'.
+         h(x: A) with h(.v), v: Void: base "no context..." + "cannot pass '#!' to 'A'"; tip
+           "type 'Void' is not compatible with 'A'".
+         let y = .k: "no context to resolve implicit qualification" (on '.') -> "not enough
+           context to infer a type" (on '.k').
+         let z = .new: base also reported "type '#!' has no member 'init'"; tip only "no
+           context to resolve implicit qualification" (commit 0afd349).
+
+3. Everything else is byte-identical: the other 199 Tests/ jobs (files and packages, including
+   the 8 other Tests/ files using implicit qualifications, e.g. '.new(...)', 'let x: T = .k',
+   '.f(x)' chains, in enum-inference, enum-constructor, pattern-matching, ternary, assignment,
+   integer-bits, return-in-if-2, runtime-offset-of-member), extra/, and all 400 generated
+   programs (lib, two-module and merged compilations, raw IR where typing succeeds).
+
+Caveat on coverage: the generated programs contain no implicit qualification at all (0
+lexical occurrences), so they show that unrelated typing is unchanged but do not exercise the
+new rule. The rule's effect on existing code is exercised only by Tests/ and the standard
+library (244 lexical occurrences in 17 files), where the only programs whose output changes are the
+four tests written for the branch, and no previously accepted program changes.
+
+Conclusion: no previously accepted program is affected; the programs whose type checking changes
+are exactly those passing an uncalled implicit member as an argument (or otherwise using one
+without an expected type), which were rejected before and are accepted now (or rejected with a
+different diagnostic when still ill-typed).

@@ -1,0 +1,96 @@
+From aa67d1a3fa039aaa1c11220fa84626885508a0c5 Mon Sep 17 00:00:00 2001
+From: Ambrus Toth <ping@ambrus.dev>
+Date: Sun, 25 Oct 2026 22:43:53 +0100
+Subject: [PATCH 2/2] Leave snippets out of WASI builds
+
+`Snippet` parses snippets with `NSRegularExpression` and exposes `NSRange`
+in `elementRanges`. With swift-foundation, both are part of the full
+Foundation module, not FoundationEssentials. A WebAssembly
+(wasm32-unknown-wasip1) build usually links only FoundationEssentials,
+because the full Foundation and its ICU data add tens of megabytes, and
+then fails with errors like:
+
+    wasm-ld: error: snippet.o: undefined symbol:
+      type metadata accessor for Foundation.NSRegularExpression
+    wasm-ld: error: snippet.o: undefined symbol:
+      Foundation.NSMakeRange(Swift.Int, Swift.Int) -> Foundation._NSRange
+    wasm-ld: error: nsregularexpression+matching.o: undefined symbol:
+      Foundation.NSRegularExpression.matches(in:options:range:)
+
+Compile `Snippet`, its `NSRegularExpression` helpers and their tests only
+when not targeting WASI. No narrower condition exists: the WebAssembly
+Swift SDK ships the full Foundation too, so `canImport(Foundation)` and
+`canImport(FoundationEssentials)` are both true there, exactly as on
+Linux, and nothing at compile time tells whether Foundation will be
+linked. Since `NSRange` is part of the public API, the type cannot be
+kept on WASI without Foundation either.
+
+Nothing changes on other platforms. On WASI, `Snippet` is no longer
+available; nothing else in the package uses it.
+---
+ .../Additions/NSRegularExpression+Matching.swift           | 4 ++++
+ Sources/LanguageServerProtocol/Additions/Snippet.swift     | 7 +++++++
+ Tests/LanguageServerProtocolTests/SnippetTests.swift       | 4 ++++
+ 3 files changed, 15 insertions(+)
+
+diff --git a/Sources/LanguageServerProtocol/Additions/NSRegularExpression+Matching.swift b/Sources/LanguageServerProtocol/Additions/NSRegularExpression+Matching.swift
+index 3cd9e1b..ef18f95 100644
+--- a/Sources/LanguageServerProtocol/Additions/NSRegularExpression+Matching.swift
++++ b/Sources/LanguageServerProtocol/Additions/NSRegularExpression+Matching.swift
+@@ -1,5 +1,7 @@
+ import Foundation
+ 
++#if !os(WASI)
++
+ extension NSRegularExpression {
+ 	func matches(inFullString string: String, options: NSRegularExpression.MatchingOptions = [])
+ 		-> [NSTextCheckingResult]
+@@ -29,3 +31,5 @@ extension NSTextCheckingResult {
+ 		return stringValue(at: index, in: string).flatMap { Int($0) }
+ 	}
+ }
++
++#endif
+diff --git a/Sources/LanguageServerProtocol/Additions/Snippet.swift b/Sources/LanguageServerProtocol/Additions/Snippet.swift
+index d62d4f6..1227366 100644
+--- a/Sources/LanguageServerProtocol/Additions/Snippet.swift
++++ b/Sources/LanguageServerProtocol/Additions/Snippet.swift
+@@ -1,5 +1,10 @@
+ import Foundation
+ 
++// Snippets are parsed with `NSRegularExpression` and expose `NSRange`, which are not part of
++// FoundationEssentials. WebAssembly builds commonly link only FoundationEssentials, because
++// the full Foundation and its ICU data are large, so leave snippets out of them.
++#if !os(WASI)
++
+ public struct Snippet {
+ 	public enum Element: Equatable {
+ 		case text(String)
+@@ -163,3 +168,5 @@ extension Snippet {
+ 		return (label, content)
+ 	}
+ }
++
++#endif
+diff --git a/Tests/LanguageServerProtocolTests/SnippetTests.swift b/Tests/LanguageServerProtocolTests/SnippetTests.swift
+index 4852cc0..7b2fc48 100644
+--- a/Tests/LanguageServerProtocolTests/SnippetTests.swift
++++ b/Tests/LanguageServerProtocolTests/SnippetTests.swift
+@@ -1,6 +1,8 @@
+ import XCTest
+ @testable import LanguageServerProtocol
+ 
++#if !os(WASI)
++
+ final class SnippetTests: XCTestCase {
+     func testPlainString() {
+         let snippet = Snippet(value: "plain string")
+@@ -166,3 +168,5 @@ final class SnippetTests: XCTestCase {
+         XCTAssertNotEqual(elements, expectedElements)
+     }
+ }
++
++#endif
+-- 
+2.53.0
+

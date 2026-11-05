@@ -1,0 +1,6 @@
+- [No attribution, no push](no-claude-attribution-no-push.md) — no Claude attribution in commits; push only when asked; rework pushed as PRs #42-#44
+- [PR #37 rework plan](pr37-completion-wasm-plan.md) — split decisions, wasm driver architecture, upstream branches
+- [Resolution changes & deps](hylo-resolution-changes-and-deps.md) — no resolution changes without strong reason; local patched dep clones; CMO release builds
+- [Argument completion semantics](argument-completion-semantics.md) — narrow overloads by provided args; open-ended trailing params; all static members of viable candidates
+- [Request coalescing](lsp-request-coalescing.md) — no type-check interruption; bursts cost at most two runs; wasm host batches messages
+- [Minimal project manifest](minimal-project-manifest.md) — hylo-project.json holds only LSP-read fields; not a build description
