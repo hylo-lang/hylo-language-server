@@ -60,8 +60,11 @@ public struct Arrow: TypeTree {
     inputs.lazy.map(\.label)
   }
 
-  /// Returns `true` iff instances of `self` can be applied with `labels`.
-  public func labelsCompatible<T: Collection<String?>>(with labels: T) -> Bool {
+  /// Returns `true` iff instances of `self` can be applied with `labels` or, if `isOpenEnded` is
+  /// `true`, with `labels` followed by other labels.
+  public func labelsCompatible<T: Collection<String?>>(
+    with labels: T, openEnded isOpenEnded: Bool = false
+  ) -> Bool {
     var i = labels.startIndex
     for p in inputs {
       // Is there's an explicit argument with the right label?
@@ -72,6 +75,11 @@ public struct Arrow: TypeTree {
       // The parameter has a default value?
       else if p.defaultValue != nil {
         continue
+      }
+
+      // The parameter and those after it can be given the labels following `labels`?
+      else if isOpenEnded && (i == labels.endIndex) {
+        return true
       }
 
       // Arguments do not match.

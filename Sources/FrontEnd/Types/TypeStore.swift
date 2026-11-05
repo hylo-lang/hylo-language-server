@@ -143,12 +143,14 @@ public struct TypeStore: Sendable {
     }
   }
 
-  /// Returns `true` iff `n` is the type of an entity callable with the given style and labels.
+  /// Returns `true` iff `n` is the type of an entity callable with the given style and labels or,
+  /// if `isOpenEnded` is `true`, with the given style and labels followed by other labels.
   public func isCallable<T: TypeIdentity, S: Collection<String?>>(
-    _ n: T, _ style: Call.Style, withLabels labels: S
+    _ n: T, _ style: Call.Style, withLabels labels: S, openEnded isOpenEnded: Bool = false
   ) -> Bool {
     if let w = seenAsTermAbstraction(n) {
-      return (self[w].style == style) && self[w].labelsCompatible(with: labels)
+      return (self[w].style == style)
+        && self[w].labelsCompatible(with: labels, openEnded: isOpenEnded)
     } else {
       return false
     }

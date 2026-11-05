@@ -239,6 +239,10 @@ internal struct CallConstraint: Constraint {
   /// The labels and types of the arguments.
   internal private(set) var arguments: [Argument]
 
+  /// `true` iff `arguments` may be followed by arguments yet to be written, whose labels and types
+  /// are unknown.
+  internal let isOpenEnded: Bool
+
   /// The expected type of the application.
   internal private(set) var output: AnyTypeIdentity
 
@@ -276,6 +280,7 @@ extension CallConstraint: Showable {
       if let l = arguments[i].label { s.write("\(l): ") }
       s.write(printer.show(arguments[i].type))
     }
+    if isOpenEnded { s.write(arguments.isEmpty ? "..." : ", ...") }
     s.write(printer.program[origin].style == .parenthesized ? ")" : "]")
     s.write(" gives ")
     s.write(printer.show(output))

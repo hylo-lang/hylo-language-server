@@ -2144,7 +2144,7 @@ public struct Typer {
     var i: [CallConstraint.Argument] = []
     for (j, a) in program[e].arguments.enumerated() {
       let t: AnyTypeIdentity
-      if (probedArgument?.call == e) && (probedArgument?.index == j) {
+      if isProbed(e) && (probedArgument?.index == j) {
         // The probed argument is checked on its own; its type in `e` is inferred from the call.
         check(a.value)
         t = fresh().erased
@@ -2157,7 +2157,9 @@ public struct Typer {
     // We cannot use the expected type to constrain the result of the callee. It would cause the
     // solver to commit prematurely in the presence of overloads.
     let o = fresh().erased
-    let k = CallConstraint(callee: f, arguments: i, output: o, origin: e, site: program[e].site)
+    let k = CallConstraint(
+      callee: f, arguments: i, isOpenEnded: isProbed(e), output: o, origin: e,
+      site: program[e].site)
 
     context.obligations.assume(k)
     return context.obligations.assume(e, hasType: o, at: program[e].site)
@@ -2213,7 +2215,7 @@ public struct Typer {
       _ = context.withSubcontext(expectedType: u) { (ctx) in inferredType(of: q, in: &ctx) }
     }
 
-    let r = SyntaxRole(program[e].style, labels: program[e].labels)
+    let r = SyntaxRole(program[e].style, labels: program[e].labels, isOpenEnded: isProbed(e))
     let f = context.withSubcontext(role: r) { (ctx) in
       inferredType(of: callee, in: &ctx)
     }
@@ -2537,8 +2539,8 @@ public struct Typer {
     // If the expression is used as a callee, account for the label of the elided `self` parameter
     // of the underlying initializer.
     let role: SyntaxRole
-    if case .function(let ls) = context.role {
-      role = .function(labels: Array("self" as Optional, prependedTo: ls))
+    if case .function(let ls, let isOpenEnded) = context.role {
+      role = .function(labels: Array("self" as Optional, prependedTo: ls), isOpenEnded: isOpenEnded)
     } else {
       role = .unspecified
     }
@@ -2977,24 +2979,28 @@ public struct Typer {
       return nil
     case .ascription, .unspecified:
       return nil
-    case .function(let labels):
-      return filterInPlace(&cs, callable: .parenthesized, withLabels: labels, at: site)
-    case .subscript(let labels):
-      return filterInPlace(&cs, callable: .bracketed, withLabels: labels, at: site)
+    case .function(let labels, let isOpenEnded):
+      return filterInPlace(
+        &cs, callable: .parenthesized, withLabels: labels, openEnded: isOpenEnded, at: site)
+    case .subscript(let labels, let isOpenEnded):
+      return filterInPlace(
+        &cs, callable: .bracketed, withLabels: labels, openEnded: isOpenEnded, at: site)
     }
   }
 
   /// Narrows the overloaded candidates in `cs` to keep those that can be applied with the given
-  /// style and argument labels, returning a diagnostic iff no candidate survived.
+  /// style and argument labels, followed by other arguments iff `isOpenEnded` is `true`,
+  /// returning a diagnostic iff no candidate survived.
   ///
   /// - Requires: `cs` is not empty.
   private func filterInPlace(
     _ cs: inout [NameResolutionCandidate],
-    callable style: Call.Style, withLabels labels: [String?], at site: SourceSpan
+    callable style: Call.Style, withLabels labels: [String?], openEnded isOpenEnded: Bool,
+    at site: SourceSpan
   ) -> Diagnostic? {
     // Non-viable candidates moved at the end.
     let i = cs.stablePartition { (c) in
-      !program.types.isCallable(c.type, style, withLabels: labels)
+      !program.types.isCallable(c.type, style, withLabels: labels, openEnded: isOpenEnded)
     }
     defer { cs.removeSubrange(i...) }
 
@@ -3053,6 +3059,13 @@ public struct Typer {
       commit(s, to: o)
       return s
     }
+  }
+
+  /// Returns `true` iff `e` is the call of the argument whose types are inferred by
+  /// `apply(inferringTypesOfArgument:of:)`, which is checked as if it were followed by arguments
+  /// yet to be written.
+  private func isProbed(_ e: Call.ID) -> Bool {
+    probedArgument?.call == e
   }
 
   /// Returns the type of the probed argument in the constraint of `o` on its call, if any.

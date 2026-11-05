@@ -7,19 +7,22 @@ internal enum SyntaxRole: Equatable {
   /// The tree denotes a type ascription.
   case ascription
 
-  /// The tree denotes as the callee of a function call.
-  case function(labels: [String?])
+  /// The tree denotes as the callee of a function call whose arguments have the given `labels`,
+  /// followed by arguments yet to be written iff `isOpenEnded` is `true`.
+  case function(labels: [String?], isOpenEnded: Bool)
 
-  /// The tree denotes as the callee of a subscript call.
-  case `subscript`(labels: [String?])
+  /// The tree denotes as the callee of a subscript call whose arguments have the given `labels`,
+  /// followed by arguments yet to be written iff `isOpenEnded` is `true`.
+  case `subscript`(labels: [String?], isOpenEnded: Bool)
 
-  /// Creates the role of a callee applied with given `style` and `labels`.
-  internal init(_ style: Call.Style, labels: [String?]) {
+  /// Creates the role of a callee applied with given `style` and `labels`, followed by arguments
+  /// yet to be written iff `isOpenEnded` is `true`.
+  internal init(_ style: Call.Style, labels: [String?], isOpenEnded: Bool) {
     switch style {
     case .parenthesized:
-      self = .function(labels: labels)
+      self = .function(labels: labels, isOpenEnded: isOpenEnded)
     case .bracketed:
-      self = .subscript(labels: labels)
+      self = .subscript(labels: labels, isOpenEnded: isOpenEnded)
     }
   }
 

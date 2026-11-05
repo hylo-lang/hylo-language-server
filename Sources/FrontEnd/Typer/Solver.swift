@@ -53,6 +53,9 @@ internal struct Solver {
   /// The current indentation level for logging message, or `-1` if logging is disabled.
   private var indentation: Int
 
+  /// The types of the parameters left to arguments yet to be written in open-ended calls.
+  private var elidedParameterTypes: [AnyTypeIdentity] = []
+
   /// The solutions without error found so far, one for each combination of the choices of the
   /// overload sets that leads to one, or `nil` if they are not collected.
   internal private(set) var solutionsWithoutError: [Solution]?
@@ -345,7 +348,7 @@ internal struct Solver {
 
     // Argument list has the right shape?
     let w = program.types.seenAsTermAbstraction(callee)!
-    guard let (bs, ss, inplace) = matches(k, w) else {
+    guard let (bs, ss, inplace, elided) = matches(k, w) else {
       let expected = program.types[w].labels
       return .failure { (_, _, tp, ds) in
         ds.insert(tp.program.incompatibleLabels(found: k.labels, expected: expected, at: k.site))
@@ -365,7 +368,10 @@ internal struct Solver {
       }
     }
 
-    if bs.hasDefaulted {
+    // Arguments are elaborated unless some are yet to be written.
+    if !elided.isEmpty {
+      elidedParameterTypes.append(contentsOf: elided)
+    } else if bs.hasDefaulted {
       argumentElaborations.append((k.origin, bs))
     }
 
@@ -385,21 +391,26 @@ internal struct Solver {
 
   /// Returns how the types of the arguments in `k` match the parameters of `f`.
   ///
-  /// If the arguments in `k` match, this method returns a triple `(bs, ss, inplace)` where `bs`
-  /// maps each parameter of `f` to its value, `ss` contains coercion constraints resulting from
-  /// argument passing, and `inplace` is `true` iff at least one of the arguments passed to an
-  /// `auto` parameter is  marked for mutation.
+  /// If the arguments in `k` match, this method returns a tuple `(bs, ss, inplace, elided)` where
+  /// `bs` maps each parameter of `f` but those in `elided` to its value, `ss` contains coercion
+  /// constraints resulting from argument passing, `inplace` is `true` iff at least one of the
+  /// arguments passed to an `auto` parameter is  marked for mutation, and `elided` contains the
+  /// types of the trailing parameters of `f` left to arguments yet to be written, which is empty
+  /// unless `k` is open-ended.
   ///
   /// If the arguments in `k` do not match, this method returns `nil`.
   private mutating func matches(
     _ k: CallConstraint, _ f: Arrow.ID
-  ) -> (bingings: ParameterBindings, subgoals: [CoercionConstraint], inplace: Bool)? {
+  ) -> (
+    bingings: ParameterBindings, subgoals: [CoercionConstraint], inplace: Bool,
+    elided: [AnyTypeIdentity]
+  )? {
     var bindings = ParameterBindings()
     var subgoals: [CoercionConstraint] = []
 
     var inplace = false
     var i = 0
-    for p in program.types[f].inputs {
+    for (j, p) in program.types[f].inputs.enumerated() {
       // Is there's an explicit argument with the right label?
       if (k.arguments.count > i) && (k.arguments[i].label == p.label) {
         let v = program[k.origin].arguments[i].value
@@ -420,12 +431,18 @@ internal struct Solver {
         continue
       }
 
+      // The parameter and those after it are left to arguments yet to be written?
+      else if k.isOpenEnded && (i == k.arguments.count) {
+        let elided = program.types[f].inputs[j...].map(\.type)
+        return (bindings, subgoals, inplace, elided)
+      }
+
       // Arguments do not match.
       else { return nil }
     }
 
     assert(bindings.elements.count == program.types[f].inputs.count)
-    return i == k.arguments.count ? (bindings, subgoals, inplace) : nil
+    return i == k.arguments.count ? (bindings, subgoals, inplace, []) : nil
   }
 
   /// Returns a failure to solve a `k` due to an invalid callee type.
@@ -633,6 +650,7 @@ internal struct Solver {
       bindings: bindings,
       elaborations: elaborations,
       argumentElaborations: argumentElaborations,
+      elidedParameterTypes: elidedParameterTypes,
       diagnostics: ds)
   }
 

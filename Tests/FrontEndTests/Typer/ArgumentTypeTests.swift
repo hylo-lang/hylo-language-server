@@ -120,9 +120,27 @@ final class ArgumentTypeTests: XCTestCase {
       fun f(x v0: C, z v1: C = C()) {}
       """
     let trailing = await typesOfHole(in: declarations + "\nfun main() { f(x: .hole) }")
-    XCTAssertEqual(trailing, ["C"])
+    XCTAssertEqual(trailing, ["A", "C"])
     let skipped = await typesOfHole(in: declarations + "\nfun main() { f(y: .hole) }")
     XCTAssertEqual(skipped, ["B"])
+  }
+
+  func testDefaultsBeforeMissingArguments() async {
+    let declarations = """
+      struct A { public memberwise init }
+      struct B { public memberwise init }
+      struct C { public memberwise init }
+      fun f(x v0: A, y v1: B = B(), z v2: C) {}
+      """
+    let first = await typesOfHole(in: declarations + "\nfun main() { f(x: .hole) }")
+    XCTAssertEqual(first, ["A"])
+    let defaulted = await typesOfHole(in: declarations + "\nfun main() { f(x: A(), y: .hole) }")
+    XCTAssertEqual(defaulted, ["B"])
+    let afterDefaulted = await typesOfHole(
+      in: declarations + "\nfun main() { f(x: A(), z: .hole) }")
+    XCTAssertEqual(afterDefaulted, ["C"])
+    let skippingMissing = await typesOfHole(in: declarations + "\nfun main() { f(z: .hole) }")
+    XCTAssertEqual(skippingMissing, [])
   }
 
   func testMemberCallee() async {
@@ -170,12 +188,199 @@ final class ArgumentTypeTests: XCTestCase {
     XCTAssertEqual(ts, ["B"])
   }
 
-  func testIncompleteArguments() async {
+  func testMissingTrailingArguments() async {
     let ts = await typesOfHole(
       in: """
         struct A { public memberwise init }
         fun f(x v0: A, y v1: A) {}
         fun main() { f(x: .hole) }
+        """)
+    XCTAssertEqual(ts, ["A"])
+  }
+
+  func testOpenEndedOverloads() async {
+    let declarations = """
+      struct I {
+        public memberwise init
+        public static fun the_int() -> I { I() }
+      }
+      struct B {
+        public memberwise init
+        public static fun the_bool() -> B { B() }
+      }
+      struct Z { public memberwise init }
+      struct W { public memberwise init }
+      fun a(x v0: I) {}
+      fun a(x v0: I, y v1: I) {}
+      fun a(x v0: B, y v1: B) {}
+      fun a(x v0: B, z v1: Z) {}
+      fun a(x v0: I, v1: W) {}
+      """
+    let alone = await typesOfHole(in: declarations + "\nfun main() { a(x: .hole) }")
+    XCTAssertEqual(alone, ["B", "I"])
+    let before = await typesOfHole(
+      in: declarations + "\nfun main() { a(x: .hole, y: .the_bool()) }")
+    XCTAssertEqual(before, ["B"])
+    let after = await typesOfHole(in: declarations + "\nfun main() { a(x: .the_int(), y: .hole) }")
+    XCTAssertEqual(after, ["I"])
+    let otherLabel = await typesOfHole(
+      in: declarations + "\nfun main() { a(x: .the_bool(), z: .hole) }")
+    XCTAssertEqual(otherLabel, ["Z"])
+    let unlabeled = await typesOfHole(in: declarations + "\nfun main() { a(x: .the_int(), .hole) }")
+    XCTAssertEqual(unlabeled, ["W"])
+    let unlabeledAfterBool = await typesOfHole(
+      in: declarations + "\nfun main() { a(x: .the_bool(), .hole) }")
+    XCTAssertEqual(unlabeledAfterBool, [])
+    let tooMany = await typesOfHole(
+      in: declarations + "\nfun main() { a(x: .hole, y: .the_int(), z: Z()) }")
+    XCTAssertEqual(tooMany, [])
+  }
+
+  func testWrittenArgumentsAfterHole() async {
+    let ts = await typesOfHole(
+      in: """
+        struct A { public memberwise init }
+        struct B { public memberwise init }
+        struct C { public memberwise init }
+        fun f(x v0: A, y v1: B, z v2: C) {}
+        fun f(x v0: B, y v1: A, z v2: C) {}
+        fun f(x v0: C, z v1: C) {}
+        fun main() { f(x: .hole, y: B()) }
+        """)
+    XCTAssertEqual(ts, ["A"])
+  }
+
+  func testNoReordering() async {
+    let ts = await typesOfHole(
+      in: """
+        struct A { public memberwise init }
+        struct B { public memberwise init }
+        struct C { public memberwise init }
+        struct D { public memberwise init }
+        fun f(x v0: A, y v1: B) {}
+        fun f(y v0: C, x v1: D) {}
+        fun main() { f(y: .hole) }
+        """)
+    XCTAssertEqual(ts, ["C"])
+  }
+
+  func testGenericWithMissingArguments() async {
+    let declarations = """
+      struct A { public memberwise init }
+      struct X { public memberwise init }
+      fun f<T>(x v0: A, y v1: T) {}
+      fun g<T>(x v0: T, y v1: T, z v2: A) {}
+      """
+    let unconstrainedMissing = await typesOfHole(
+      in: declarations + "\nfun main() { f(x: .hole) }")
+    XCTAssertEqual(unconstrainedMissing, ["A"])
+    let undetermined = await typesOfHole(in: declarations + "\nfun main() { g(x: .hole) }")
+    XCTAssertEqual(undetermined, [])
+    let determined = await typesOfHole(in: declarations + "\nfun main() { g(x: X(), y: .hole) }")
+    XCTAssertEqual(determined, ["X"])
+  }
+
+  func testGenericResultWithMissingArguments() async {
+    let ts = await typesOfHole(
+      in: """
+        struct A { public memberwise init }
+        fun any<X>() -> X { any() }
+        fun f<T>(x v0: A, y v1: T) -> T { any() }
+        fun main() { f(x: .hole) }
+        """)
+    XCTAssertEqual(ts, ["A"])
+  }
+
+  func testMemberCalleeWithMissingArguments() async {
+    let ts = await typesOfHole(
+      in: """
+        struct A { public memberwise init }
+        struct B { public memberwise init }
+        struct S {
+          public memberwise init
+          public fun f(x v0: A) {}
+          public fun f(x v0: B, y v1: B) {}
+        }
+        fun main() {
+          let s = S()
+          s.f(x: .hole)
+        }
+        """)
+    XCTAssertEqual(ts, ["A", "B"])
+  }
+
+  func testStaticCalleeWithMissingArguments() async {
+    let ts = await typesOfHole(
+      in: """
+        struct A { public memberwise init }
+        struct B { public memberwise init }
+        struct S {
+          public static fun f(x v0: A, y v1: A) {}
+          public static fun f(x v0: B, y v1: B) {}
+        }
+        fun main() { S.f(x: .hole) }
+        """)
+    XCTAssertEqual(ts, ["A", "B"])
+  }
+
+  func testSingleCandidateWithMissingArguments() async {
+    let ts = await typesOfHole(
+      in: """
+        struct A { public memberwise init }
+        struct B { public memberwise init }
+        struct S {
+          public memberwise init
+          public fun f(x v0: A, y v1: B) {}
+        }
+        fun main() { S().f(x: .hole) }
+        """)
+    XCTAssertEqual(ts, ["A"])
+  }
+
+  func testConstructorWithMissingArguments() async {
+    let ts = await typesOfHole(
+      in: """
+        struct A { public memberwise init }
+        struct B { public memberwise init }
+        struct S {
+          public var a: A
+          public var b: B
+          public memberwise init
+        }
+        fun main() { let s = S(a: .hole) }
+        """)
+    XCTAssertEqual(ts, ["A"])
+  }
+
+  func testNestedCallWithMissingArguments() async {
+    let declarations = """
+      struct A { public memberwise init }
+      struct B { public memberwise init }
+      struct Z { public memberwise init }
+      fun g(x v0: A, w v1: Z) -> A { A() }
+      fun g(x v0: B) -> B { B() }
+      fun h(y v0: A) {}
+      fun k(y v0: A, z v1: Z) {}
+      """
+    let inner = await typesOfHole(in: declarations + "\nfun main() { h(y: g(x: .hole)) }")
+    XCTAssertEqual(inner, ["A"])
+    // Only the call of which the hole is an argument is open-ended.
+    let enclosing = await typesOfHole(in: declarations + "\nfun main() { k(y: g(x: .hole)) }")
+    XCTAssertEqual(enclosing, [])
+    let enclosed = await typesOfHole(in: declarations + "\nfun main() { h(y: .hole) }")
+    XCTAssertEqual(enclosed, ["A"])
+  }
+
+  func testOtherCallsAreNotOpenEnded() async {
+    let ts = await typesOfHole(
+      in: """
+        struct A { public memberwise init }
+        struct B { public memberwise init }
+        fun f(x v0: A, v1: A) {}
+        fun f(x v0: B, v1: B) {}
+        fun g(x v0: A, y v1: A) -> A { A() }
+        fun g(x v0: B) -> B { B() }
+        fun main() { f(x: .hole, g(x: A())) }
         """)
     XCTAssertEqual(ts, [])
   }
